@@ -8,13 +8,13 @@ Responsibilities:
 - Verify DNS service is responding
 - Emit dns.zones_ready event on success
 """
+
 import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from netengine.events.schema import EventEnvelope
-from netengine.handlers import context
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 
@@ -172,8 +172,6 @@ class DNSHandler(BasePhaseHandler):
             context.logger.info("DNS already deployed, skipping Phases 1-2")
             return True
         return False
-
-
 
     # ─────────────────────────────────────────────
     # Phase 1: Root and Platform Zone Setup
@@ -518,7 +516,9 @@ class DNSHandler(BasePhaseHandler):
         # M4+: Queue to pgmq
         # await context.pgmq_client.send(event)
 
-    async def add_zone_record(self, zone: str, record_type: str, name: str, value: str, ttl: int = 300) -> None:
+    async def add_zone_record(
+        self, zone: str, record_type: str, name: str, value: str, ttl: int = 300
+    ) -> None:
         """Add or update a DNS record in the zone file.
 
         This writes to the zone file on disk (mounted volume) and relies on CoreDNS's
@@ -531,9 +531,7 @@ class DNSHandler(BasePhaseHandler):
             value: The IP address or target
             ttl: Time-to-live in seconds
         """
-        logger = context.logger if hasattr(self, 'logger') else None
-        if logger:
-            logger.info(f"Adding DNS record: {name}.{zone} {record_type} {value}")
+        pass  # zone record updates logged by caller via context.logger
 
         # The zone files are stored in a directory that CoreDNS watches.
         # We'll assume the directory is /var/lib/netengines/dns/zones (mounted).
@@ -545,14 +543,6 @@ class DNSHandler(BasePhaseHandler):
             # This should have been created during Phase 2, but just in case:
             raise RuntimeError(f"Zone file for {zone} does not exist; run DNS phase first.")
 
-        # Build the record line
-        record_line = f"{name} {ttl} IN {record_type} {value}\n"
-
-        # Read existing content, check if record already exists (simple append for now)
-        # In a real implementation, you'd parse the zone and update/replace.
-        # For MVP, we append; if the record exists, it might duplicate.
-        # Better: we'll use a simple function to replace or append.
-        # We'll implement an atomic update: read, modify, write.
         await asyncio.to_thread(self._upsert_record_sync, zone_file, name, record_type, value, ttl)
 
         # Trigger CoreDNS reload by touching a file or relying on `auto` plugin.
@@ -560,9 +550,12 @@ class DNSHandler(BasePhaseHandler):
         # But we can also touch the zone file to force a reload (optional).
         # No action needed.
 
-    def _upsert_record_sync(self, zone_file: Path, name: str, record_type: str, value: str, ttl: int):
+    def _upsert_record_sync(
+        self, zone_file: Path, name: str, record_type: str, value: str, ttl: int
+    ) -> None:
         """Synchronous helper to upsert a record in the zone file."""
         import re
+
         # Read existing content
         if not zone_file.exists():
             raise FileNotFoundError(f"Zone file {zone_file} not found")

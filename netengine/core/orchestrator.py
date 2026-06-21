@@ -1,26 +1,24 @@
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Dict, Any
+from typing import Any, Dict
 
 from netengine.core.state import RuntimeState
-from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.dns import DNSHandler
+from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.phase_pki import PKIPhaseHandler
 from netengine.handlers.pki_handler import PKIHandler
-
 from netengine.phases.phase_inworld_identity import InWorldIdentityPhaseHandler
 
 logger = logging.getLogger(__name__)
 
 phase_handlers = [
-    DNSHandler(),    # phases 1-2
+    DNSHandler(),  # phases 1-2
     PKIPhaseHandler(),  # phase 3
-
-    InWorldIdentityPhaseHandler() #phase 4
-
+    InWorldIdentityPhaseHandler(),  # phase 4
     # ... more phases later
 ]
+
 
 @dataclass
 class PhaseContext:
@@ -30,18 +28,14 @@ class PhaseContext:
     # Other handlers will be added later
     spec: Dict[str, Any]  # loaded YAML spec
 
+
 class Orchestrator:
     def __init__(self, spec: Dict[str, Any]):
         self.spec = spec
         self.state = RuntimeState.load()
         self.docker = DockerHandler()
         self.dns = DNSHandler(self.docker, self.state)
-        self.context = PhaseContext(
-            state=self.state,
-            docker=self.docker,
-            dns=self.dns,
-            spec=spec
-        )
+        self.context = PhaseContext(state=self.state, docker=self.docker, dns=self.dns, spec=spec)
         self.phases = [
             self.phase_0_substrate,
             self.phase_1_dns_root,
@@ -92,22 +86,23 @@ class Orchestrator:
         await pki.bootstrap()
         # Register DNS record for ca.platform.internal
         await self.dns.add_zone_record(
-            zone="platform.internal",
-            record_type="A",
-            name="ca",
-            value=pki.ca_ip,
-            ttl=300
+            zone="platform.internal", record_type="A", name="ca", value=pki.ca_ip, ttl=300
         )
         # Optionally, ensure platform zone exists
-        await self.dns.ensure_zone("platform.internal", "ns1.platform.internal.", "ns1.platform.internal.")
+        await self.dns.ensure_zone(
+            "platform.internal", "ns1.platform.internal.", "ns1.platform.internal."
+        )
+
 
 async def phase_4_platform_identity(context):
     # 1. Ensure Supabase migrations run (idempotent)
     from netengine.utils.run_migrations import apply_migrations
+
     await apply_migrations(context.supabase)
 
     # 2. Start Keycloak container
     from netengine.handlers.oidc_handler import OIDCHandler
+
     oidc = OIDCHandler(context.state, context.supabase)
 
     # Get cert from PKI handler for auth.platform.internal
@@ -128,7 +123,7 @@ async def phase_4_platform_identity(context):
             "KC_HTTPS_CERTIFICATE_KEY_FILE": "/certs/tls.key",
             "KC_BOOTSTRAP_ADMIN_USERNAME": "admin",
             "KC_BOOTSTRAP_ADMIN_PASSWORD": context.bootstrap_admin_password,
-        }
+        },
     )
 
     # 3. Healthcheck
@@ -146,6 +141,7 @@ async def phase_4_platform_identity(context):
     context.state.phase_completed["4"] = True
     await context.state.save()
 
+
 async def phase_3_pki(context):
     pki = PKIHandler(context.docker, context.state)
     # 1. Generate CA (if not already generated)
@@ -159,11 +155,7 @@ async def phase_3_pki(context):
     # 4. Register DNS record for ca.platform.internal
     dns = DNSHandler(context.docker, context.state)
     await dns.add_zone_record(
-        zone="platform.internal",
-        record_type="A",
-        name="ca",
-        value=pki.ca_ip,
-        ttl=300
+        zone="platform.internal", record_type="A", name="ca", value=pki.ca_ip, ttl=300
     )
     # 5. Update state
     context.state.phase_completed["3"] = True

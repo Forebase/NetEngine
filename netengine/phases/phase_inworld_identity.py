@@ -1,17 +1,18 @@
 import asyncio
+import json
 import os
 import secrets
-import json
 from datetime import datetime
 
-from netengine.handlers._base import BasePhaseHandler
-from netengine.handlers.context import PhaseContext
-from netengine.handlers.docker_handler import DockerHandler
-from netengine.handlers.dns import DNSHandler
-from netengine.handlers.oidc_handler import OIDCHandler
-from netengine.handlers.pki_handler import PKIHandler
 from netengine.core.pgmq_client import PGMQClient
 from netengine.events.schema import EventEnvelope
+from netengine.handlers._base import BasePhaseHandler
+from netengine.handlers.context import PhaseContext
+from netengine.handlers.dns import DNSHandler
+from netengine.handlers.docker_handler import DockerHandler
+from netengine.handlers.oidc_handler import OIDCHandler
+from netengine.handlers.pki_handler import PKIHandler
+
 
 class InWorldIdentityPhaseHandler(BasePhaseHandler):
     """Phase 6: In‑world identity (Keycloak for org inhabitants)."""
@@ -38,7 +39,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
         oidc = OIDCHandler(
             keycloak_url=f"https://auth.internal",
             admin_username="admin",
-            admin_password=admin_password
+            admin_password=admin_password,
         )
         realm_name = inworld_spec.get("realm_name", "inworld")
         await oidc.create_platform_realm(realm_name)  # reuse method to create realm
@@ -54,7 +55,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
                     email=user["email"],
                     password=user.get("password", secrets.token_urlsafe(12)),
                     first_name=user.get("first_name", ""),
-                    last_name=user.get("last_name", "")
+                    last_name=user.get("last_name", ""),
                 )
             # Also create a client for this org
             client_id = f"{org}-client"
@@ -63,7 +64,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
                 client_id=client_id,
                 name=f"{org} OIDC Client",
                 redirect_uris=["https://*"],
-                public=False
+                public=False,
             )
 
         # 5. Start pgmq consumer for future org admissions
@@ -102,15 +103,17 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
                 "KC_HTTPS_CERTIFICATE_KEY_FILE": "/certs/auth.key",
                 "KC_BOOTSTRAP_ADMIN_USERNAME": "admin",
                 "KC_BOOTSTRAP_ADMIN_PASSWORD": admin_password,
-            }
+            },
         )
         # Wait for health
         await self._wait_for_keycloak(f"https://{listen_ip}/health/ready")
         return container_id
 
     async def _wait_for_keycloak(self, url: str, timeout: int = 60):
-        import aiohttp
         import asyncio
+
+        import aiohttp
+
         start = datetime.utcnow()
         while (datetime.utcnow() - start).total_seconds() < timeout:
             try:
@@ -145,7 +148,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
                     client_id=client_id,
                     name=f"{org} OIDC Client",
                     redirect_uris=["https://*"],
-                    public=False
+                    public=False,
                 )
                 # Users are not automatically created on admission – could be extended.
                 # For now, we just log.

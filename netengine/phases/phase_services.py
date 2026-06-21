@@ -1,14 +1,16 @@
 import asyncio
 from datetime import datetime
+
 from netengine.handlers._base import BasePhaseHandler
+from netengine.handlers.app_handler import AppHandler
 from netengine.handlers.context import PhaseContext
-from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.dns import DNSHandler
-from netengine.handlers.pki_handler import PKIHandler
-from netengine.handlers.oidc_handler import OIDCHandler
+from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.mail_handler import MailHandler
 from netengine.handlers.minio_handler import StorageHandler
-from netengine.handlers.app_handler import AppHandler
+from netengine.handlers.oidc_handler import OIDCHandler
+from netengine.handlers.pki_handler import PKIHandler
+
 
 class ServicesPhaseHandler(BasePhaseHandler):
     """Phase 8: World services + org app deployment."""
@@ -23,7 +25,7 @@ class ServicesPhaseHandler(BasePhaseHandler):
         oidc = OIDCHandler(
             keycloak_url="https://auth.internal",
             admin_username="admin",
-            admin_password=context.runtime_state.inworld_admin_password
+            admin_password=context.runtime_state.inworld_admin_password,
         )
 
         # 1. Deploy world services

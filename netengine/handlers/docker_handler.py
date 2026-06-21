@@ -1,10 +1,11 @@
 # netengines/handlers/docker_handler.py
 import asyncio
 import os
+from typing import Dict, List, Optional
 
 import docker
 from docker.types import IPAMConfig, IPAMPool
-from typing import Optional, Dict, List
+
 
 class DockerHandler:
     def __init__(self):
@@ -21,13 +22,22 @@ class DockerHandler:
             self.client.volumes.create(name)
 
     # In DockerHandler
-    async def run_container_one_off(self, image, command, volumes, environment, working_dir=None, **kwargs):
+    async def run_container_one_off(
+        self, image, command, volumes, environment, working_dir=None, **kwargs
+    ):
         return await asyncio.to_thread(
             self._run_container_one_off_sync,
-            image, command, volumes, environment, working_dir, **kwargs
+            image,
+            command,
+            volumes,
+            environment,
+            working_dir,
+            **kwargs,
         )
 
-    def _run_container_one_off_sync(self, image, command, volumes, environment, working_dir, **kwargs):
+    def _run_container_one_off_sync(
+        self, image, command, volumes, environment, working_dir, **kwargs
+    ):
         container = self.client.containers.run(
             image=image,
             command=command,
@@ -36,7 +46,7 @@ class DockerHandler:
             remove=False,
             detach=True,
             working_dir=working_dir,
-            **kwargs
+            **kwargs,
         )
         result = container.wait()
         logs = container.logs().decode()
@@ -52,15 +62,24 @@ class DockerHandler:
         network: str,
         ip: str,
         environment: Dict[str, str],
-        **kwargs
+        **kwargs,
     ) -> str:
         """Start a long‑running container attached to a network with a fixed IP."""
         return await asyncio.to_thread(
             self._start_container_sync,
-            name, image, command, volumes, network, ip, environment, **kwargs
+            name,
+            image,
+            command,
+            volumes,
+            network,
+            ip,
+            environment,
+            **kwargs,
         )
 
-    def _start_container_sync(self, name, image, command, volumes, network, ip, environment, **kwargs):
+    def _start_container_sync(
+        self, name, image, command, volumes, network, ip, environment, **kwargs
+    ):
         # Ensure network exists (we assume it was created in Phase 0)
         net = self.client.networks.get(network)
         container = self.client.containers.run(
@@ -71,7 +90,7 @@ class DockerHandler:
             environment=environment,
             detach=True,
             restart_policy={"Name": "unless-stopped"},
-            **kwargs
+            **kwargs,
         )
         # Attach to network with specific IP
         net.connect(container, ipv4_address=ip)
@@ -94,11 +113,11 @@ class DockerHandler:
         container.stop(timeout=10)
         container.remove()
 
-    async def create_network(self, name: str, driver: str = "bridge", subnet: str = None, internal: bool = False):
+    async def create_network(
+        self, name: str, driver: str = "bridge", subnet: str = None, internal: bool = False
+    ):
         """Create a Docker network."""
-        await asyncio.to_thread(
-            self._create_network_sync, name, driver, subnet, internal
-        )
+        await asyncio.to_thread(self._create_network_sync, name, driver, subnet, internal)
 
     def _create_network_sync(self, name, driver, subnet, internal):
         ipam_pool = None
@@ -107,12 +126,7 @@ class DockerHandler:
             ipam_config = docker.types.IPAMConfig(pool_configs=[ipam_pool])
         else:
             ipam_config = None
-        self.client.networks.create(
-            name=name,
-            driver=driver,
-            internal=internal,
-            ipam=ipam_config
-        )
+        self.client.networks.create(name=name, driver=driver, internal=internal, ipam=ipam_config)
 
     async def connect_network(self, container: str, network: str, ip: str):
         await asyncio.to_thread(self._connect_network_sync, container, network, ip)
@@ -139,16 +153,15 @@ class DockerHandler:
 
     async def copy_to_container(self, container_id: str, src_path: str, dest_path: str) -> None:
         """Copy a file from host into a running container."""
-        import tarfile
         import io
+        import tarfile
+
         # Create a tar stream with the file
         tar_stream = io.BytesIO()
-        with tarfile.open(fileobj=tar_stream, mode='w') as tar:
+        with tarfile.open(fileobj=tar_stream, mode="w") as tar:
             tar.add(src_path, arcname=os.path.basename(dest_path))
         tar_stream.seek(0)
-        await asyncio.to_thread(
-            self._copy_to_container_sync, container_id, tar_stream, dest_path
-        )
+        await asyncio.to_thread(self._copy_to_container_sync, container_id, tar_stream, dest_path)
 
     def _copy_to_container_sync(self, container_id, tar_stream, dest_path):
         container = self.client.containers.get(container_id)

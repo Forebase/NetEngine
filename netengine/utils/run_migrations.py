@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
+
 from supabase import create_client
+
 
 async def apply_migrations():
     url = os.environ["SUPABASE_URL"]
@@ -17,9 +19,12 @@ async def apply_migrations():
     # For MVP, we'll just run it synchronously with a subprocess (psql) or use the SQL API.
     # We'll use aiohttp to POST to /api/rest/v1/rpc/exec_sql
     import aiohttp
+
     headers = {"apikey": key, "Authorization": f"Bearer {key}"}
     payload = {"query": sql}
     async with aiohttp.ClientSession() as session:
-        async with session.post(f"{url}/api/rest/v1/rpc/exec_sql", json=payload, headers=headers) as resp:
+        async with session.post(
+            f"{url}/api/rest/v1/rpc/exec_sql", json=payload, headers=headers
+        ) as resp:
             if resp.status != 200:
                 raise RuntimeError(f"Migration failed: {await resp.text()}")

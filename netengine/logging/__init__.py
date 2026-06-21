@@ -19,7 +19,6 @@ __all__ = [
     "get_logger",
     "log_context",
     "timed_operation",
-    
     # Tracing
     "TraceContextManager",
     "TraceContext",
@@ -29,11 +28,9 @@ __all__ = [
     "get_current_span_id",
     "inject_trace_headers",
     "with_trace_context",
-    
     # Middleware
     "LoggingMiddleware",
     "StructuredLoggingMiddleware",
-    
     # Sinks
     "CircuitBreaker",
     "AsyncQueueSink",
@@ -42,36 +39,24 @@ __all__ = [
     "PerformanceMetricsSink",
 ]
 
-from .core import (
-    LoggerFactory,
-    LogConfig,
-    get_logger,
-    log_context,
-    timed_operation,
-)
-
-from .trace import (
-    TraceContextManager,
-    TraceContext,
-    TraceInjector,
-    set_trace_context_from_headers,
-    get_current_trace_id,
-    get_current_span_id,
-    inject_trace_headers,
-    with_trace_context,
-)
-
-from .middleware import (
-    LoggingMiddleware,
-    StructuredLoggingMiddleware,
-)
-
+from .core import LogConfig, LoggerFactory, get_logger, log_context, timed_operation
+from .middleware import LoggingMiddleware, StructuredLoggingMiddleware
 from .sinks import (
-    CircuitBreaker,
     AsyncQueueSink,
-    SupabaseSink,
+    CircuitBreaker,
     ErrorTrackingSink,
     PerformanceMetricsSink,
+    SupabaseSink,
+)
+from .trace import (
+    TraceContext,
+    TraceContextManager,
+    TraceInjector,
+    get_current_span_id,
+    get_current_trace_id,
+    inject_trace_headers,
+    set_trace_context_from_headers,
+    with_trace_context,
 )
 
 # Initialize logger on import

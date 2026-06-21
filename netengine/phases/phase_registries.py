@@ -1,13 +1,15 @@
 import asyncio
 from datetime import datetime
-from netengine.handlers._base import BasePhaseHandler
-from netengine.handlers.context import PhaseContext
-from netengine.handlers.world_registry_handler import WorldRegistryHandler
-from netengine.handlers.domain_registry_handler import DomainRegistryHandler
-from netengine.handlers.whois_server import WHOISServer
-from netengine.handlers.dns import DNSHandler
+
 from netengine.core.pgmq_client import PGMQClient
 from netengine.events.schema import EventEnvelope
+from netengine.handlers._base import BasePhaseHandler
+from netengine.handlers.context import PhaseContext
+from netengine.handlers.dns import DNSHandler
+from netengine.handlers.domain_registry_handler import DomainRegistryHandler
+from netengine.handlers.whois_server import WHOISServer
+from netengine.handlers.world_registry_handler import WorldRegistryHandler
+
 
 class RegistriesPhaseHandler(BasePhaseHandler):
     """Phase 5: World Registry + Domain Registry + WHOIS + Event wiring."""
@@ -36,17 +38,11 @@ class RegistriesPhaseHandler(BasePhaseHandler):
         for tld in tlds:
             # Add NS records to root zone
             await dns.add_zone_record(
-                zone="root.internal",
-                record_type="NS",
-                name=tld["name"],
-                value=tld["ns_server"]
+                zone="root.internal", record_type="NS", name=tld["name"], value=tld["ns_server"]
             )
             # Add A record for the TLD's NS server
             await dns.add_zone_record(
-                zone="root.internal",
-                record_type="A",
-                name=tld["ns_server"],
-                value=tld["listen_ip"]
+                zone="root.internal", record_type="A", name=tld["ns_server"], value=tld["listen_ip"]
             )
 
         # 5. Wire pgmq consumers (stub – in production, run a loop)
@@ -77,7 +73,7 @@ class RegistriesPhaseHandler(BasePhaseHandler):
                     zone=payload["domain"],
                     record_type="A",
                     name="@",
-                    value="10.0.0.1"  # placeholder – would be replaced with actual IP from AND handler
+                    value="10.0.0.1",  # placeholder – would be replaced with actual IP from AND handler
                 )
                 await pgmq.delete("dns_updates", msg["msg_id"])
             except Exception as e:

@@ -1,7 +1,9 @@
 import json
 from typing import Any, Dict, Optional
+
 from netengine.core.supabase_client import get_supabase
 from netengine.events.schema import EventEnvelope
+
 
 class PGMQClient:
     def __init__(self):
@@ -15,16 +17,14 @@ class PGMQClient:
         # Alternatively, use raw SQL via REST.
         # For MVP, we'll assume a Postgres function exists: pgmq.send(queue_name, message_json)
         result = await self.supabase.rpc(
-            "pgmq_send",
-            {"queue_name": queue_name, "message": json.dumps(payload)}
+            "pgmq_send", {"queue_name": queue_name, "message": json.dumps(payload)}
         ).execute()
         return result.data[0]  # msg_id
 
     async def receive(self, queue_name: str, timeout: int = 5) -> Optional[Dict[str, Any]]:
         """Pop a message from the queue."""
         result = await self.supabase.rpc(
-            "pgmq_pop",
-            {"queue_name": queue_name, "timeout": timeout}
+            "pgmq_pop", {"queue_name": queue_name, "timeout": timeout}
         ).execute()
         if result.data:
             return result.data[0]
@@ -33,8 +33,7 @@ class PGMQClient:
     async def delete(self, queue_name: str, msg_id: int) -> None:
         """Acknowledge and delete a processed message."""
         await self.supabase.rpc(
-            "pgmq_delete",
-            {"queue_name": queue_name, "msg_id": msg_id}
+            "pgmq_delete", {"queue_name": queue_name, "msg_id": msg_id}
         ).execute()
 
     async def archive_to_dlq(self, queue_name: str, msg_id: int, reason: str) -> None:

@@ -5,8 +5,8 @@ from typing import Any
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
-from netengine.handlers.pki_handler import PKIHandler
 from netengine.handlers.docker_handler import DockerHandler
+from netengine.handlers.pki_handler import PKIHandler
 
 
 class PKIPhaseHandler(BasePhaseHandler):
@@ -32,15 +32,12 @@ class PKIPhaseHandler(BasePhaseHandler):
         #    Assuming we have a reference to the DNS handler in context or we can create one.
         #    For simplicity, we'll use the same pattern as DNSHandler.
         from netengine.handlers.dns import DNSHandler  # import your existing DNS handler
+
         dns_handler = DNSHandler()  # or get from context
         # But we need to call the add_zone_record method (which is a stub currently).
         # We'll implement it below.
         await dns_handler.add_zone_record(
-            zone="platform.internal",
-            record_type="A",
-            name="ca",
-            value=pki.ca_ip,
-            ttl=300
+            zone="platform.internal", record_type="A", name="ca", value=pki.ca_ip, ttl=300
         )
 
         # 3. Update state
@@ -52,9 +49,7 @@ class PKIPhaseHandler(BasePhaseHandler):
 
         # Emit event
         await self._emit_event(
-            context,
-            event_type="pki.ready",
-            payload={"ca_ip": pki.ca_ip, "ca_dns": pki.ca_dns}
+            context, event_type="pki.ready", payload={"ca_ip": pki.ca_ip, "ca_dns": pki.ca_dns}
         )
 
     async def healthcheck(self, context: PhaseContext) -> bool:

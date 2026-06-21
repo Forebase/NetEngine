@@ -1,7 +1,9 @@
-from supabase import create_client, Client
 import os
 
+from supabase import Client, create_client
+
 _supabase: Client | None = None
+
 
 def get_supabase() -> Client:
     global _supabase
