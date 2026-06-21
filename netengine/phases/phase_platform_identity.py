@@ -93,6 +93,7 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
     async def healthcheck(self, context: PhaseContext) -> bool:
         """Check if Keycloak platform is ready."""
         import asyncio
+
         import aiohttp
 
         try:

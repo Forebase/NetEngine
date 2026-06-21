@@ -1,6 +1,8 @@
 """Integration tests for M3 bootstrap (Phases 3-4: PKI + Platform Identity)."""
-import pytest
+
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from netengine.core.orchestrator import Orchestrator
 from netengine.handlers.phase_pki import PKIPhaseHandler
@@ -160,7 +162,9 @@ class TestM3OrchestratorIntegration:
                 phase_4_handler = handler_class
                 break
 
-        assert phase_4_handler == PlatformIdentityPhaseHandler, "Phase 4 handler is not PlatformIdentityPhaseHandler"
+        assert (
+            phase_4_handler == PlatformIdentityPhaseHandler
+        ), "Phase 4 handler is not PlatformIdentityPhaseHandler"
 
     @pytest.mark.asyncio
     async def test_orchestrator_phase_execution_order(self, m3_spec):
