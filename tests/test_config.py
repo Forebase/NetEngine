@@ -209,9 +209,7 @@ class TestSpecConfig:
         spec = SpecConfig.load(base_spec_file)
         assert spec["metadata"]["name"] == "test-network"
 
-    def test_load_with_base(
-        self, base_spec_file: Path, prod_spec_file: Path
-    ) -> None:
+    def test_load_with_base(self, base_spec_file: Path, prod_spec_file: Path) -> None:
         """Test loading spec with base composition."""
         spec = SpecConfig.load(prod_spec_file, base_path=base_spec_file)
         assert spec["metadata"]["name"] == "test-network"
@@ -224,9 +222,7 @@ class TestSpecConfig:
         assert spec["metadata"]["environment"] == "staging"
         assert spec["metadata"]["name"] == "test-network"  # from base
 
-    def test_load_environment_variants_dev(
-        self, base_spec_file: Path, dev_spec_file: Path
-    ) -> None:
+    def test_load_environment_variants_dev(self, base_spec_file: Path, dev_spec_file: Path) -> None:
         """Test loading base spec with dev environment overrides."""
         spec = SpecConfig.load_environment_variants(base_spec_file, environment="dev")
 
@@ -269,17 +265,13 @@ class TestSpecLoaderIntegration:
         spec = load_spec(base_spec_file)
         assert spec.metadata.name == "test-network"
 
-    def test_load_spec_with_composition(
-        self, base_spec_file: Path, prod_spec_file: Path
-    ) -> None:
+    def test_load_spec_with_composition(self, base_spec_file: Path, prod_spec_file: Path) -> None:
         """Test load_spec_with_composition function."""
         spec = load_spec_with_composition(prod_spec_file, base_path=base_spec_file)
 
         assert spec.metadata.name == "test-network"
 
-    def test_load_spec_with_environment(
-        self, base_spec_file: Path, dev_spec_file: Path
-    ) -> None:
+    def test_load_spec_with_environment(self, base_spec_file: Path, dev_spec_file: Path) -> None:
         """Test load_spec_with_environment function."""
         spec = load_spec_with_environment(base_spec_file, environment="dev")
 

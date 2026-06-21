@@ -1,10 +1,10 @@
 """Configuration loading and merging utilities."""
 
 from pathlib import Path
-from typing import Any, Optional, Type, TypeVar
+from typing import Any, Optional, Type, TypeVar, cast
 
 import yaml
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 
 T = TypeVar("T")
 
@@ -60,7 +60,7 @@ class ConfigLoader:
             cfg = OmegaConf.merge(cfg, overrides_cfg)
 
         OmegaConf.resolve(cfg)
-        return OmegaConf.to_object(cfg)
+        return cast(T, OmegaConf.to_object(cfg))
 
     @staticmethod
     def merge_configs(*configs: dict[str, Any] | Any) -> dict[str, Any]:
@@ -72,16 +72,16 @@ class ConfigLoader:
         Returns:
             Merged configuration as dictionary
         """
-        result = OmegaConf.create({})
+        result: Any = OmegaConf.create({})
 
         for cfg in configs:
             if isinstance(cfg, dict):
-                cfg_obj = OmegaConf.create(cfg)
+                cfg_obj: Any = OmegaConf.create(cfg)
             else:
                 cfg_obj = OmegaConf.create(OmegaConf.to_container(cfg))
             result = OmegaConf.merge(result, cfg_obj)
 
-        return OmegaConf.to_container(result, resolve=True)  # type: ignore
+        return cast(dict[str, Any], OmegaConf.to_container(result, resolve=True))
 
     @staticmethod
     def resolve_env_vars(cfg: Any) -> Any:
