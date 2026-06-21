@@ -1,0 +1,190 @@
+# NetEngine Declarative Specification v0.2 — Single Organization Example
+# A complete spec with one org (acme-corp) and full service stack.
+
+metadata:
+  name: single-org
+  version: "1.0"
+  lifecycle: ephemeral
+  organization: acme-corp
+
+substrate:
+  orchestrator: swarm
+  ntp:
+    enabled: true
+    servers:
+      - pool.ntp.org
+  networks:
+    platform:
+      type: bridge
+      subnet: 172.20.0.0/16
+      description: "Platform management network"
+    core:
+      type: bridge
+      subnet: 10.0.0.0/8
+      description: "In-world core network"
+  gateway:
+    platform_ip: 172.20.0.1
+    core_ip: 10.0.0.1
+
+dns:
+  root:
+    enabled: true
+    type: authoritative
+    server: coredns
+    listen_ip: 10.0.0.2
+    soa_primary_ns: root.internal
+    soa_email: admin.internal
+    serial_policy: timestamp
+  platform_zone:
+    name: platform.internal
+    type: authoritative
+    listen_ip: 10.0.0.3
+  tlds:
+    - name: internal
+      description: "Default in-world TLD"
+      type: authoritative
+      listen_ip: 10.0.0.4
+    - name: localnet
+      description: "User TLD"
+      type: authoritative
+      listen_ip: 10.0.0.5
+
+pki:
+  root_ca:
+    cn: "NetEngines Root CA"
+    o: "Acme Corporation"
+    c: "US"
+    key_storage_mode: ephemeral
+    cert_lifetime_days: 3650
+  acme:
+    enabled: true
+    listen_ip: 10.0.0.6
+    canonical_name: ca.platform.internal
+  dnssec_enabled: true
+
+identity_platform:
+  oidc_provider: keycloak
+  listen_ip: 10.0.0.7
+  canonical_name: auth.platform.internal
+  realm_name: platform
+  admin_user:
+    username: admin
+    email: admin@platform.internal
+
+world_registry:
+  enabled: true
+  listen_ip: 10.0.0.8
+  canonical_name: registry.platform.internal
+  organizations:
+    - name: acme-corp
+      description: "Acme Corporation"
+      capabilities:
+        - host_services
+        - send_mail
+        - register_domains
+      and_profile: business
+  operators:
+    - username: admin
+      role: superadmin
+  whois:
+    enabled: true
+    listen_ip: 10.0.0.9
+
+domain_registry:
+  enabled: true
+  listen_ip: 10.0.0.10
+  canonical_name: domainreg.platform.internal
+  tld_delegations:
+    - tld: internal
+      governed_by: platform
+    - tld: localnet
+      governed_by: platform
+  address_space:
+    - cidr: 192.168.0.0/16
+      label: residential-pool
+      allocated_to: residential-ands
+    - cidr: 10.100.0.0/16
+      label: business-pool
+      allocated_to: business-ands
+    - cidr: 10.200.0.0/16
+      label: datacenter-pool
+      allocated_to: datacenter-ands
+  registrar:
+    enabled: true
+    listen_ip: 10.0.0.11
+    canonical_name: registrar.platform.internal
+
+identity_inworld:
+  oidc_provider: keycloak
+  listen_ip: 10.0.0.12
+  canonical_name: auth.internal
+  realm_name: inworld
+  org_users:
+    - org: acme-corp
+      users:
+        - username: alice
+          email: alice@acme.internal
+        - username: bob
+          email: bob@acme.internal
+
+ands:
+  profiles: {}
+  instances:
+    - name: acme-corp-net
+      org: acme-corp
+      profile:
+        dhcp: true
+        nat: false
+        dynamic_ip: false
+        inbound: allowed
+        reverse_dns: true
+      dns_suffix: acme.internal
+
+world_services:
+  mail:
+    enabled: true
+    server: postfix
+    listen_ip: 10.0.0.13
+    canonical_name: mail.internal
+    dkim:
+      enabled: true
+      key_signing_policy: ephemeral
+    dmarc:
+      enabled: true
+      policy: "reject"
+    mailbox_policy:
+      auto_provision_from_orgs: true
+      quota_mb: 1000
+  storage:
+    enabled: true
+    server: minio
+    listen_ip: 10.0.0.14
+    canonical_name: storage.platform.internal
+    buckets:
+      - name: platform
+        description: "NetEngines platform storage"
+        scope: platform
+
+org_apps:
+  enabled: true
+  catalog:
+    - name: gitea
+      description: "Self-hosted git service"
+      image: "gitea/gitea:latest"
+      port: 3000
+      oidc_integration: true
+  deployments: []
+
+gateway_portal:
+  enabled: true
+  real_internet:
+    mode: isolated
+  cross_world:
+    mode: none
+
+operator:
+  api:
+    enabled: true
+    listen_ip: 172.20.0.11
+    port: 8080
+    canonical_name: api.platform.internal
