@@ -3,11 +3,9 @@
 from pathlib import Path
 from typing import Any, Optional
 
-import yaml
 from omegaconf import OmegaConf
 
 from netengine.config.loader import ConfigLoader
-from netengine.config.schemas import SpecConfig as SpecConfigSchema
 
 
 class SpecConfig:

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Optional, Type, TypeVar, cast
 
 import yaml
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 
 T = TypeVar("T")
 
