@@ -96,7 +96,10 @@ class TestPhase6InWorldIdentityHandler:
     async def test_phase_6_should_skip_if_completed(self, phase_context):
         """Phase 6 should skip if already completed."""
         handler = InWorldIdentityPhaseHandler()
-        phase_context.runtime_state.phase_completed["6"] = True
+        phase_context.runtime_state.identity_inworld_output = {
+            "keycloak_container_id": "container-123",
+            "realms_created": ["acme-realm"],
+        }
 
         skip = await handler.should_skip(phase_context)
         assert skip is True

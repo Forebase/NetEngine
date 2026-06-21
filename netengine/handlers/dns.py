@@ -344,6 +344,7 @@ class DNSHandler(BasePhaseHandler):
         """Generate root zone file with NS records.
 
         Delegates to platform zone and TLD servers via NS records.
+        Includes stub records for L1 services (auth.internal, ca.internal, etc.)
         """
         serial = self._generate_serial(root_zone.get("serial_policy", "timestamp"))
 
@@ -362,6 +363,12 @@ class DNSHandler(BasePhaseHandler):
             "; Delegation to platform zone",
             f"platform.internal. NS {platform_zone['ns_server']}.",
             f"platform.internal. A {platform_zone['listen_ip']}",
+            "",
+            "; L1 service records (auth.internal, etc. — may be delegated to platform zone)",
+            "; These can be updated by M4+ phases",
+            f"auth.internal. A {platform_zone['listen_ip']}",
+            f"ca.internal. A {platform_zone['listen_ip']}",
+            f"registry.internal. A {platform_zone['listen_ip']}",
             "",
         ]
 

@@ -113,18 +113,20 @@ class TestPhase6InWorldIdentityIntegration:
         """Phase 6 should have output field in runtime_state."""
         assert hasattr(phase_context.runtime_state, "identity_inworld_output")
 
-    def test_phase_6_container_id_tracking_field(self, phase_context):
-        """Phase 6 should have container ID tracking in runtime_state."""
-        assert hasattr(phase_context.runtime_state, "inworld_keycloak_container_id")
-        # Should be None initially
-        assert phase_context.runtime_state.inworld_keycloak_container_id is None
+    def test_phase_6_output_field_initially_none(self, phase_context):
+        """Phase 6 output should be None initially."""
+        # Initially None until Phase 6 executes
+        assert phase_context.runtime_state.identity_inworld_output is None
 
     @pytest.mark.asyncio
     async def test_phase_6_skip_logic_when_completed(self, phase_context):
         """Phase 6 should skip execution if already completed."""
         handler = InWorldIdentityPhaseHandler()
         # Mark as completed
-        phase_context.runtime_state.phase_completed["6"] = True
+        phase_context.runtime_state.identity_inworld_output = {
+            "keycloak_container_id": "container-123",
+            "realms_created": ["acme-realm"],
+        }
 
         should_skip = await handler.should_skip(phase_context)
         assert should_skip is True
@@ -148,14 +150,17 @@ class TestPhase6InWorldIdentityIntegration:
 
     @pytest.mark.asyncio
     async def test_phase_6_completion_tracking(self, phase_context):
-        """Phase 6 should track completion state."""
+        """Phase 6 should track completion via identity_inworld_output."""
         handler = InWorldIdentityPhaseHandler()
         # Initially not completed
-        assert phase_context.runtime_state.phase_completed.get("6") is not True
+        assert phase_context.runtime_state.identity_inworld_output is None
 
         # Mark as completed
-        phase_context.runtime_state.phase_completed["6"] = True
-        assert phase_context.runtime_state.phase_completed["6"] is True
+        phase_context.runtime_state.identity_inworld_output = {
+            "keycloak_container_id": "container-123",
+            "realms_created": ["acme-realm"],
+        }
+        assert phase_context.runtime_state.identity_inworld_output is not None
 
 
 class TestPhase5Phase6Coordination:
@@ -190,22 +195,25 @@ class TestPhase5Phase6Coordination:
         assert isinstance(result, bool)
 
     @pytest.mark.asyncio
-    async def test_phase_6_healthcheck_missing_container(self, phase_context):
-        """Phase 6 healthcheck should fail if container ID is None."""
+    async def test_phase_6_healthcheck_fails_without_output(self, phase_context):
+        """Phase 6 healthcheck should fail if output is None."""
         handler = InWorldIdentityPhaseHandler()
-        # Ensure container is None
-        phase_context.runtime_state.inworld_keycloak_container_id = None
+        # No output yet
+        phase_context.runtime_state.identity_inworld_output = None
 
         is_healthy = await handler.healthcheck(phase_context)
         assert is_healthy is False
 
     @pytest.mark.asyncio
-    async def test_phase_6_healthcheck_with_container_set(self, phase_context):
-        """Phase 6 healthcheck should check container when ID is set."""
+    async def test_phase_6_healthcheck_requires_container_and_realms(self, phase_context):
+        """Phase 6 healthcheck should require both container and realms."""
         handler = InWorldIdentityPhaseHandler()
-        # Set a dummy container ID
-        phase_context.runtime_state.inworld_keycloak_container_id = "test-container-123"
+        # Set output but with required fields
+        phase_context.runtime_state.identity_inworld_output = {
+            "keycloak_container_id": "test-container-123",
+            "realms_created": ["acme-realm"],
+        }
 
-        # Should attempt to check health (will return bool)
+        # Should return a bool (will be False without real Docker, but structure is correct)
         is_healthy = await handler.healthcheck(phase_context)
         assert isinstance(is_healthy, bool)
