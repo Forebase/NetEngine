@@ -60,3 +60,41 @@ async def get_services(user=Depends(get_current_user)):
     docker = DockerHandler()
     containers = docker.client.containers.list()
     return {"containers": [{"name": c.name, "status": c.status} for c in containers]}
+
+# Add these routes to netengine/api/app.py
+
+@app.get("/api/v1/registry/domains")
+async def list_domains(user=Depends(get_current_user)):
+    supabase = get_supabase()
+    result = await supabase.table("domain_records").select("*").execute()
+    return result.data
+
+@app.get("/api/v1/registry/addresses")
+async def list_addresses(user=Depends(get_current_user)):
+    supabase = get_supabase()
+    result = await supabase.table("address_leases").select("*").execute()
+    return result.data
+
+@app.get("/api/v1/queues")
+async def get_queue_state(user=Depends(get_current_user)):
+    # Query pgmq queue counts
+    # This requires a custom Supabase function to get queue stats.
+    # For MVP, we'll return a stub.
+    return {"queues": {"dns_updates": 0, "oidc_provisioning": 0, "and_provisioning": 0}}
+
+@app.get("/api/v1/events/{correlation_id}")
+async def get_event_chain(correlation_id: str, user=Depends(get_current_user)):
+    # Query all events with this correlation_id from pgmq history
+    # This requires a pgmq_archive table; stub for now.
+    return {"correlation_id": correlation_id, "events": []}
+
+@app.post("/api/v1/orgs")
+async def admit_org(org: dict, user=Depends(get_current_user)):
+    from ..handlers.world_registry_handler import WorldRegistryHandler
+    handler = WorldRegistryHandler()
+    await handler.admit_org(
+        name=org["name"],
+        capabilities=org.get("capabilities", []),
+        and_profile=org.get("and_profile", "business")
+    )
+    return {"status": "admitted"}
