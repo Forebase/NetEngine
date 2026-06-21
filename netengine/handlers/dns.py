@@ -11,7 +11,6 @@ Responsibilities:
 
 import asyncio
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from netengine.events.schema import EventEnvelope
