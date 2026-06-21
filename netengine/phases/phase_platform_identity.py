@@ -24,7 +24,7 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
         await apply_migrations()
 
         # 2. Generate or retrieve bootstrap admin password for Keycloak
-        admin_password = context.runtime_state.get("bootstrap_admin_password")
+        admin_password = getattr(context.runtime_state, "bootstrap_admin_password", None)
         if not admin_password:
             admin_password = secrets.token_urlsafe(16)
             context.runtime_state.bootstrap_admin_password = admin_password
@@ -92,22 +92,41 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
 
     async def healthcheck(self, context: PhaseContext) -> bool:
         """Check if Keycloak platform is ready."""
+        import asyncio
+        import aiohttp
+
         try:
-            if not context.runtime_state.keycloak_platform_container_id:
+            # Check if container ID is set
+            container_id = getattr(context.runtime_state, "keycloak_platform_container_id", None)
+            if not container_id:
                 return False
+
+            # Check container is running
             docker = DockerHandler()
-            container = docker.client.containers.get(context.runtime_state.keycloak_platform_container_id)
-            if container.status != "running":
+            try:
+                container = docker.client.containers.get(container_id)
+                if container.status != "running":
+                    return False
+            except Exception:
                 return False
+
             # Check OIDC discovery endpoint
-            import aiohttp
+            ssl_context = __import__("ssl").create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = __import__("ssl").CERT_NONE
+
             async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    "https://auth.platform.internal/.well-known/openid-configuration",
-                    ssl=False,
-                    timeout=aiohttp.ClientTimeout(total=5),
-                ) as resp:
-                    return resp.status == 200
+                try:
+                    async with session.get(
+                        "https://auth.platform.internal/.well-known/openid-configuration",
+                        ssl=ssl_context,
+                        timeout=aiohttp.ClientTimeout(total=5),
+                    ) as resp:
+                        return resp.status == 200
+                except asyncio.TimeoutError:
+                    return False
+                except aiohttp.ClientError:
+                    return False
         except Exception:
             return False
 

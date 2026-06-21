@@ -70,8 +70,8 @@ class PKIPhaseHandler(BasePhaseHandler):
             event_type=event_type,
             emitted_by="pki_phase",
             payload=payload,
-            correlation_id=context.runtime_state.correlation_id,
-            parent_event_id=context.runtime_state.parent_event_id,
+            correlation_id=getattr(context.runtime_state, "correlation_id", None),
+            parent_event_id=getattr(context.runtime_state, "parent_event_id", None),
         )
         context.logger.info(f"Event emitted: {event_type}")
         # In M4+ you would queue to pgmq
