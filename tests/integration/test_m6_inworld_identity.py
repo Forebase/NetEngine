@@ -121,9 +121,13 @@ class TestM6RealmCreationPerOrg:
         )
 
         # Mock Keycloak operations
-        with patch.object(handler, "_start_keycloak_container", new_callable=AsyncMock) as mock_start:
+        with patch.object(
+            handler, "_start_keycloak_container", new_callable=AsyncMock
+        ) as mock_start:
             with patch.object(handler, "_create_org_client", new_callable=AsyncMock):
-                with patch("netengine.phases.phase_inworld_identity.OIDCHandler") as mock_oidc_class:
+                with patch(
+                    "netengine.phases.phase_inworld_identity.OIDCHandler"
+                ) as mock_oidc_class:
                     mock_oidc = AsyncMock()
                     mock_oidc.create_platform_realm = AsyncMock()
                     mock_oidc_class.return_value = mock_oidc
@@ -167,9 +171,13 @@ class TestM6UserProvisioning:
             logger=get_logger("test"),
         )
 
-        with patch.object(handler, "_start_keycloak_container", new_callable=AsyncMock) as mock_start:
+        with patch.object(
+            handler, "_start_keycloak_container", new_callable=AsyncMock
+        ) as mock_start:
             with patch.object(handler, "_create_org_client", new_callable=AsyncMock):
-                with patch("netengine.phases.phase_inworld_identity.OIDCHandler") as mock_oidc_class:
+                with patch(
+                    "netengine.phases.phase_inworld_identity.OIDCHandler"
+                ) as mock_oidc_class:
                     mock_oidc = AsyncMock()
                     mock_oidc.create_platform_realm = AsyncMock()
                     mock_oidc.create_user = AsyncMock()
@@ -294,16 +302,18 @@ class TestM6OrgAdmissionEvents:
         mock_pgmq = AsyncMock()
         mock_msg = {
             "msg_id": "msg-123",
-            "message": json.dumps({
-                "event_id": "event-123",
-                "correlation_id": "corr-123",
-                "parent_event_id": None,
-                "event_type": "org.admitted",
-                "emitted_by": "registry_handler",
-                "emitted_at": "2026-06-21T12:00:00",
-                "payload": {"org_name": "new-org"},
-                "retry_count": 0,
-            }),
+            "message": json.dumps(
+                {
+                    "event_id": "event-123",
+                    "correlation_id": "corr-123",
+                    "parent_event_id": None,
+                    "event_type": "org.admitted",
+                    "emitted_by": "registry_handler",
+                    "emitted_at": "2026-06-21T12:00:00",
+                    "payload": {"org_name": "new-org"},
+                    "retry_count": 0,
+                }
+            ),
         }
 
         # First call returns the org.admitted event, second returns None (exit loop after 1 event)
@@ -364,9 +374,13 @@ class TestM6EventEmission:
             logger=get_logger("test"),
         )
 
-        with patch.object(handler, "_start_keycloak_container", new_callable=AsyncMock) as mock_start:
+        with patch.object(
+            handler, "_start_keycloak_container", new_callable=AsyncMock
+        ) as mock_start:
             with patch.object(handler, "_create_org_client", new_callable=AsyncMock):
-                with patch("netengine.phases.phase_inworld_identity.OIDCHandler") as mock_oidc_class:
+                with patch(
+                    "netengine.phases.phase_inworld_identity.OIDCHandler"
+                ) as mock_oidc_class:
                     mock_oidc = AsyncMock()
                     mock_oidc.create_platform_realm = AsyncMock()
                     mock_oidc_class.return_value = mock_oidc
@@ -407,9 +421,13 @@ class TestM6OutputStructure:
             logger=get_logger("test"),
         )
 
-        with patch.object(handler, "_start_keycloak_container", new_callable=AsyncMock) as mock_start:
+        with patch.object(
+            handler, "_start_keycloak_container", new_callable=AsyncMock
+        ) as mock_start:
             with patch.object(handler, "_create_org_client", new_callable=AsyncMock):
-                with patch("netengine.phases.phase_inworld_identity.OIDCHandler") as mock_oidc_class:
+                with patch(
+                    "netengine.phases.phase_inworld_identity.OIDCHandler"
+                ) as mock_oidc_class:
                     mock_oidc = AsyncMock()
                     mock_oidc.create_platform_realm = AsyncMock()
                     mock_oidc_class.return_value = mock_oidc

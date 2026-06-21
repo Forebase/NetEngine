@@ -156,9 +156,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
             )
 
             # Start event consumer for org.admitted events (background task)
-            asyncio.create_task(
-                self._consume_org_admission_events(context, oidc, inworld_spec)
-            )
+            asyncio.create_task(self._consume_org_admission_events(context, oidc, inworld_spec))
 
         except Exception as e:
             context.runtime_state.last_error = str(e)
@@ -490,9 +488,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
 
                     # Create OIDC client
                     client_id = f"{org_name}-client"
-                    await self._create_org_client(
-                        context, oidc, realm_name, org_name, client_id
-                    )
+                    await self._create_org_client(context, oidc, realm_name, org_name, client_id)
 
                     logger.info(f"Provisioned in-world realm for org {org_name}")
 
