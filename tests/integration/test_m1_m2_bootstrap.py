@@ -22,9 +22,7 @@ from netengine.spec.models import NetEngineSpec
 class TestSubstrateThenDNSBootstrap:
     """Integration tests for Phase 0 → Phases 1-2 execution sequence."""
 
-    async def test_substrate_then_dns_complete_flow(
-        self, minimal_spec: NetEngineSpec
-    ) -> None:
+    async def test_substrate_then_dns_complete_flow(self, minimal_spec: NetEngineSpec) -> None:
         """Substrate Phase 0 should execute fully before DNS Phases 1-2."""
         logger = get_logger("test")
         runtime_state = RuntimeState()
@@ -84,9 +82,7 @@ class TestSubstrateThenDNSBootstrap:
         # Correlation ID should still be unchanged
         assert context.runtime_state.correlation_id == correlation_id
 
-    async def test_dns_requires_substrate_execution(
-        self, minimal_spec: NetEngineSpec
-    ) -> None:
+    async def test_dns_requires_substrate_execution(self, minimal_spec: NetEngineSpec) -> None:
         """DNS handler should fail if Substrate has not executed."""
         logger = get_logger("test")
         runtime_state = RuntimeState()
@@ -103,9 +99,7 @@ class TestSubstrateThenDNSBootstrap:
         with pytest.raises(RuntimeError, match="Substrate phase.*must complete"):
             await dns.execute(context)
 
-    async def test_dns_zones_structure_after_execution(
-        self, minimal_spec: NetEngineSpec
-    ) -> None:
+    async def test_dns_zones_structure_after_execution(self, minimal_spec: NetEngineSpec) -> None:
         """DNS output should contain all required zone structures."""
         logger = get_logger("test")
         runtime_state = RuntimeState()
@@ -156,9 +150,7 @@ class TestSubstrateThenDNSBootstrap:
 class TestDNSZoneRecordDynamicUpdates:
     """Integration tests for dynamic DNS record updates during runtime."""
 
-    async def test_add_zone_record_persists_to_zone_file(
-        self, minimal_spec: NetEngineSpec
-    ) -> None:
+    async def test_add_zone_record_persists_to_zone_file(self, minimal_spec: NetEngineSpec) -> None:
         """Records added via add_zone_record() should persist in zone files."""
         logger = get_logger("test")
         runtime_state = RuntimeState()
@@ -247,7 +239,9 @@ class TestDNSZoneRecordDynamicUpdates:
         # Old value should be replaced (not duplicated)
         # Count occurrences of "test" records to ensure no duplicates
         test_records = [
-            line for line in zone_v2.split("\n") if "test" in line and not line.strip().startswith(";")
+            line
+            for line in zone_v2.split("\n")
+            if "test" in line and not line.strip().startswith(";")
         ]
         # Should have at most one record with "test" (could be 0 if removed, 1 if replaced)
         assert len(test_records) <= 1
@@ -416,9 +410,7 @@ class TestDNSZoneRecordDynamicUpdates:
 class TestEventEmissionAndTracing:
     """Integration tests for event emission and correlation ID tracing."""
 
-    async def test_dns_event_emission_includes_zones(
-        self, minimal_spec: NetEngineSpec
-    ) -> None:
+    async def test_dns_event_emission_includes_zones(self, minimal_spec: NetEngineSpec) -> None:
         """DNS execution should emit event with zone information."""
         logger = get_logger("test")
         runtime_state = RuntimeState()
@@ -445,9 +437,7 @@ class TestEventEmissionAndTracing:
         # (pgmq events are M4+, but the handler should handle missing client gracefully)
         assert context.runtime_state.dns_output is not None
 
-    async def test_correlation_id_flow_through_bootstrap(
-        self, minimal_spec: NetEngineSpec
-    ) -> None:
+    async def test_correlation_id_flow_through_bootstrap(self, minimal_spec: NetEngineSpec) -> None:
         """Correlation ID should flow consistently through substrate and DNS phases."""
         logger = get_logger("test")
         runtime_state = RuntimeState()
@@ -476,9 +466,7 @@ class TestEventEmissionAndTracing:
 class TestDNSPhaseIdempotence:
     """Integration tests for DNS phase idempotence and skip behavior."""
 
-    async def test_dns_should_skip_after_execution(
-        self, minimal_spec: NetEngineSpec
-    ) -> None:
+    async def test_dns_should_skip_after_execution(self, minimal_spec: NetEngineSpec) -> None:
         """should_skip() should return True after DNS execution."""
         logger = get_logger("test")
         runtime_state = RuntimeState()
@@ -501,9 +489,7 @@ class TestDNSPhaseIdempotence:
         skip = await dns.should_skip(context)
         assert skip is True
 
-    async def test_dns_idempotent_multiple_executions(
-        self, minimal_spec: NetEngineSpec
-    ) -> None:
+    async def test_dns_idempotent_multiple_executions(self, minimal_spec: NetEngineSpec) -> None:
         """DNS handler should be idempotent (second execution should be skipped)."""
         logger = get_logger("test")
         runtime_state = RuntimeState()

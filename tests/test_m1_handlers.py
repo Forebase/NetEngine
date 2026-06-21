@@ -56,7 +56,9 @@ class TestSubstrateHandler:
         assert before <= phase_context_substrate.runtime_state.started_at <= after
         assert before <= phase_context_substrate.runtime_state.completed_at <= after
 
-    async def test_healthcheck_passes_after_execute(self, phase_context_substrate: PhaseContext) -> None:
+    async def test_healthcheck_passes_after_execute(
+        self, phase_context_substrate: PhaseContext
+    ) -> None:
         """Healthcheck should pass after successful execute."""
         handler = SubstrateHandler()
         await handler.execute(phase_context_substrate)
@@ -64,14 +66,18 @@ class TestSubstrateHandler:
 
         assert healthy is True
 
-    async def test_healthcheck_fails_before_execute(self, phase_context_substrate: PhaseContext) -> None:
+    async def test_healthcheck_fails_before_execute(
+        self, phase_context_substrate: PhaseContext
+    ) -> None:
         """Healthcheck should fail before execute."""
         handler = SubstrateHandler()
         healthy = await handler.healthcheck(phase_context_substrate)
 
         assert healthy is False
 
-    async def test_should_skip_true_after_execute(self, phase_context_substrate: PhaseContext) -> None:
+    async def test_should_skip_true_after_execute(
+        self, phase_context_substrate: PhaseContext
+    ) -> None:
         """should_skip should return True after substrate is deployed."""
         handler = SubstrateHandler()
         await handler.execute(phase_context_substrate)
@@ -79,7 +85,9 @@ class TestSubstrateHandler:
 
         assert skip is True
 
-    async def test_should_skip_false_before_execute(self, phase_context_substrate: PhaseContext) -> None:
+    async def test_should_skip_false_before_execute(
+        self, phase_context_substrate: PhaseContext
+    ) -> None:
         """should_skip should return False before substrate is deployed."""
         handler = SubstrateHandler()
         skip = await handler.should_skip(phase_context_substrate)
@@ -231,9 +239,7 @@ class TestSubstrateAndDNSIntegration:
 class TestDNSZoneRecordUpdates:
     """Tests for DNS zone record updates (add_zone_record method)."""
 
-    async def test_add_zone_record_updates_zone_file(
-        self, phase_context: PhaseContext
-    ) -> None:
+    async def test_add_zone_record_updates_zone_file(self, phase_context: PhaseContext) -> None:
         """add_zone_record should update zone file with new record."""
         # First, run DNS to create zone files
         dns_handler = DNSHandler()

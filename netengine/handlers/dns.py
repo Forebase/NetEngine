@@ -562,8 +562,7 @@ class DNSHandler(BasePhaseHandler):
         # Validate that DNS phase has run
         if context.runtime_state.dns_output is None:
             raise RuntimeError(
-                "DNS phase must run before adding records. "
-                "Call DNS handler execute() first."
+                "DNS phase must run before adding records. " "Call DNS handler execute() first."
             )
 
         dns_output = context.runtime_state.dns_output
@@ -588,9 +587,7 @@ class DNSHandler(BasePhaseHandler):
         # Update the zone file in runtime_state
         dns_output["zone_files"][zone] = updated_content
 
-        logger.info(
-            f"Zone record updated: {zone} {record_type} {name} -> {value} (TTL: {ttl})"
-        )
+        logger.info(f"Zone record updated: {zone} {record_type} {name} -> {value} (TTL: {ttl})")
 
     @staticmethod
     def _build_record_line(name: str, record_type: str, value: str, ttl: int) -> str:
