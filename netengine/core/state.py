@@ -19,9 +19,16 @@ class RuntimeState:
     keycloak_platform_container_id: Optional[str] = None
     platform_realm_id: Optional[str] = None
     admin_user_id: Optional[str] = None
+
+    #
+    inworld_keycloak_container_id: Optional[str] = None
+    inworld_admin_password: Optional[str] = None
+
     # General
     world_spec: Optional[Dict[str, Any]] = None
     bootstrap_admin_password: Optional[str] = None
+
+
 
     #
     STATE_FILE = Path(os.environ.get("NETENGINES_STATE_FILE", "netengines_state.json"))

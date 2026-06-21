@@ -163,7 +163,38 @@ class PKIHandler:
     # ─────────────────────────────────────────────
     # Certificate issuance (for M7)
     # ─────────────────────────────────────────────
-    async def issue_cert(self, common_name: str, sans: Optional[list[str]] = None) -> tuple[str, str]:
-        """Issue a certificate via step‑ca admin API (stub)."""
-        # Will be implemented in M7 using step‑ca REST API
-        raise NotImplementedError("Certificate issuance will be added in M7")
+
+    async def issue_cert(self, common_name: str, sans: list[str] = None) -> tuple[str, str]:
+        """Issue a certificate using step-ca (via admin API or CLI)."""
+        # Use the step CLI inside a temporary container that mounts the CA volume.
+        # This is simpler than REST API for MVP.
+        # We'll run: step ca certificate --provisioner acme <cn> <cert> <key> --ca-config /home/step/config/ca.json
+        volumes = {self.volume_name: {"bind": "/home/step", "mode": "rw"}}
+        cert_file = f"/tmp/{common_name}.crt"
+        key_file = f"/tmp/{common_name}.key"
+        cmd = [
+            "step", "ca", "certificate",
+            common_name,
+            cert_file,
+            key_file,
+            "--provisioner", "acme",
+            "--ca-config", "/home/step/config/ca.json",
+            "--not-after", "87600h"  # 10 years
+        ]
+        if sans:
+            for san in sans:
+                cmd.extend(["--san", san])
+        result = await self.docker.run_container_one_off(
+            image=self.image,
+            command=cmd,
+            volumes=volumes,
+            environment={}
+        )
+        if result["exit_code"] != 0:
+            raise RuntimeError(f"Certificate issuance failed: {result['logs']}")
+        # Now read the cert and key from the container? We mounted /tmp, but we need to read from volume.
+        # Actually we can mount a temporary directory to extract the certs.
+        # Simpler: use a shared volume or write to the CA volume and read.
+        cert_content = await self._read_file_from_volume(f"/home/step/{common_name}.crt")
+        key_content = await self._read_file_from_volume(f"/home/step/{common_name}.key")
+        return cert_content, key_content

@@ -18,28 +18,22 @@ class DockerHandler:
         except docker.errors.NotFound:
             self.client.volumes.create(name)
 
-    async def run_container_one_off(
-        self,
-        image: str,
-        command: List[str],
-        volumes: Dict[str, Dict[str, str]],
-        environment: Dict[str, str],
-        **kwargs
-    ) -> dict:
-        """Run a container that exits, return logs and exit code."""
+    # In DockerHandler
+    async def run_container_one_off(self, image, command, volumes, environment, working_dir=None, **kwargs):
         return await asyncio.to_thread(
             self._run_container_one_off_sync,
-            image, command, volumes, environment, **kwargs
+            image, command, volumes, environment, working_dir, **kwargs
         )
 
-    def _run_container_one_off_sync(self, image, command, volumes, environment, **kwargs):
+    def _run_container_one_off_sync(self, image, command, volumes, environment, working_dir, **kwargs):
         container = self.client.containers.run(
             image=image,
             command=command,
             volumes=volumes,
             environment=environment,
-            remove=False,  # keep for logs
+            remove=False,
             detach=True,
+            working_dir=working_dir,
             **kwargs
         )
         result = container.wait()

@@ -59,3 +59,29 @@ SELECT pgmq.create('oidc_provisioning');
 SELECT pgmq.create('oidc_provisioning_dlq');
 SELECT pgmq.create('and_provisioning');
 SELECT pgmq.create('and_provisioning_dlq');
+
+-- pgmq_send(queue_name, message)
+CREATE OR REPLACE FUNCTION pgmq_send(queue_name text, message text)
+RETURNS bigint
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    msg_id bigint;
+BEGIN
+    SELECT pgmq.send(queue_name, message) INTO msg_id;
+    RETURN msg_id;
+END;
+$$;
+
+-- pgmq_pop(queue_name, timeout)
+CREATE OR REPLACE FUNCTION pgmq_pop(queue_name text, timeout int)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    msg JSONB;
+BEGIN
+    SELECT pgmq.pop(queue_name, timeout) INTO msg;
+    RETURN msg;
+END;
+$$;

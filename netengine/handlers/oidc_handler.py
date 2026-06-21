@@ -84,3 +84,49 @@ class OIDCHandler:
         if admin_role:
             await self._admin_request("POST", f"realms/{realm}/users/{user_id}/role-mappings/realm", json=[admin_role])
         return user_id
+
+    async def create_client(self, realm: str, client_id: str, name: str,
+                            redirect_uris: list[str] = None,
+                            public: bool = False) -> str:
+        """Create an OIDC client in the given realm."""
+        payload = {
+            "clientId": client_id,
+            "name": name,
+            "enabled": True,
+            "publicClient": public,
+            "redirectUris": redirect_uris or [],
+            "webOrigins": ["*"],
+            "standardFlowEnabled": True,
+            "implicitFlowEnabled": False,
+            "directAccessGrantsEnabled": True,
+            "serviceAccountsEnabled": False,
+            "protocol": "openid-connect"
+        }
+        # If not public, generate a secret (we'll store it)
+        if not public:
+            payload["secret"] = self._generate_secret()
+        await self._admin_request("POST", f"realms/{realm}/clients", json=payload)
+        # Get the client UUID
+        clients = await self._admin_request("GET", f"realms/{realm}/clients?clientId={client_id}")
+        return clients[0]["id"]
+
+    async def create_user(self, realm: str, username: str, email: str,
+                          password: str, first_name: str = "", last_name: str = "") -> str:
+        """Create a user in the given realm."""
+        payload = {
+            "username": username,
+            "email": email,
+            "enabled": True,
+            "emailVerified": True,
+            "firstName": first_name,
+            "lastName": last_name,
+            "credentials": [{"type": "password", "value": password, "temporary": False}]
+        }
+        await self._admin_request("POST", f"realms/{realm}/users", json=payload)
+        # Get user ID
+        users = await self._admin_request("GET", f"realms/{realm}/users?username={username}")
+        return users[0]["id"]
+
+    def _generate_secret(self) -> str:
+        import secrets
+        return secrets.token_urlsafe(32)
