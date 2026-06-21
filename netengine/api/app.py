@@ -1,10 +1,13 @@
-# netengine/api/app.py
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer
 import os
 import aiohttp
 from netengine.core.state import RuntimeState
 from netengine.core.supabase_client import get_supabase
+from netengine.handlers.app_handler import AppHandler
+from netengine.handlers.docker_handler import DockerHandler
+from netengine.handlers.oidc_handler import OIDCHandler
+from netengine.handlers.pki_handler import PKIHandler
 
 app = FastAPI(title="NetEngine Operator API", version="0.1")
 
@@ -117,3 +120,29 @@ async def delete_and(and_name: str, user=Depends(get_current_user)):
     handler = ANDHandler(DockerHandler(), RuntimeState.load())
     await handler.deprovision_and(and_name)
     return {"status": "deleted"}
+
+
+# App Deploymen
+
+@app.post("/api/v1/orgs/{org}/apps")
+async def deploy_app(org: str, payload: dict, user=Depends(get_current_user)):
+
+    app_name = payload["app"]
+    subdomain = payload.get("subdomain", app_name)
+    config = payload.get("config", {})
+    # Check if org exists
+    supabase = get_supabase()
+    result = await supabase.table("world_registry").select("org_name").eq("org_name", org).execute()
+    if not result.data:
+        raise HTTPException(404, f"Org {org} not found")
+    docker = DockerHandler()
+    dns = DNSHandler()
+    pki = PKIHandler(docker, RuntimeState.load(), {})  # need spec or pass context
+    oidc = OIDCHandler(
+        keycloak_url="https://auth.internal",
+        admin_username="admin",
+        admin_password=RuntimeState.load().inworld_admin_password
+    )
+    handler = AppHandler(docker, dns, pki, oidc, RuntimeState.load())
+    deployment = await handler.deploy_app(org, app_name, subdomain, config)
+    return deployment

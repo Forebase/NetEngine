@@ -1,0 +1,72 @@
+import secrets
+from netengine.handlers.docker_handler import DockerHandler
+from netengine.handlers.dns import DNSHandler
+from netengine.handlers.pki_handler import PKIHandler
+
+class StorageHandler:
+    def __init__(self, docker: DockerHandler, dns: DNSHandler, pki: PKIHandler, state):
+        self.docker = docker
+        self.dns = dns
+        self.pki = pki
+        self.state = state
+        self.container_name = "netengines_minio"
+        self.storage_ip = "10.0.0.14"
+        self.storage_dns = "storage.platform.internal"
+
+    async def deploy_minio(self) -> None:
+        """Start MinIO container with TLS and create platform bucket."""
+        # 1. Issue cert for storage.platform.internal
+        cert, key = await self.pki.issue_cert(self.storage_dns, [])
+        # Write cert and key to a volume or host directory
+        cert_dir = "/var/lib/netengines/certs_minio"
+        import os
+        os.makedirs(cert_dir, exist_ok=True)
+        with open(f"{cert_dir}/public.crt", "w") as f:
+            f.write(cert)
+        with open(f"{cert_dir}/private.key", "w") as f:
+            f.write(key)
+
+        # 2. Generate access credentials
+        access_key = secrets.token_urlsafe(16)
+        secret_key = secrets.token_urlsafe(32)
+
+        # 3. Start MinIO container
+        await self.docker.start_container(
+            name=self.container_name,
+            image="minio/minio:latest",
+            command=["server", "/data", "--console-address", ":9001"],
+            volumes={cert_dir: {"bind": "/root/.minio/certs", "mode": "ro"}},
+            network="core",
+            ip=self.storage_ip,
+            environment={
+                "MINIO_ROOT_USER": access_key,
+                "MINIO_ROOT_PASSWORD": secret_key,
+                "MINIO_CERT_FILE": "/root/.minio/certs/public.crt",
+                "MINIO_KEY_FILE": "/root/.minio/certs/private.key",
+            }
+        )
+        # 4. Register DNS
+        await self.dns.add_zone_record("platform.internal", "A", "storage", self.storage_ip, 300)
+        # 5. Create platform bucket (via API or mc)
+        # We'll use `mc` CLI inside a one‑off container.
+        await self._create_bucket("platform", access_key, secret_key)
+        # 6. Store credentials in state
+        self.state.minio_access_key = access_key
+        self.state.minio_secret_key = secret_key
+        self.state.storage_deployed = True
+        self.state.save()
+
+    async def _create_bucket(self, bucket_name: str, access_key: str, secret_key: str) -> None:
+        """Use `mc` to create a bucket."""
+        # One‑off container using minio/mc
+        cmd = [
+            "sh", "-c",
+            f"mc alias set myminio https://{self.storage_ip} {access_key} {secret_key} --insecure && "
+            f"mc mb myminio/{bucket_name} --insecure"
+        ]
+        await self.docker.run_container_one_off(
+            image="minio/mc:latest",
+            command=cmd,
+            volumes={},
+            environment={}
+        )

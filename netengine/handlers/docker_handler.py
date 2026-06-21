@@ -1,5 +1,7 @@
 # netengines/handlers/docker_handler.py
 import asyncio
+import os
+
 import docker
 from docker.types import IPAMConfig, IPAMPool
 from typing import Optional, Dict, List
@@ -132,3 +134,22 @@ class DockerHandler:
     def _remove_network_sync(self, name):
         net = self.client.networks.get(name)
         net.remove()
+
+    # In netengine/handlers/docker_handler.py
+
+    async def copy_to_container(self, container_id: str, src_path: str, dest_path: str) -> None:
+        """Copy a file from host into a running container."""
+        import tarfile
+        import io
+        # Create a tar stream with the file
+        tar_stream = io.BytesIO()
+        with tarfile.open(fileobj=tar_stream, mode='w') as tar:
+            tar.add(src_path, arcname=os.path.basename(dest_path))
+        tar_stream.seek(0)
+        await asyncio.to_thread(
+            self._copy_to_container_sync, container_id, tar_stream, dest_path
+        )
+
+    def _copy_to_container_sync(self, container_id, tar_stream, dest_path):
+        container = self.client.containers.get(container_id)
+        container.put_archive(os.path.dirname(dest_path), tar_stream)

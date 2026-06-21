@@ -49,7 +49,8 @@ class Orchestrator:
             self.phase_3_pki,  # M2
             self.phase_5_registries,
             self.phase_6_inworld_identity,
-            self.phase_7_ands
+            self.phase_7_ands,
+            self.phase_8_services,
         ]
 
     async def run(self):
