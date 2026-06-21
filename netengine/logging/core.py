@@ -312,7 +312,6 @@ class LoggerFactory:
             compression="gz",
             backtrace=config.INCLUDE_TRACEBACK,
             diagnose=config.DEBUG,
-            buffer_size=config.BUFFER_SIZE,
         )
         cls._sinks.append(f"file:{name}")
     

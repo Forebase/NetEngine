@@ -32,9 +32,9 @@ _trace_context: contextvars.ContextVar["TraceContext"] = contextvars.ContextVar(
     "trace_context",
     default=None,
 )
-_span_stack: contextvars.ContextVar[list[str]] = contextvars.ContextVar(
+_span_stack: contextvars.ContextVar[Optional[list[str]]] = contextvars.ContextVar(
     "span_stack",
-    default_factory=list,
+    default=None,
 )
 
 
@@ -218,7 +218,7 @@ class TraceContextManager:
             current_context.parent_span_id = current_context.span_id
             current_context.span_id = span_id
         
-        stack = _span_stack.get()
+        stack = _span_stack.get() or []
         stack.append(span_id)
         _span_stack.set(stack)
         
@@ -227,7 +227,7 @@ class TraceContextManager:
     @staticmethod
     def pop_span() -> Optional[str]:
         """Pop the current span from the stack."""
-        stack = _span_stack.get()
+        stack = _span_stack.get() or []
         if stack:
             return stack.pop()
         return None
@@ -235,7 +235,7 @@ class TraceContextManager:
     @staticmethod
     def get_span_depth() -> int:
         """Get current span stack depth."""
-        return len(_span_stack.get())
+        return len(_span_stack.get() or [])
 
 
 # ============================================================================
