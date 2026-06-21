@@ -5,9 +5,9 @@ Tests the execute/healthcheck/should_skip interface for Phase 0 and Phases 1-2.
 
 from datetime import datetime
 
-from netengine.handlers.substrate import SubstrateHandler
-from netengine.handlers.dns import DNSHandler
 from netengine.handlers.context import PhaseContext
+from netengine.handlers.dns import DNSHandler
+from netengine.handlers.substrate import SubstrateHandler
 
 
 class TestSubstrateHandler:

@@ -64,9 +64,7 @@ class SubstrateHandler(BasePhaseHandler):
             logger.info(f"Orchestrator initialized: {orch_status['type']}")
 
             # 2. Create container networks
-            networks_output = await self._create_networks(
-                context, substrate_config.networks
-            )
+            networks_output = await self._create_networks(context, substrate_config.networks)
             substrate_output["networks"] = networks_output
             logger.info(f"Created {len(networks_output)} container networks")
 
