@@ -1,0 +1,140 @@
+# NetEngine Declarative Specification v0.2 — Minimal Example
+# The absolute minimum valid spec for bootstrap validation.
+
+metadata:
+  name: minimal-example
+  version: "1.0"
+  lifecycle: ephemeral
+
+substrate:
+  orchestrator: swarm
+  ntp:
+    enabled: true
+    servers:
+      - pool.ntp.org
+  networks:
+    platform:
+      type: bridge
+      subnet: 172.20.0.0/16
+      description: "Platform management network"
+    core:
+      type: bridge
+      subnet: 10.0.0.0/8
+      description: "In-world core network"
+  gateway:
+    platform_ip: 172.20.0.1
+    core_ip: 10.0.0.1
+    description: "Gateway stub"
+
+dns:
+  root:
+    enabled: true
+    type: authoritative
+    server: coredns
+    listen_ip: 10.0.0.2
+    soa_primary_ns: root.internal
+    soa_email: admin.internal
+    serial_policy: timestamp
+  platform_zone:
+    name: platform.internal
+    type: authoritative
+    listen_ip: 10.0.0.3
+  tlds:
+    - name: internal
+      description: "Default in-world TLD"
+      type: authoritative
+      listen_ip: 10.0.0.4
+
+pki:
+  root_ca:
+    cn: "NetEngines Root CA"
+    o: "Minimal Example"
+    c: "US"
+    key_storage_mode: ephemeral
+    cert_lifetime_days: 3650
+  acme:
+    enabled: true
+    listen_ip: 10.0.0.6
+    canonical_name: ca.platform.internal
+  dnssec_enabled: true
+  dnssec_ksk_lifetime_days: 365
+  dnssec_zsk_lifetime_days: 30
+
+identity_platform:
+  oidc_provider: keycloak
+  listen_ip: 10.0.0.7
+  canonical_name: auth.platform.internal
+  realm_name: platform
+  admin_user:
+    username: admin
+    email: admin@platform.internal
+  scopes:
+    - "netengines:read"
+    - "netengines:write"
+    - "netengines:admin"
+
+world_registry:
+  enabled: true
+  listen_ip: 10.0.0.8
+  canonical_name: registry.platform.internal
+  organizations: []
+  operators: []
+  whois:
+    enabled: true
+    listen_ip: 10.0.0.9
+    port: 43
+
+domain_registry:
+  enabled: true
+  listen_ip: 10.0.0.10
+  canonical_name: domainreg.platform.internal
+  tld_delegations: []
+  address_space: []
+  registrar:
+    enabled: true
+    listen_ip: 10.0.0.11
+    canonical_name: registrar.platform.internal
+
+identity_inworld:
+  oidc_provider: keycloak
+  listen_ip: 10.0.0.12
+  canonical_name: auth.internal
+  realm_name: inworld
+  org_users: []
+  scopes:
+    - profile
+    - email
+    - openid
+
+ands:
+  profiles: {}
+  instances: []
+
+world_services:
+  mail:
+    enabled: false
+  storage:
+    enabled: false
+
+org_apps:
+  enabled: true
+  catalog: []
+  deployments: []
+
+gateway_portal:
+  enabled: true
+  real_internet:
+    mode: isolated
+  cross_world:
+    mode: none
+
+operator:
+  api:
+    enabled: true
+    listen_ip: 172.20.0.11
+    port: 8080
+    canonical_name: api.platform.internal
+  auth:
+    provider: oidc
+    issuer: "https://auth.platform.internal/realms/platform"
+    required_scope: "netengines:read"
