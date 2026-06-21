@@ -63,7 +63,7 @@ class PKIPhaseHandler(BasePhaseHandler):
 
     async def should_skip(self, context: PhaseContext) -> bool:
         """Skip if already bootstrapped."""
-        return context.runtime_state.get("pki_bootstrapped", False)
+        return context.runtime_state.phase_completed.get("3", False)
 
     async def _emit_event(self, context, event_type, payload):
         event = EventEnvelope.create(

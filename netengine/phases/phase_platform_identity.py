@@ -90,6 +90,31 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
 
         logger.info("Phase 4 complete: platform identity bootstrapped")
 
+    async def healthcheck(self, context: PhaseContext) -> bool:
+        """Check if Keycloak platform is ready."""
+        try:
+            if not context.runtime_state.keycloak_platform_container_id:
+                return False
+            docker = DockerHandler()
+            container = docker.client.containers.get(context.runtime_state.keycloak_platform_container_id)
+            if container.status != "running":
+                return False
+            # Check OIDC discovery endpoint
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    "https://auth.platform.internal/.well-known/openid-configuration",
+                    ssl=False,
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    return resp.status == 200
+        except Exception:
+            return False
+
+    async def should_skip(self, context: PhaseContext) -> bool:
+        """Skip if Phase 4 already completed."""
+        return context.runtime_state.phase_completed.get("4", False)
+
     async def _wait_for_keycloak(self, url: str, timeout: int = 60):
         import asyncio
 
