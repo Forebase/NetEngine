@@ -63,15 +63,15 @@ class PKIPhaseHandler(BasePhaseHandler):
 
     async def should_skip(self, context: PhaseContext) -> bool:
         """Skip if already bootstrapped."""
-        return context.runtime_state.get("pki_bootstrapped", False)
+        return context.runtime_state.phase_completed.get("3", False)
 
     async def _emit_event(self, context, event_type, payload):
         event = EventEnvelope.create(
             event_type=event_type,
             emitted_by="pki_phase",
             payload=payload,
-            correlation_id=context.runtime_state.correlation_id,
-            parent_event_id=context.runtime_state.parent_event_id,
+            correlation_id=getattr(context.runtime_state, "correlation_id", None),
+            parent_event_id=getattr(context.runtime_state, "parent_event_id", None),
         )
         context.logger.info(f"Event emitted: {event_type}")
         # In M4+ you would queue to pgmq

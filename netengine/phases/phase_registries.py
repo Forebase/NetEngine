@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import datetime
 
 from netengine.core.pgmq_client import PGMQClient
@@ -53,6 +54,24 @@ class RegistriesPhaseHandler(BasePhaseHandler):
         context.runtime_state.phase_completed["5"] = True
         context.runtime_state.save()
         logger.info("Phase 5 complete")
+
+    async def healthcheck(self, context: PhaseContext) -> bool:
+        """Check if registries are healthy."""
+        try:
+            # Verify World Registry is accessible
+            world = WorldRegistryHandler()
+            # Try to query the registry (basic healthcheck)
+            supabase = __import__(
+                "netengine.core.supabase_client", fromlist=["get_supabase"]
+            ).get_supabase()
+            result = await supabase.table("world_registry").select("*").limit(1).execute()
+            return result.status_code == 200 if hasattr(result, "status_code") else True
+        except Exception:
+            return False
+
+    async def should_skip(self, context: PhaseContext) -> bool:
+        """Skip if Phase 5 already completed."""
+        return context.runtime_state.phase_completed.get("5", False)
 
     async def _consume_dns_updates(self, context: PhaseContext):
         """pgmq consumer: domain.registered -> DNSHandler.add_zone_record."""

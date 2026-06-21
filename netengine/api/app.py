@@ -7,6 +7,7 @@ from fastapi.security import OAuth2PasswordBearer
 from netengine.core.state import RuntimeState
 from netengine.core.supabase_client import get_supabase
 from netengine.handlers.app_handler import AppHandler
+from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.oidc_handler import OIDCHandler
 from netengine.handlers.pki_handler import PKIHandler
@@ -33,11 +34,18 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
         return {"sub": "bootstrap", "roles": ["admin"]}
 
     # Phase 4 complete – validate OIDC token via Keycloak introspection
+    # Get admin credentials from state or environment
+    admin_password = getattr(state, "bootstrap_admin_password", None) or os.environ.get(
+        "KEYCLOAK_ADMIN_PASSWORD", ""
+    )
+    if not admin_password:
+        raise HTTPException(status_code=500, detail="Keycloak admin credentials not configured")
+
     async with aiohttp.ClientSession() as session:
         async with session.post(
             f"{KEYCLOAK_ISSUER}/protocol/openid-connect/token/introspect",
             data={"token": token},
-            auth=aiohttp.BasicAuth("admin-cli", ""),  # or use client credentials
+            auth=aiohttp.BasicAuth("admin-cli", admin_password),
         ) as resp:
             if resp.status != 200:
                 raise HTTPException(status_code=401, detail="Invalid token")

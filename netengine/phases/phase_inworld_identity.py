@@ -75,6 +75,43 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
         context.runtime_state.save()
         logger.info("Phase 6 complete: in‑world identity ready")
 
+    async def healthcheck(self, context: PhaseContext) -> bool:
+        """Check if in-world Keycloak is healthy."""
+        try:
+            import aiohttp
+
+            container_id = getattr(context.runtime_state, "inworld_keycloak_container_id", None)
+            if not container_id:
+                return False
+
+            # Check container running
+            docker = DockerHandler()
+            try:
+                container = docker.client.containers.get(container_id)
+                if container.status != "running":
+                    return False
+            except Exception:
+                return False
+
+            # Check OIDC discovery
+            ssl_context = __import__("ssl").create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = __import__("ssl").CERT_NONE
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    "https://auth.internal/.well-known/openid-configuration",
+                    ssl=ssl_context,
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    return resp.status == 200
+        except Exception:
+            return False
+
+    async def should_skip(self, context: PhaseContext) -> bool:
+        """Skip if Phase 6 already completed."""
+        return context.runtime_state.phase_completed.get("6", False)
+
     async def _start_inworld_keycloak(self, context, inworld_spec, admin_password) -> str:
         """Start Keycloak container for in‑world."""
         # Issue cert for auth.internal
