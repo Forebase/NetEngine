@@ -79,10 +79,17 @@ RETURNS JSONB
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    msg JSONB;
+    msg RECORD;
 BEGIN
-    SELECT pgmq.pop(queue_name, timeout) INTO msg;
-    RETURN msg;
+    SELECT * FROM pgmq.pop(queue_name, timeout) INTO msg;
+    RETURN CASE WHEN msg IS NULL THEN NULL ELSE json_build_object(
+        'msg_id', msg.msg_id,
+        'message', msg.message,
+        'read_ct', msg.read_ct,
+        'enqueued_at', msg.enqueued_at,
+        'first_received_at', msg.first_received_at,
+        'next_msg_scheduled_for', msg.next_msg_scheduled_for
+    ) END;
 END;
 $$;
 
@@ -96,3 +103,14 @@ BEGIN
     RETURN TRUE;
 END;
 $$;
+
+-- App deployments (tracks deployed applications)
+CREATE TABLE IF NOT EXISTS app_deployments (
+    id              BIGSERIAL PRIMARY KEY,
+    org             TEXT NOT NULL,
+    app             TEXT NOT NULL,
+    domain          TEXT NOT NULL,
+    container_id    TEXT NOT NULL,
+    client_id       TEXT NOT NULL,
+    deployed_at     TIMESTAMPTZ DEFAULT NOW()
+);

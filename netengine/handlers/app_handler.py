@@ -1,4 +1,5 @@
 import secrets
+from datetime import datetime
 from typing import Any, Dict
 
 from netengine.core.pgmq_client import PGMQClient
@@ -91,16 +92,22 @@ class AppHandler:
         return container_id
 
     async def _get_gateway_ip(self, and_name: str) -> str:
-        """Query Supabase for the gateway IP of this AND."""
+        """Query Supabase for the CIDR of this AND and derive gateway IP."""
+        import ipaddress
+
         result = (
             await self.supabase.table("address_leases")
-            .select("gateway_ip")
+            .select("cidr")
             .eq("and_name", and_name)
             .execute()
         )
         if not result.data:
             raise RuntimeError(f"AND {and_name} not found")
-        return result.data[0]["gateway_ip"]
+        cidr = result.data[0]["cidr"]
+        # Gateway IP is the first usable IP in the CIDR block
+        network = ipaddress.ip_network(cidr, strict=False)
+        gateway_ip = str(network.network_address + 1)
+        return gateway_ip
 
     async def _inject_cert(self, container_id: str, domain: str, cert: str, key: str) -> None:
         """Write cert and key into the container (via volume or exec)."""

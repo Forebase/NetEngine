@@ -11,7 +11,7 @@ class PGMQClient:
 
     async def send(self, queue_name: str, event: EventEnvelope) -> int:
         """Enqueue an event; returns message ID."""
-        payload = event.dict()
+        payload = event.to_dict()
         # Supabase pgmq uses `pgmq.send` function.
         # We'll call the RPC function `pgmq_send` (needs to be created in Supabase).
         # Alternatively, use raw SQL via REST.
@@ -43,6 +43,8 @@ class PGMQClient:
         if msg and msg["msg_id"] == msg_id:
             # Increment retry count and send to DLQ
             envelope = EventEnvelope(**json.loads(msg["message"]))
+            if not hasattr(envelope, "retry_count"):
+                envelope.retry_count = 0
             envelope.retry_count += 1
             if envelope.retry_count >= 3:
                 await self.send(f"{queue_name}_dlq", envelope)
