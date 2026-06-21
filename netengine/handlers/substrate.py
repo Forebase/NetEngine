@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from netengine.events.schema import EventEnvelope
-from netengine.handlers.base import BasePhaseHandler
+from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 
 

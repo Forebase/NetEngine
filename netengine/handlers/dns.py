@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from netengine.events.schema import EventEnvelope
-from netengine.handlers.base import BasePhaseHandler
+from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 
 
@@ -170,6 +170,8 @@ class DNSHandler(BasePhaseHandler):
             context.logger.info("DNS already deployed, skipping Phases 1-2")
             return True
         return False
+
+
 
     # ─────────────────────────────────────────────
     # Phase 1: Root and Platform Zone Setup
@@ -512,3 +514,11 @@ class DNSHandler(BasePhaseHandler):
         )
         # M4+: Queue to pgmq
         # await context.pgmq_client.send(event)
+
+    async def add_zone_record(self, zone: str, record_type: str, name: str, value: str, ttl: int):  # TODO
+        # Write the record to the zone file for that zone.
+        # The zone file is mounted on the CoreDNS container, and the reload plugin watches it.
+        # We'll append or update the appropriate file.
+        # For simplicity, we can write a new file or use a template.
+        # Ensure the zone file is in the watched directory.
+        pass
