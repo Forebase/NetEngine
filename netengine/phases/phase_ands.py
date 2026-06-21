@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime
 
-from netengine.handlers import BasePhaseHandler
+from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.and_handler import ANDHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.docker_handler import DockerHandler

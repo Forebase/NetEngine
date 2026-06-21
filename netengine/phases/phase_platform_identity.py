@@ -8,6 +8,7 @@ from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.oidc_handler import OIDCHandler
+from netengine.handlers.pki_handler import PKIHandler
 from netengine.utils.run_migrations import apply_migrations
 
 
@@ -23,7 +24,7 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
         await apply_migrations()
 
         # 2. Generate or retrieve bootstrap admin password for Keycloak
-        admin_password = context.runtime_state.get("bootstrap_admin_password")
+        admin_password = getattr(context.runtime_state, "bootstrap_admin_password", None)
         if not admin_password:
             admin_password = secrets.token_urlsafe(16)
             context.runtime_state.bootstrap_admin_password = admin_password
@@ -88,6 +89,51 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
         context.runtime_state.save()
 
         logger.info("Phase 4 complete: platform identity bootstrapped")
+
+    async def healthcheck(self, context: PhaseContext) -> bool:
+        """Check if Keycloak platform is ready."""
+        import asyncio
+
+        import aiohttp
+
+        try:
+            # Check if container ID is set
+            container_id = getattr(context.runtime_state, "keycloak_platform_container_id", None)
+            if not container_id:
+                return False
+
+            # Check container is running
+            docker = DockerHandler()
+            try:
+                container = docker.client.containers.get(container_id)
+                if container.status != "running":
+                    return False
+            except Exception:
+                return False
+
+            # Check OIDC discovery endpoint
+            ssl_context = __import__("ssl").create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = __import__("ssl").CERT_NONE
+
+            async with aiohttp.ClientSession() as session:
+                try:
+                    async with session.get(
+                        "https://auth.platform.internal/.well-known/openid-configuration",
+                        ssl=ssl_context,
+                        timeout=aiohttp.ClientTimeout(total=5),
+                    ) as resp:
+                        return resp.status == 200
+                except asyncio.TimeoutError:
+                    return False
+                except aiohttp.ClientError:
+                    return False
+        except Exception:
+            return False
+
+    async def should_skip(self, context: PhaseContext) -> bool:
+        """Skip if Phase 4 already completed."""
+        return context.runtime_state.phase_completed.get("4", False)
 
     async def _wait_for_keycloak(self, url: str, timeout: int = 60):
         import asyncio

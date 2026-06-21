@@ -7,6 +7,7 @@ from fastapi.security import OAuth2PasswordBearer
 from netengine.core.state import RuntimeState
 from netengine.core.supabase_client import get_supabase
 from netengine.handlers.app_handler import AppHandler
+from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.oidc_handler import OIDCHandler
 from netengine.handlers.pki_handler import PKIHandler
