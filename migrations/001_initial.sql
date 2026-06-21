@@ -85,3 +85,14 @@ BEGIN
     RETURN msg;
 END;
 $$;
+
+-- pgmq_delete(queue_name, msg_id)
+CREATE OR REPLACE FUNCTION pgmq_delete(queue_name text, msg_id bigint)
+RETURNS boolean
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    PERFORM pgmq.delete(queue_name, msg_id);
+    RETURN TRUE;
+END;
+$$;

@@ -8,6 +8,7 @@ from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.oidc_handler import OIDCHandler
+from netengine.handlers.pki_handler import PKIHandler
 from netengine.utils.run_migrations import apply_migrations
 
 
