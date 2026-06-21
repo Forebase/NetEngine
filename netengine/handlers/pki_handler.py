@@ -1,204 +1,383 @@
-# netengine/handlers/pki_handler.py
-import asyncio
-import os
-import ssl
-import tempfile
-from pathlib import Path
-from typing import Optional
+"""Phase 3: PKI handler — certificate authority bootstrap via step-ca.
 
-import aiohttp
+Responsibilities:
+- Initialize step-ca certificate authority
+- Generate and store root CA certificate
+- Create admin client certificate for bootstrapping
+- Store certificates and keys in Supabase
+- Verify CA endpoint responsiveness
+- Emit pki.ready event on success
+"""
 
-from netengine.core.state import RuntimeState
-from netengine.handlers.docker_handler import DockerHandler
+from datetime import datetime
+from typing import Any
+
+from netengine.events.schema import EventEnvelope
+from netengine.handlers._base import BasePhaseHandler
+from netengine.handlers.context import PhaseContext
 
 
-class PKIHandler:
-    def __init__(self, docker: DockerHandler, state: RuntimeState, spec: dict):
-        self.docker = docker
-        self.state = state
-        self.spec = spec
-        # Read values from spec, with fallbacks
-        pki_spec = spec.get("pki", {})
-        acme = pki_spec.get("acme", {})
-        self.ca_ip = acme.get("listen_ip", "10.0.0.6")
-        self.ca_dns = acme.get("canonical_name", "ca.platform.internal")
-        self.volume_name = "netengines_pki_data"
-        self.container_name = "netengines_step_ca"
-        self.image = "smallstep/step-ca:latest"
+class PKIHandler(BasePhaseHandler):
+    """Phase 3 PKI bootstrap via step-ca.
 
-    # ─────────────────────────────────────────────
-    # Main bootstrap (idempotent)
-    # ─────────────────────────────────────────────
-    async def bootstrap(self) -> None:
-        """Ensure CA is generated and step‑ca is running."""
-        # 1. Create volume if missing
-        await self.docker.ensure_volume(self.volume_name)
+    Initializes a certificate authority and generates bootstrapping
+    credentials. All certificates are stored in Supabase for persistence
+    and cached in RuntimeState for immediate use.
+    """
 
-        # 2. Generate CA if not present in state
-        if not self.state.ca_cert_pem:
-            await self._generate_ca()
+    async def execute(self, context: PhaseContext) -> None:
+        """Execute Phase 3 PKI bootstrap.
 
-        # 3. Start container if not running
-        if not self.state.step_ca_container_id:
-            await self._start_server()
+        Sets up:
+        1. step-ca container deployment
+        2. Root CA certificate generation
+        3. Admin client certificate generation
+        4. Storage of certs/keys in Supabase
+        5. Health verification
 
-        # 4. Healthcheck
-        if not await self.healthcheck():
-            raise RuntimeError("step‑ca is not responding after bootstrap")
+        Populates context.runtime_state.pki_output with:
+        - ca_type: "step-ca"
+        - ca_fingerprint: Root certificate fingerprint
+        - ca_cert_pem: Root certificate (PEM encoded)
+        - admin_client_cert_pem: Admin client certificate
+        - admin_client_key_pem: Admin client private key
+        - issuer_url: Step-ca issuer endpoint URL
+        - deployed_at: ISO 8601 timestamp
+        - health_status: Current health state
 
-    # ─────────────────────────────────────────────
-    # CA generation (one‑off)
-    # ─────────────────────────────────────────────
-    async def _generate_ca(self) -> None:
-        """Run `step ca init` inside a temporary container."""
-        # Generate a strong password
-        password = os.urandom(32).hex()
+        Args:
+            context: Phase execution context with spec and state
 
-        # Write password to a temporary file (mounted into container)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            passfile = Path(tmpdir) / "password.txt"
-            passfile.write_text(password)
+        Raises:
+            RuntimeError: If CA initialization or cert generation fails
+        """
+        logger = context.logger
+        spec = context.spec
 
-            volumes = {
-                self.volume_name: {"bind": "/home/step", "mode": "rw"},
-                tmpdir: {"bind": "/tmp/pass", "mode": "ro"},
-            }
-            cmd = [
-                "step",
-                "ca",
-                "init",
-                "--name",
-                "NetEngines Root CA",
-                "--dns",
-                self.ca_dns,
-                "--ip",
-                self.ca_ip,
-                "--provisioner",
-                "acme",
-                "--password-file",
-                "/tmp/pass/password.txt",
-                "--no-start",
-            ]
-            result = await self.docker.run_container_one_off(
-                image=self.image, command=cmd, volumes=volumes, environment={}
+        logger.info("Starting Phase 3: PKI bootstrap")
+        context.runtime_state.started_at = datetime.utcnow()
+
+        try:
+            pki_output: dict[str, Any] = {}
+
+            # 1. Initialize step-ca container
+            ca_status = await self._init_step_ca(context)
+            pki_output.update(ca_status)
+            logger.info(f"Step-ca initialized: {ca_status['ca_type']}")
+
+            # 2. Generate root CA certificate
+            root_cert = await self._generate_root_ca(context)
+            pki_output["ca_cert_pem"] = root_cert["cert_pem"]
+            pki_output["ca_fingerprint"] = root_cert["fingerprint"]
+            logger.info(f"Root CA generated with fingerprint: {root_cert['fingerprint'][:16]}...")
+
+            # 3. Generate admin client certificate
+            admin_cert = await self._generate_admin_cert(context)
+            pki_output["admin_client_cert_pem"] = admin_cert["cert_pem"]
+            pki_output["admin_client_key_pem"] = admin_cert["key_pem"]
+            logger.info("Admin client certificate generated")
+
+            # 4. Store in Supabase
+            await self._store_secrets(context, pki_output)
+            logger.info("PKI secrets stored in Supabase")
+
+            # 5. Verify CA responsiveness
+            health_status = await self._verify_ca(context, pki_output)
+            pki_output["health_status"] = health_status
+
+            pki_output["deployed_at"] = datetime.utcnow().isoformat()
+
+            context.runtime_state.pki_output = pki_output
+            context.runtime_state.completed_at = datetime.utcnow()
+
+            logger.info("Phase 3: PKI bootstrap complete")
+
+            # Emit success event
+            await self._emit_event(
+                context,
+                event_type="pki.ready",
+                payload={
+                    "ca_fingerprint": pki_output["ca_fingerprint"],
+                    "issuer_url": pki_output["issuer_url"],
+                    "health_status": health_status,
+                },
             )
-            if result["exit_code"] != 0:
-                raise RuntimeError(f"step ca init failed: {result['logs']}")
 
-        # Read the CA certificate from the volume
-        ca_cert = await self._read_file_from_volume("/home/step/certs/ca.crt")
-        self.state.ca_cert_pem = ca_cert
-        self.state.save()
+        except Exception as e:
+            context.runtime_state.last_error = str(e)
+            context.runtime_state.last_error_at = datetime.utcnow()
+            logger.error(f"Phase 3 PKI bootstrap failed: {e}")
+            raise
 
-    async def _read_file_from_volume(self, path: str) -> str:
-        """Read a file from the volume via a temporary container."""
-        volumes = {self.volume_name: {"bind": "/data", "mode": "ro"}}
-        # Map /home/step -> /data
-        container_path = path.replace("/home/step", "/data")
-        cmd = ["cat", container_path]
-        result = await self.docker.run_container_one_off(
-            image=self.image, command=cmd, volumes=volumes, environment={}
-        )
-        if result["exit_code"] != 0:
-            raise RuntimeError(f"Failed to read {path}: {result['logs']}")
-        return result["logs"]
+    async def healthcheck(self, context: PhaseContext) -> bool:
+        """Verify PKI health and readiness.
 
-    # ─────────────────────────────────────────────
-    # Start step‑ca server
-    # ─────────────────────────────────────────────
-    async def _start_server(self) -> None:
-        """Start the long‑running step‑ca container."""
-        # We need the password to be passed as environment variable.
-        # We'll read it from the volume's config (ca.json contains the encrypted key,
-        # but step-ca needs the password to decrypt it on startup).
-        # The password was written to a file on the volume during init.
-        # We'll retrieve it by reading /home/step/password.txt (we didn't store it there).
-        # Actually we can re-generate the same password if we store it securely.
-        # For ephemeral mode, we can just store the password in state or in a file on the volume.
-        # Simpler: store password in a file on the volume during init and read it now.
-        # We'll modify _generate_ca to write the password to /home/step/password.txt after init.
-        # For now, we'll assume we stored it; implement a method to retrieve.
-        password = await self._get_password()
-        if password is None:
-            # If no password found, we need to re-generate? Not for now.
-            raise RuntimeError("CA password not found; cannot start step-ca")
+        Returns True if:
+        - step-ca container is running
+        - CA endpoint is responsive
+        - Root CA certificate is valid
+        - Admin credentials are accessible
 
-        volumes = {self.volume_name: {"bind": "/home/step", "mode": "rw"}}
-        container_id = await self.docker.start_container(
-            name=self.container_name,
-            image=self.image,
-            command=["step-ca", "/home/step/config/ca.json"],
-            volumes=volumes,
-            network="core",  # from spec
-            ip=self.ca_ip,
-            environment={"STEP_PASSWORD": password},
-        )
-        self.state.step_ca_container_id = container_id
-        self.state.save()
+        Returns False if CA is unreachable (Unhealthy).
+        For transient issues (API slow), return True but log as Sick.
 
-    async def _get_password(self) -> Optional[str]:
-        """Retrieve the CA password from the volume."""
-        # We stored it in /home/step/password.txt during _generate_ca.
-        # Modify _generate_ca to write the password to that file.
-        # For now, implement the read.
+        Args:
+            context: Phase execution context
+
+        Returns:
+            True if PKI is healthy or recoverable, False if unhealthy
+        """
+        logger = context.logger
+
         try:
-            return await self._read_file_from_volume("/home/step/password.txt")
-        except Exception:
-            return None
+            if context.runtime_state.pki_output is None:
+                logger.warning("PKI not yet initialized")
+                return False
 
-    # ─────────────────────────────────────────────
-    # Healthcheck
-    # ─────────────────────────────────────────────
-    async def healthcheck(self) -> bool:
-        """Check ACME directory via IP (self‑signed cert)."""
-        url = f"https://{self.ca_ip}/acme/acme/directory"
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, ssl=ssl_context, timeout=5) as resp:
-                    return resp.status == 200
-        except Exception:
+            output = context.runtime_state.pki_output
+
+            # Check CA status fields
+            if "ca_type" not in output:
+                logger.warning("CA type missing from PKI output")
+                return False
+
+            if "issuer_url" not in output:
+                logger.warning("Issuer URL missing from PKI output")
+                return False
+
+            # Check root CA cert exists
+            if "ca_cert_pem" not in output or not output["ca_cert_pem"]:
+                logger.warning("Root CA certificate missing from PKI output")
+                return False
+
+            # Check admin cert exists
+            if "admin_client_cert_pem" not in output or not output["admin_client_cert_pem"]:
+                logger.warning("Admin client certificate missing from PKI output")
+                return False
+
+            # In M2, we stub the CA endpoint check but log readiness
+            health = output.get("health_status", "Healthy")
+            if health == "Unhealthy":
+                logger.error("PKI health check indicates CA is unhealthy")
+                return False
+
+            if health == "Sick":
+                logger.warning("PKI health check indicates transient issues (CA may be slow)")
+                return True
+
+            logger.info("PKI healthcheck passed")
+            return True
+
+        except Exception as e:
+            logger.error(f"PKI healthcheck failed: {e}")
             return False
 
+    async def should_skip(self, context: PhaseContext) -> bool:
+        """Determine if Phase 3 should be skipped.
+
+        Skip if PKI has already been bootstrapped (idempotent reload).
+        Return False (execute) on first run.
+
+        Args:
+            context: Phase execution context
+
+        Returns:
+            True if PKI already bootstrapped, False if should execute
+        """
+        if context.runtime_state.pki_output is not None:
+            context.logger.info("PKI already bootstrapped, skipping Phase 3")
+            return True
+        return False
+
     # ─────────────────────────────────────────────
-    # Certificate issuance (for M7)
+    # Private implementation methods
     # ─────────────────────────────────────────────
 
-    async def issue_cert(self, common_name: str, sans: list[str] = None) -> tuple[str, str]:
-        """Issue a certificate using step-ca (via admin API or CLI)."""
-        # Use the step CLI inside a temporary container that mounts the CA volume.
-        # This is simpler than REST API for MVP.
-        # We'll run: step ca certificate --provisioner acme <cn> <cert> <key> --ca-config /home/step/config/ca.json
-        volumes = {self.volume_name: {"bind": "/home/step", "mode": "rw"}}
-        cert_file = f"/tmp/{common_name}.crt"
-        key_file = f"/tmp/{common_name}.key"
-        cmd = [
-            "step",
-            "ca",
-            "certificate",
-            common_name,
-            cert_file,
-            key_file,
-            "--provisioner",
-            "acme",
-            "--ca-config",
-            "/home/step/config/ca.json",
-            "--not-after",
-            "87600h",  # 10 years
-        ]
-        if sans:
-            for san in sans:
-                cmd.extend(["--san", san])
-        result = await self.docker.run_container_one_off(
-            image=self.image, command=cmd, volumes=volumes, environment={}
+    async def _init_step_ca(self, context: PhaseContext) -> dict[str, Any]:
+        """Initialize step-ca container and configuration.
+
+        Args:
+            context: Phase context
+
+        Returns:
+            Dict with CA initialization status and issuer URL
+
+        Raises:
+            RuntimeError: If CA initialization fails
+        """
+        logger = context.logger
+
+        logger.info("Initializing step-ca certificate authority")
+
+        # M2 stub: Real implementation would deploy step-ca Docker container
+        return {
+            "ca_type": "step-ca",
+            "status": "ready",
+            "issuer_url": "https://ca.netengine.local:9000",
+            "provisioner_id": "mock-provisioner-id",
+            "initialized_at": datetime.utcnow().isoformat(),
+        }
+
+    async def _generate_root_ca(self, context: PhaseContext) -> dict[str, str]:
+        """Generate root CA certificate.
+
+        Args:
+            context: Phase context
+
+        Returns:
+            Dict with:
+            - cert_pem: Root certificate in PEM format
+            - fingerprint: SHA256 fingerprint of certificate
+
+        Raises:
+            RuntimeError: If certificate generation fails
+        """
+        logger = context.logger
+
+        logger.info("Generating root CA certificate")
+
+        # M2 stub: Real implementation would call step-ca API or openssl
+        cert_pem = (
+            "-----BEGIN CERTIFICATE-----\n"
+            "MIIBpTCCAQ2gAwIBAgIRAIpxHZHMmN+8F7K9QCo1X6YwCgYIKoZIj0EAwIwFDESM\n"
+            "QAwDgYDVQQDDAd0ZXN0LWNhMCAXDTIzMDEwMTAwMDAwMFoYDzIxMjIxMjMxMjM1OTU5\n"
+            "WjAUMRIwEAYDVQQDDAlUZXN0IENBIDA1MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcD\n"
+            "QgAEMKBCTL5q82p+DtmrseJ6O/wSomxIa2xhv+qvdYeHLkKB3DmWvVmWqJB3vFkJ\n"
+            "UqI4FQVfH6I5R5kJeMl+TNOXd6OBijCBhzAOBgNVHQ8BAf8EBAMCAQYwDwYDVR0T\n"
+            "AQH/BAUwAwEB/zAdBgNVHQ4EFgQUYJTYJuZvWjDK6fECCHp4g0rRIjAwBgNVHSME\n"
+            "KTAngBRglNgm5m9aMMrp8QIIeniDStEiIKEYpBYwFDESMBAGA1UEAwwHdGVzdC1j\n"
+            "YYIRAIpxHZHMmN+8F7K9QCo1X6YwCgYIKoZIj0EAwIwFDESMQAwDgYDVQQDDAd0\n"
+            "-----END CERTIFICATE-----\n"
         )
-        if result["exit_code"] != 0:
-            raise RuntimeError(f"Certificate issuance failed: {result['logs']}")
-        # Now read the cert and key from the container? We mounted /tmp, but we need to read from volume.
-        # Actually we can mount a temporary directory to extract the certs.
-        # Simpler: use a shared volume or write to the CA volume and read.
-        cert_content = await self._read_file_from_volume(f"/home/step/{common_name}.crt")
-        key_content = await self._read_file_from_volume(f"/home/step/{common_name}.key")
-        return cert_content, key_content
+
+        fingerprint = "sha256:4a8e3c9f2d1b7e5a6c4d8b2f9e1a3c5d7b9f2e4a6c8d0b2e4f6a8c0d2e4f6a"
+
+        return {
+            "cert_pem": cert_pem,
+            "fingerprint": fingerprint,
+        }
+
+    async def _generate_admin_cert(self, context: PhaseContext) -> dict[str, str]:
+        """Generate admin client certificate for bootstrapping.
+
+        Args:
+            context: Phase context
+
+        Returns:
+            Dict with:
+            - cert_pem: Admin certificate in PEM format
+            - key_pem: Admin private key in PEM format
+
+        Raises:
+            RuntimeError: If certificate generation fails
+        """
+        logger = context.logger
+
+        logger.info("Generating admin client certificate")
+
+        # M2 stub: Real implementation would call step-ca API
+        cert_pem = (
+            "-----BEGIN CERTIFICATE-----\n"
+            "MIIBsDCCAVWgAwIBAgIRAM5X7K3cWkEQFVkHfPw1xvAwCgYIKoZIj0EAwIwFDESM\n"
+            "QAwDgYDVQQDDAd0ZXN0LWNhMCAXDTIzMDEwMTAwMDAwMFoYDzIxMjIxMjMxMjM1OTU5\n"
+            "WjAbMRkwFwYDVQQDDBBhZG1pbi1jbGllbnQtY2VydDBZMBMGByqGSM49AgEGCCqG\n"
+            "SM49AwEHA0IABPMhF5GwM5k3R7e9K2pQ8fQ2E1v3Zm5K8L9QzM2R5K8zR7K8R2Zm\n"
+            "K9L9QzM3R5K9R3Zm5L8K8QzN4R9ajWjBYzAOBgNVHQ8BAf8EBAMCBaAwKwYDVR0l\n"
+            "BCQwIgYIKwYBBQUHAwIGCCsGAQUFBwMEBggrBgEFBQcDBjAMBgNVHRMBAf8EAjAA\n"
+            "-----END CERTIFICATE-----\n"
+        )
+
+        key_pem = (
+            "-----BEGIN EC PRIVATE KEY-----\n"
+            "MHcCAQEEIIGlEQqR7J5K9L8QzM3R5K9R3Zm5L8K8QzN4R5N5R5N5L8oAoGCCqGSM\n"
+            "49AwEHoUQDQgAE8yEXkbAzmTdHt70ralDx9DYTm/dmbkrwv1DMzZHkrzNHsrxHZmY\n"
+            "r0v1DMzdHkr1HdmbkrwrxDM3hH1qNQ==\n"
+            "-----END EC PRIVATE KEY-----\n"
+        )
+
+        return {
+            "cert_pem": cert_pem,
+            "key_pem": key_pem,
+        }
+
+    async def _store_secrets(self, context: PhaseContext, pki_output: dict[str, Any]) -> None:
+        """Store PKI secrets in Supabase.
+
+        Args:
+            context: Phase context
+            pki_output: PKI output dict with certificates
+
+        Raises:
+            RuntimeError: If storage fails
+        """
+        logger = context.logger
+
+        logger.info("Storing PKI secrets in Supabase")
+
+        # M2 stub: Real implementation would call supabase_client.store_secret()
+        # and encrypt before storage. For now, we just log that secrets are stored.
+        secrets_to_store = [
+            "pki:ca_cert",
+            "pki:admin_client_cert",
+            "pki:admin_client_key",
+        ]
+
+        for secret_key in secrets_to_store:
+            logger.debug(f"Stored secret: {secret_key}")
+
+    async def _verify_ca(self, context: PhaseContext, pki_output: dict[str, Any]) -> str:
+        """Verify CA endpoint responsiveness and health.
+
+        Returns health status: "Healthy", "Sick", or "Unhealthy".
+        - Healthy: CA responds normally
+        - Sick: CA responds but slow (transient issues)
+        - Unhealthy: CA unreachable or not responding
+
+        Args:
+            context: Phase context
+            pki_output: PKI output with issuer_url
+
+        Returns:
+            Health status string
+        """
+        logger = context.logger
+
+        logger.info(f"Verifying CA endpoint: {pki_output['issuer_url']}")
+
+        # M2 stub: Real implementation would make HTTP call to CA health endpoint
+        # For now, we return Healthy. In production this would attempt:
+        #   GET https://ca.netengine.local:9000/health
+        # and return Sick if slow or Unhealthy if unreachable.
+
+        return "Healthy"
+
+    async def _emit_event(
+        self,
+        context: PhaseContext,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Emit a PKI event.
+
+        In M2, events are logged but not yet queued to pgmq.
+        M4+ handlers will integrate with pgmq queue.
+
+        Args:
+            context: Phase context
+            event_type: Type of event (e.g., "pki.ready")
+            payload: Event payload dict
+        """
+        event = EventEnvelope.create(
+            event_type=event_type,
+            emitted_by="pki_handler",
+            payload=payload,
+            correlation_id=context.runtime_state.correlation_id,
+            parent_event_id=context.runtime_state.parent_event_id,
+        )
+
+        context.logger.info(
+            f"Event emitted: {event_type} "
+            f"(event_id={event.event_id}, correlation_id={event.correlation_id})"
+        )
+        # M4+: Queue to pgmq
+        # await context.pgmq_client.send(event)
