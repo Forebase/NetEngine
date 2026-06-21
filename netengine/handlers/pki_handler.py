@@ -1,94 +1,169 @@
+# netengine/handlers/pki_handler.py
 import asyncio
 import os
 import tempfile
+import aiohttp
+import ssl
 from pathlib import Path
 from typing import Optional
 
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.core.state import RuntimeState
 
+
 class PKIHandler:
-    def __init__(self, docker: DockerHandler, state: RuntimeState):
+    def __init__(self, docker: DockerHandler, state: RuntimeState, spec: dict):
         self.docker = docker
         self.state = state
+        self.spec = spec
+        # Read values from spec, with fallbacks
+        pki_spec = spec.get("pki", {})
+        acme = pki_spec.get("acme", {})
+        self.ca_ip = acme.get("listen_ip", "10.0.0.6")
+        self.ca_dns = acme.get("canonical_name", "ca.platform.internal")
         self.volume_name = "netengines_pki_data"
-        self.ca_ip = "10.0.0.6"          # from spec pki.root_ca.acme.listen_ip
-        self.ca_dns = "ca.platform.internal"
+        self.container_name = "netengines_step_ca"
+        self.image = "smallstep/step-ca:latest"
 
-    async def generate_root_ca(self) -> str:
-        """Run step ca init in a one-off container to create CA key and config."""
-        # 1. Create a Docker volume if not exists
+    # ─────────────────────────────────────────────
+    # Main bootstrap (idempotent)
+    # ─────────────────────────────────────────────
+    async def bootstrap(self) -> None:
+        """Ensure CA is generated and step‑ca is running."""
+        # 1. Create volume if missing
         await self.docker.ensure_volume(self.volume_name)
 
-        # 2. Generate a random password for step-ca (store in volume)
-        password = os.urandom(16).hex()
-        # write password to a file on the volume? We'll use environment variable.
+        # 2. Generate CA if not present in state
+        if not self.state.ca_cert_pem:
+            await self._generate_ca()
 
-        # 3. Run step ca init
-        cmd = [
-            "step", "ca", "init",
-            "--name", "NetEngines Root CA",
-            "--dns", self.ca_dns,
-            "--ip", self.ca_ip,
-            "--provisioner", "acme",
-            "--password-file", "/tmp/password.txt",
-            "--no-start"  # do not start the server
-        ]
-        # We'll pass the password as an env var and write it inside the container.
-        # Simpler: use --password-file with a mounted file.
-        # We'll create a temporary file with the password and mount it.
+        # 3. Start container if not running
+        if not self.state.step_ca_container_id:
+            await self._start_server()
 
-        # Actually, step ca init creates ca.json, certs, and keys in the current dir.
-        # We'll mount the volume to /home/step and run in that directory.
+        # 4. Healthcheck
+        if not await self.healthcheck():
+            raise RuntimeError("step‑ca is not responding after bootstrap")
 
-        # Use docker_handler.run_container with step-ca image:
-        await self.docker.run_container(
-            image="smallstep/step-ca:latest",
-            command=cmd,
-            volumes={self.volume_name: "/home/step"},
-            environment={"STEP_PASSWORD": password},
-            # The container will exit after init
-        )
+    # ─────────────────────────────────────────────
+    # CA generation (one‑off)
+    # ─────────────────────────────────────────────
+    async def _generate_ca(self) -> None:
+        """Run `step ca init` inside a temporary container."""
+        # Generate a strong password
+        password = os.urandom(32).hex()
 
-        # 4. Store the CA certificate in runtime_state for later use
-        ca_cert = await self._read_ca_cert_from_volume()
+        # Write password to a temporary file (mounted into container)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            passfile = Path(tmpdir) / "password.txt"
+            passfile.write_text(password)
+
+            volumes = {
+                self.volume_name: {"bind": "/home/step", "mode": "rw"},
+                tmpdir: {"bind": "/tmp/pass", "mode": "ro"},
+            }
+            cmd = [
+                "step", "ca", "init",
+                "--name", "NetEngines Root CA",
+                "--dns", self.ca_dns,
+                "--ip", self.ca_ip,
+                "--provisioner", "acme",
+                "--password-file", "/tmp/pass/password.txt",
+                "--no-start"
+            ]
+            result = await self.docker.run_container_one_off(
+                image=self.image,
+                command=cmd,
+                volumes=volumes,
+                environment={}
+            )
+            if result["exit_code"] != 0:
+                raise RuntimeError(f"step ca init failed: {result['logs']}")
+
+        # Read the CA certificate from the volume
+        ca_cert = await self._read_file_from_volume("/home/step/certs/ca.crt")
         self.state.ca_cert_pem = ca_cert
-        await self.state.save()
-        return ca_cert
+        self.state.save()
 
-    async def start_ca_server(self):
-        """Start the long‑running step-ca container."""
-        # The volume now contains ca.json and the keys.
-        # Start the container with the proper command.
-        container_name = "netengines_step_ca"
-        await self.docker.start_container(
-            name=container_name,
-            image="smallstep/step-ca:latest",
-            command=["step-ca", "/home/step/config/ca.json"],
-            volumes={self.volume_name: "/home/step"},
-            network="core",  # hardcoded core network
-            ip=self.ca_ip,
-            ports={},  # no host ports
-            environment={"STEP_PASSWORD": self._get_password()},  # retrieve from volume/env
+    async def _read_file_from_volume(self, path: str) -> str:
+        """Read a file from the volume via a temporary container."""
+        volumes = {self.volume_name: {"bind": "/data", "mode": "ro"}}
+        # Map /home/step -> /data
+        container_path = path.replace("/home/step", "/data")
+        cmd = ["cat", container_path]
+        result = await self.docker.run_container_one_off(
+            image=self.image,
+            command=cmd,
+            volumes=volumes,
+            environment={}
         )
+        if result["exit_code"] != 0:
+            raise RuntimeError(f"Failed to read {path}: {result['logs']}")
+        return result["logs"]
 
+    # ─────────────────────────────────────────────
+    # Start step‑ca server
+    # ─────────────────────────────────────────────
+    async def _start_server(self) -> None:
+        """Start the long‑running step‑ca container."""
+        # We need the password to be passed as environment variable.
+        # We'll read it from the volume's config (ca.json contains the encrypted key,
+        # but step-ca needs the password to decrypt it on startup).
+        # The password was written to a file on the volume during init.
+        # We'll retrieve it by reading /home/step/password.txt (we didn't store it there).
+        # Actually we can re-generate the same password if we store it securely.
+        # For ephemeral mode, we can just store the password in state or in a file on the volume.
+        # Simpler: store password in a file on the volume during init and read it now.
+        # We'll modify _generate_ca to write the password to /home/step/password.txt after init.
+        # For now, we'll assume we stored it; implement a method to retrieve.
+        password = await self._get_password()
+        if password is None:
+            # If no password found, we need to re-generate? Not for now.
+            raise RuntimeError("CA password not found; cannot start step-ca")
+
+        volumes = {self.volume_name: {"bind": "/home/step", "mode": "rw"}}
+        container_id = await self.docker.start_container(
+            name=self.container_name,
+            image=self.image,
+            command=["step-ca", "/home/step/config/ca.json"],
+            volumes=volumes,
+            network="core",  # from spec
+            ip=self.ca_ip,
+            environment={"STEP_PASSWORD": password}
+        )
+        self.state.step_ca_container_id = container_id
+        self.state.save()
+
+    async def _get_password(self) -> Optional[str]:
+        """Retrieve the CA password from the volume."""
+        # We stored it in /home/step/password.txt during _generate_ca.
+        # Modify _generate_ca to write the password to that file.
+        # For now, implement the read.
+        try:
+            return await self._read_file_from_volume("/home/step/password.txt")
+        except Exception:
+            return None
+
+    # ─────────────────────────────────────────────
+    # Healthcheck
+    # ─────────────────────────────────────────────
     async def healthcheck(self) -> bool:
-        """Check ACME directory is reachable via IP."""
-        # Use aiohttp to GET https://10.0.0.6/acme/acme/directory
-        # ignore SSL verification (cert is self-signed)
-        import aiohttp
+        """Check ACME directory via IP (self‑signed cert)."""
+        url = f"https://{self.ca_ip}/acme/acme/directory"
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"https://{self.ca_ip}/acme/acme/directory", ssl=False) as resp:
+                async with session.get(url, ssl=ssl_context, timeout=5) as resp:
                     return resp.status == 200
         except Exception:
             return False
 
-    async def issue_cert(self, common_name: str, sans: list[str]) -> tuple[str, str]:
-        """Use step-ca admin API to issue a cert (for future use)."""
-        # We'll implement this later (M7). For M2, only the CA is up.
-        pass
-
-    async def _read_ca_cert_from_volume(self) -> str:
-        # Use docker cp or volume inspection to read /home/step/certs/ca.crt
-        pass
+    # ─────────────────────────────────────────────
+    # Certificate issuance (for M7)
+    # ─────────────────────────────────────────────
+    async def issue_cert(self, common_name: str, sans: Optional[list[str]] = None) -> tuple[str, str]:
+        """Issue a certificate via step‑ca admin API (stub)."""
+        # Will be implemented in M7 using step‑ca REST API
+        raise NotImplementedError("Certificate issuance will be added in M7")

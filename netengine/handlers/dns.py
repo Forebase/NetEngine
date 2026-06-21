@@ -8,11 +8,13 @@ Responsibilities:
 - Verify DNS service is responding
 - Emit dns.zones_ready event on success
 """
-
+import asyncio
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from netengine.events.schema import EventEnvelope
+from netengine.handlers import context
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 
@@ -490,7 +492,8 @@ class DNSHandler(BasePhaseHandler):
         event_type: str,
         payload: dict[str, Any],
     ) -> None:
-        """Emit a DNS event.
+        """
+        Emit a DNS event.
 
         In M1, events are logged but not yet queued to pgmq.
         M4+ handlers will integrate with pgmq queue.
@@ -515,10 +518,76 @@ class DNSHandler(BasePhaseHandler):
         # M4+: Queue to pgmq
         # await context.pgmq_client.send(event)
 
-    async def add_zone_record(self, zone: str, record_type: str, name: str, value: str, ttl: int):  # TODO
-        # Write the record to the zone file for that zone.
-        # The zone file is mounted on the CoreDNS container, and the reload plugin watches it.
-        # We'll append or update the appropriate file.
-        # For simplicity, we can write a new file or use a template.
-        # Ensure the zone file is in the watched directory.
-        pass
+    async def add_zone_record(self, zone: str, record_type: str, name: str, value: str, ttl: int = 300) -> None:
+        """Add or update a DNS record in the zone file.
+
+        This writes to the zone file on disk (mounted volume) and relies on CoreDNS's
+        `auto` plugin to reload.
+
+        Args:
+            zone: The zone name (e.g., "platform.internal")
+            record_type: "A", "AAAA", "CNAME", etc.
+            name: The subdomain (e.g., "ca" for ca.platform.internal)
+            value: The IP address or target
+            ttl: Time-to-live in seconds
+        """
+        logger = context.logger if hasattr(self, 'logger') else None
+        if logger:
+            logger.info(f"Adding DNS record: {name}.{zone} {record_type} {value}")
+
+        # The zone files are stored in a directory that CoreDNS watches.
+        # We'll assume the directory is /var/lib/netengines/dns/zones (mounted).
+        zone_dir = Path("/var/lib/netengines/dns/zones")  # adjust to your mount point
+        zone_file = zone_dir / f"{zone}.zone"
+
+        # Ensure the zone file exists (if not, create with SOA etc.)
+        if not zone_file.exists():
+            # This should have been created during Phase 2, but just in case:
+            raise RuntimeError(f"Zone file for {zone} does not exist; run DNS phase first.")
+
+        # Build the record line
+        record_line = f"{name} {ttl} IN {record_type} {value}\n"
+
+        # Read existing content, check if record already exists (simple append for now)
+        # In a real implementation, you'd parse the zone and update/replace.
+        # For MVP, we append; if the record exists, it might duplicate.
+        # Better: we'll use a simple function to replace or append.
+        # We'll implement an atomic update: read, modify, write.
+        await asyncio.to_thread(self._upsert_record_sync, zone_file, name, record_type, value, ttl)
+
+        # Trigger CoreDNS reload by touching a file or relying on `auto` plugin.
+        # The `auto` plugin watches for changes, so writing is enough.
+        # But we can also touch the zone file to force a reload (optional).
+        # No action needed.
+
+    def _upsert_record_sync(self, zone_file: Path, name: str, record_type: str, value: str, ttl: int):
+        """Synchronous helper to upsert a record in the zone file."""
+        import re
+        # Read existing content
+        if not zone_file.exists():
+            raise FileNotFoundError(f"Zone file {zone_file} not found")
+
+        with open(zone_file, "r") as f:
+            lines = f.readlines()
+
+        # Build the new record line
+        new_line = f"{name} {ttl} IN {record_type} {value}\n"
+
+        # Find and replace if record exists; otherwise append.
+        # Simple: remove any existing line that starts with the same name and type.
+        # We'll use a regex to match the record.
+        pattern = re.compile(rf"^{re.escape(name)}\s+\d+\s+IN\s+{record_type}\s+.*$", re.IGNORECASE)
+        new_lines = []
+        replaced = False
+        for line in lines:
+            if pattern.match(line):
+                new_lines.append(new_line)
+                replaced = True
+            else:
+                new_lines.append(line)
+        if not replaced:
+            new_lines.append(new_line)
+
+        # Write back
+        with open(zone_file, "w") as f:
+            f.writelines(new_lines)
