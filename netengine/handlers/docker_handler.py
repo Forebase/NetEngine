@@ -91,3 +91,44 @@ class DockerHandler:
         container = self.client.containers.get(container_id)
         container.stop(timeout=10)
         container.remove()
+
+    async def create_network(self, name: str, driver: str = "bridge", subnet: str = None, internal: bool = False):
+        """Create a Docker network."""
+        await asyncio.to_thread(
+            self._create_network_sync, name, driver, subnet, internal
+        )
+
+    def _create_network_sync(self, name, driver, subnet, internal):
+        ipam_pool = None
+        if subnet:
+            ipam_pool = docker.types.IPAMPool(subnet=subnet)
+            ipam_config = docker.types.IPAMConfig(pool_configs=[ipam_pool])
+        else:
+            ipam_config = None
+        self.client.networks.create(
+            name=name,
+            driver=driver,
+            internal=internal,
+            ipam=ipam_config
+        )
+
+    async def connect_network(self, container: str, network: str, ip: str):
+        await asyncio.to_thread(self._connect_network_sync, container, network, ip)
+
+    def _connect_network_sync(self, container, network, ip):
+        net = self.client.networks.get(network)
+        net.connect(container, ipv4_address=ip)
+
+    async def disconnect_network(self, container: str, network: str):
+        await asyncio.to_thread(self._disconnect_network_sync, container, network)
+
+    def _disconnect_network_sync(self, container, network):
+        net = self.client.networks.get(network)
+        net.disconnect(container)
+
+    async def remove_network(self, name: str):
+        await asyncio.to_thread(self._remove_network_sync, name)
+
+    def _remove_network_sync(self, name):
+        net = self.client.networks.get(name)
+        net.remove()

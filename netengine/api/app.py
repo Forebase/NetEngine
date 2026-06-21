@@ -98,3 +98,22 @@ async def admit_org(org: dict, user=Depends(get_current_user)):
         and_profile=org.get("and_profile", "business")
     )
     return {"status": "admitted"}
+
+
+# ANDs
+
+@app.post("/api/v1/ands/{and_name}/profile")
+async def change_and_profile(and_name: str, profile: str, user=Depends(get_current_user)):
+    from netengine.handlers.and_handler import ANDHandler
+    from netengine.handlers.docker_handler import DockerHandler
+    handler = ANDHandler(DockerHandler(), RuntimeState.load())
+    await handler.update_and_profile(and_name, profile)
+    return {"status": "updated"}
+
+@app.delete("/api/v1/ands/{and_name}")
+async def delete_and(and_name: str, user=Depends(get_current_user)):
+    from netengine.handlers.and_handler import ANDHandler
+    from netengine.handlers.docker_handler import DockerHandler
+    handler = ANDHandler(DockerHandler(), RuntimeState.load())
+    await handler.deprovision_and(and_name)
+    return {"status": "deleted"}
