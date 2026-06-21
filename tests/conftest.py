@@ -64,6 +64,28 @@ def runtime_state() -> RuntimeState:
     return RuntimeState()
 
 
+@pytest.fixture
+def runtime_state_with_substrate() -> RuntimeState:
+    """Runtime state pre-populated with substrate output.
+
+    Used for DNS and later phase tests that require Phase 0 to have run first.
+    Substrate tests use the plain runtime_state fixture instead.
+    """
+    state = RuntimeState()
+    # Mock substrate output so DNS handler dependency check passes
+    state.substrate_output = {
+        "orchestrator": "docker",
+        "networks": {
+            "platform": {"subnet": "172.20.0.0/16", "created": True},
+            "core": {"subnet": "10.0.0.0/8", "created": True},
+        },
+        "gateway": {"platform_ip": "172.20.0.1", "core_ip": "10.0.0.1"},
+        "ntp": {"enabled": True, "synced": True},
+        "healthy": True,
+    }
+    return state
+
+
 # ─────────────────────────────────────────────
 # Phase Context Fixtures
 # ─────────────────────────────────────────────
@@ -72,10 +94,32 @@ def runtime_state() -> RuntimeState:
 @pytest.fixture
 def phase_context(
     minimal_spec: NetEngineSpec,
+    runtime_state_with_substrate: RuntimeState,
+    logger: logging.Logger,
+) -> PhaseContext:
+    """Phase context ready for DNS and later handler testing.
+
+    Uses runtime_state_with_substrate to mock Phase 0 completion,
+    so DNS/later phases can run without actually executing substrate.
+    """
+    return PhaseContext(
+        spec=minimal_spec,
+        runtime_state=runtime_state_with_substrate,
+        logger=logger,
+    )
+
+
+@pytest.fixture
+def phase_context_substrate(
+    minimal_spec: NetEngineSpec,
     runtime_state: RuntimeState,
     logger: logging.Logger,
 ) -> PhaseContext:
-    """Phase context ready for handler testing."""
+    """Phase context for Substrate handler testing.
+
+    Uses plain runtime_state (no substrate_output pre-populated)
+    so substrate handler tests can verify Phase 0 execution properly.
+    """
     return PhaseContext(
         spec=minimal_spec,
         runtime_state=runtime_state,
@@ -86,13 +130,13 @@ def phase_context(
 @pytest.fixture
 def phase_context_single_org(
     single_org_spec: NetEngineSpec,
-    runtime_state: RuntimeState,
+    runtime_state_with_substrate: RuntimeState,
     logger: logging.Logger,
 ) -> PhaseContext:
     """Phase context with single-org spec."""
     return PhaseContext(
         spec=single_org_spec,
-        runtime_state=runtime_state,
+        runtime_state=runtime_state_with_substrate,
         logger=logger,
     )
 

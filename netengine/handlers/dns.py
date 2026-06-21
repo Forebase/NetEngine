@@ -59,6 +59,14 @@ class DNSHandler(BasePhaseHandler):
         dns_config = spec.dns
 
         logger.info("Starting Phases 1-2: DNS hierarchy setup")
+
+        # Validate substrate dependency
+        if context.runtime_state.substrate_output is None:
+            raise RuntimeError(
+                "Substrate phase (Phase 0) must complete before DNS setup. "
+                "Ensure Phase 0 has run and created networks."
+            )
+
         context.runtime_state.started_at = datetime.utcnow()
 
         try:
@@ -493,8 +501,8 @@ class DNSHandler(BasePhaseHandler):
         """
         Emit a DNS event.
 
-        In M1, events are logged but not yet queued to pgmq.
-        M4+ handlers will integrate with pgmq queue.
+        Events are emitted for causal tracing and queued to pgmq for downstream handlers.
+        If pgmq_client is not available (M1-M3 testing), events are logged only.
 
         Args:
             context: Phase context
@@ -513,74 +521,145 @@ class DNSHandler(BasePhaseHandler):
             f"Event emitted: {event_type} "
             f"(event_id={event.event_id}, correlation_id={event.correlation_id})"
         )
-        # M4+: Queue to pgmq
-        # await context.pgmq_client.send(event)
+
+        # Queue to pgmq for M4+ event processing
+        if context.pgmq_client is not None:
+            try:
+                await context.pgmq_client.send(event)
+                context.logger.debug(f"Event queued to pgmq: {event_type}")
+            except Exception as e:
+                context.logger.warning(f"Failed to queue event to pgmq: {e}")
+        else:
+            context.logger.debug("pgmq_client not available (M1-M3 testing); event logged only")
 
     async def add_zone_record(
-        self, zone: str, record_type: str, name: str, value: str, ttl: int = 300
+        self,
+        context: PhaseContext,
+        zone: str,
+        record_type: str,
+        name: str,
+        value: str,
+        ttl: int = 300,
     ) -> None:
         """Add or update a DNS record in the zone file.
 
-        This writes to the zone file on disk (mounted volume) and relies on CoreDNS's
-        `auto` plugin to reload.
+        In M2, this operates on in-memory zone file strings in runtime_state.dns_output.
+        Future (M4+): Integrate with disk-backed zone files and CoreDNS reload.
 
         Args:
+            context: Phase context (contains runtime_state with dns_output)
             zone: The zone name (e.g., "platform.internal")
-            record_type: "A", "AAAA", "CNAME", etc.
-            name: The subdomain (e.g., "ca" for ca.platform.internal)
-            value: The IP address or target
-            ttl: Time-to-live in seconds
+            record_type: "A", "AAAA", "CNAME", "NS", "MX", etc.
+            name: The subdomain (e.g., "ca" for ca.platform.internal, or "@" for root)
+            value: The IP address, target CNAME, or NS server name
+            ttl: Time-to-live in seconds (default: 300)
+
+        Raises:
+            RuntimeError: If DNS phase hasn't run or zone doesn't exist
         """
-        pass  # zone record updates logged by caller via context.logger
+        logger = context.logger
 
-        # The zone files are stored in a directory that CoreDNS watches.
-        # We'll assume the directory is /var/lib/netengines/dns/zones (mounted).
-        zone_dir = Path("/var/lib/netengines/dns/zones")  # adjust to your mount point
-        zone_file = zone_dir / f"{zone}.zone"
+        # Validate that DNS phase has run
+        if context.runtime_state.dns_output is None:
+            raise RuntimeError(
+                "DNS phase must run before adding records. "
+                "Call DNS handler execute() first."
+            )
 
-        # Ensure the zone file exists (if not, create with SOA etc.)
-        if not zone_file.exists():
-            # This should have been created during Phase 2, but just in case:
-            raise RuntimeError(f"Zone file for {zone} does not exist; run DNS phase first.")
+        dns_output = context.runtime_state.dns_output
+        zone_files = dns_output.get("zone_files", {})
 
-        await asyncio.to_thread(self._upsert_record_sync, zone_file, name, record_type, value, ttl)
+        # Check if zone exists
+        if zone not in zone_files:
+            raise RuntimeError(
+                f"Zone '{zone}' not found in zone_files. "
+                f"Available zones: {list(zone_files.keys())}"
+            )
 
-        # Trigger CoreDNS reload by touching a file or relying on `auto` plugin.
-        # The `auto` plugin watches for changes, so writing is enough.
-        # But we can also touch the zone file to force a reload (optional).
-        # No action needed.
+        # Update the zone file in-memory
+        zone_content = zone_files[zone]
+        new_record = self._build_record_line(name, record_type, value, ttl)
 
-    def _upsert_record_sync(
-        self, zone_file: Path, name: str, record_type: str, value: str, ttl: int
-    ) -> None:
-        """Synchronous helper to upsert a record in the zone file."""
+        # Update zone file by finding and replacing or appending
+        updated_content = await asyncio.to_thread(
+            self._upsert_record_in_memory, zone_content, name, record_type, new_record
+        )
+
+        # Update the zone file in runtime_state
+        dns_output["zone_files"][zone] = updated_content
+
+        logger.info(
+            f"Zone record updated: {zone} {record_type} {name} -> {value} (TTL: {ttl})"
+        )
+
+    @staticmethod
+    def _build_record_line(name: str, record_type: str, value: str, ttl: int) -> str:
+        """Build an RFC 1035 compliant DNS record line.
+
+        Args:
+            name: Subdomain or "@" for root
+            record_type: "A", "AAAA", "CNAME", "NS", "MX", etc.
+            value: Record value (IP, hostname, etc.)
+            ttl: Time-to-live
+
+        Returns:
+            Record line in RFC 1035 format
+        """
+        # Add trailing dot to name and value if they look like hostnames (for NS, CNAME, etc.)
+        if record_type in ("NS", "CNAME", "MX", "PTR") and not value.endswith("."):
+            value = f"{value}."
+        if name != "@" and not name.endswith("."):
+            # name stays without dot for brevity in zone files (implied)
+            pass
+
+        return f"{name} {ttl} IN {record_type} {value}"
+
+    @staticmethod
+    def _upsert_record_in_memory(
+        zone_content: str, name: str, record_type: str, new_record: str
+    ) -> str:
+        """Update a record in a zone file string (in-memory).
+
+        Finds and replaces existing record, or appends if not found.
+        Preserves zone file structure (comments, section markers, etc.).
+
+        Args:
+            zone_content: Current zone file content
+            name: Record name being upserted
+            record_type: Record type (for matching)
+            new_record: New record line to insert
+
+        Returns:
+            Updated zone file content
+        """
         import re
 
-        # Read existing content
-        if not zone_file.exists():
-            raise FileNotFoundError(f"Zone file {zone_file} not found")
+        lines = zone_content.split("\n")
 
-        with open(zone_file, "r") as f:
-            lines = f.readlines()
+        # Pattern to match existing record: "name TTL IN record_type ..."
+        # Handles optional trailing dot, various TTLs, and variations
+        pattern = re.compile(
+            rf"^{re.escape(name)}\s+\d+\s+IN\s+{record_type}\s+",
+            re.IGNORECASE,
+        )
 
-        # Build the new record line
-        new_line = f"{name} {ttl} IN {record_type} {value}\n"
-
-        # Find and replace if record exists; otherwise append.
-        # Simple: remove any existing line that starts with the same name and type.
-        # We'll use a regex to match the record.
-        pattern = re.compile(rf"^{re.escape(name)}\s+\d+\s+IN\s+{record_type}\s+.*$", re.IGNORECASE)
         new_lines = []
-        replaced = False
+        found = False
+
         for line in lines:
             if pattern.match(line):
-                new_lines.append(new_line)
-                replaced = True
+                # Replace existing record
+                new_lines.append(new_record)
+                found = True
             else:
                 new_lines.append(line)
-        if not replaced:
-            new_lines.append(new_line)
 
-        # Write back
-        with open(zone_file, "w") as f:
-            f.writelines(new_lines)
+        if not found:
+            # Record doesn't exist; append it before trailing blank lines
+            # Find last non-empty line
+            while new_lines and new_lines[-1].strip() == "":
+                new_lines.pop()
+            new_lines.append(new_record)
+            new_lines.append("")  # Restore trailing blank
+
+        return "\n".join(new_lines)
