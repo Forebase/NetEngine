@@ -1,5 +1,7 @@
-import pytest
 import asyncio
+
+import pytest
+
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
 from netengine.spec.loader import load_spec
@@ -14,6 +16,7 @@ async def test_phase_4():
     await orch.phase_3_pki()  # if not run
     # Now run Phase 4 handler directly
     from netengine.phases.phase_platform_identity import PlatformIdentityPhaseHandler
+
     handler = PlatformIdentityPhaseHandler()
     await handler.execute(orch.context)
 

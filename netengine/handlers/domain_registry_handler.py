@@ -1,9 +1,11 @@
 # netengine/handlers/domain_registry_handler.py
 import ipaddress
-from typing import Dict, Any, List
-from netengine.core.supabase_client import get_supabase
+from typing import Any, Dict, List
+
 from netengine.core.pgmq_client import PGMQClient
+from netengine.core.supabase_client import get_supabase
 from netengine.events.schema import EventEnvelope
+
 
 class DomainRegistryHandler:
     def __init__(self):
@@ -23,10 +25,12 @@ class DomainRegistryHandler:
         # We'll fetch the pool and allocate a /24 or /28 from it.
         # For MVP simplicity, we allocate the whole CIDR or a fixed sub‑range.
         # A production implementation would use row locking and sub‑allocation.
-        result = await self.supabase.table("address_pools")\
-            .select("cidr")\
-            .eq("profile", profile)\
+        result = (
+            await self.supabase.table("address_pools")
+            .select("cidr")
+            .eq("profile", profile)
             .execute()
+        )
         if not result.data:
             raise RuntimeError(f"No address pool for profile {profile}")
         pool_cidr = result.data[0]["cidr"]
@@ -39,16 +43,12 @@ class DomainRegistryHandler:
 
     async def register_domain(self, domain: str, org_name: str, ns_records: List[str]) -> None:
         """Register a domain; emit DNS update event."""
-        data = {
-            "domain": domain,
-            "org_name": org_name,
-            "ns_records": ns_records
-        }
+        data = {"domain": domain, "org_name": org_name, "ns_records": ns_records}
         await self.supabase.table("domain_records").upsert(data).execute()
         # Emit DNS update event
         event = EventEnvelope.create(
             event_type="domain.registered",
             emitted_by="domain_registry_handler",
-            payload={"domain": domain, "org": org_name, "ns": ns_records}
+            payload={"domain": domain, "org": org_name, "ns": ns_records},
         )
         await self.pgmq.send("dns_updates", event)

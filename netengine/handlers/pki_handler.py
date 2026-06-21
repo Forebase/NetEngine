@@ -1,14 +1,15 @@
 # netengine/handlers/pki_handler.py
 import asyncio
 import os
-import tempfile
-import aiohttp
 import ssl
+import tempfile
 from pathlib import Path
 from typing import Optional
 
-from netengine.handlers.docker_handler import DockerHandler
+import aiohttp
+
 from netengine.core.state import RuntimeState
+from netengine.handlers.docker_handler import DockerHandler
 
 
 class PKIHandler:
@@ -63,19 +64,23 @@ class PKIHandler:
                 tmpdir: {"bind": "/tmp/pass", "mode": "ro"},
             }
             cmd = [
-                "step", "ca", "init",
-                "--name", "NetEngines Root CA",
-                "--dns", self.ca_dns,
-                "--ip", self.ca_ip,
-                "--provisioner", "acme",
-                "--password-file", "/tmp/pass/password.txt",
-                "--no-start"
+                "step",
+                "ca",
+                "init",
+                "--name",
+                "NetEngines Root CA",
+                "--dns",
+                self.ca_dns,
+                "--ip",
+                self.ca_ip,
+                "--provisioner",
+                "acme",
+                "--password-file",
+                "/tmp/pass/password.txt",
+                "--no-start",
             ]
             result = await self.docker.run_container_one_off(
-                image=self.image,
-                command=cmd,
-                volumes=volumes,
-                environment={}
+                image=self.image, command=cmd, volumes=volumes, environment={}
             )
             if result["exit_code"] != 0:
                 raise RuntimeError(f"step ca init failed: {result['logs']}")
@@ -92,10 +97,7 @@ class PKIHandler:
         container_path = path.replace("/home/step", "/data")
         cmd = ["cat", container_path]
         result = await self.docker.run_container_one_off(
-            image=self.image,
-            command=cmd,
-            volumes=volumes,
-            environment={}
+            image=self.image, command=cmd, volumes=volumes, environment={}
         )
         if result["exit_code"] != 0:
             raise RuntimeError(f"Failed to read {path}: {result['logs']}")
@@ -129,7 +131,7 @@ class PKIHandler:
             volumes=volumes,
             network="core",  # from spec
             ip=self.ca_ip,
-            environment={"STEP_PASSWORD": password}
+            environment={"STEP_PASSWORD": password},
         )
         self.state.step_ca_container_id = container_id
         self.state.save()
@@ -173,22 +175,24 @@ class PKIHandler:
         cert_file = f"/tmp/{common_name}.crt"
         key_file = f"/tmp/{common_name}.key"
         cmd = [
-            "step", "ca", "certificate",
+            "step",
+            "ca",
+            "certificate",
             common_name,
             cert_file,
             key_file,
-            "--provisioner", "acme",
-            "--ca-config", "/home/step/config/ca.json",
-            "--not-after", "87600h"  # 10 years
+            "--provisioner",
+            "acme",
+            "--ca-config",
+            "/home/step/config/ca.json",
+            "--not-after",
+            "87600h",  # 10 years
         ]
         if sans:
             for san in sans:
                 cmd.extend(["--san", san])
         result = await self.docker.run_container_one_off(
-            image=self.image,
-            command=cmd,
-            volumes=volumes,
-            environment={}
+            image=self.image, command=cmd, volumes=volumes, environment={}
         )
         if result["exit_code"] != 0:
             raise RuntimeError(f"Certificate issuance failed: {result['logs']}")

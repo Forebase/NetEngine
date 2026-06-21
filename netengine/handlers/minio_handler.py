@@ -1,7 +1,9 @@
 import secrets
-from netengine.handlers.docker_handler import DockerHandler
+
 from netengine.handlers.dns import DNSHandler
+from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.pki_handler import PKIHandler
+
 
 class StorageHandler:
     def __init__(self, docker: DockerHandler, dns: DNSHandler, pki: PKIHandler, state):
@@ -20,6 +22,7 @@ class StorageHandler:
         # Write cert and key to a volume or host directory
         cert_dir = "/var/lib/netengines/certs_minio"
         import os
+
         os.makedirs(cert_dir, exist_ok=True)
         with open(f"{cert_dir}/public.crt", "w") as f:
             f.write(cert)
@@ -43,7 +46,7 @@ class StorageHandler:
                 "MINIO_ROOT_PASSWORD": secret_key,
                 "MINIO_CERT_FILE": "/root/.minio/certs/public.crt",
                 "MINIO_KEY_FILE": "/root/.minio/certs/private.key",
-            }
+            },
         )
         # 4. Register DNS
         await self.dns.add_zone_record("platform.internal", "A", "storage", self.storage_ip, 300)
@@ -60,13 +63,11 @@ class StorageHandler:
         """Use `mc` to create a bucket."""
         # One‑off container using minio/mc
         cmd = [
-            "sh", "-c",
+            "sh",
+            "-c",
             f"mc alias set myminio https://{self.storage_ip} {access_key} {secret_key} --insecure && "
-            f"mc mb myminio/{bucket_name} --insecure"
+            f"mc mb myminio/{bucket_name} --insecure",
         ]
         await self.docker.run_container_one_off(
-            image="minio/mc:latest",
-            command=cmd,
-            volumes={},
-            environment={}
+            image="minio/mc:latest", command=cmd, volumes={}, environment={}
         )

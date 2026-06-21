@@ -1,7 +1,9 @@
 import ipaddress
-from typing import Dict, Any
-from netengine.handlers.docker_handler import DockerHandler
+from typing import Any, Dict
+
 from netengine.handlers.dns import DNSHandler
+from netengine.handlers.docker_handler import DockerHandler
+
 
 class MailHandler:
     def __init__(self, docker: DockerHandler, dns: DNSHandler, state):
@@ -22,7 +24,7 @@ class MailHandler:
             volumes={},
             network="core",
             ip=self.mail_ip,
-            environment={}
+            environment={},
         )
         # 2. Register DNS A record
         await self.dns.add_zone_record("internal", "A", "mail", self.mail_ip, 300)

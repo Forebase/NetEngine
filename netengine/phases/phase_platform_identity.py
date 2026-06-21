@@ -1,13 +1,15 @@
-from datetime import datetime
 import os
 import secrets
+from datetime import datetime
+
+from netengine.core.supabase_client import get_supabase
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
-from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.dns import DNSHandler
+from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.oidc_handler import OIDCHandler
-from netengine.core.supabase_client import get_supabase
 from netengine.utils.run_migrations import apply_migrations
+
 
 class PlatformIdentityPhaseHandler(BasePhaseHandler):
     """Phase 4: Platform identity (Keycloak + Supabase)."""
@@ -55,7 +57,7 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
                 "KC_HTTPS_CERTIFICATE_KEY_FILE": "/certs/auth.key",
                 "KC_BOOTSTRAP_ADMIN_USERNAME": "admin",
                 "KC_BOOTSTRAP_ADMIN_PASSWORD": admin_password,
-            }
+            },
         )
         context.runtime_state.keycloak_platform_container_id = container_id
         context.runtime_state.save()
@@ -71,14 +73,14 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
         oidc = OIDCHandler(
             keycloak_url="https://auth.platform.internal",
             admin_username="admin",
-            admin_password=admin_password
+            admin_password=admin_password,
         )
         realm_id = await oidc.create_platform_realm("platform")
         user_id = await oidc.create_admin_user(
             realm="platform",
             username="admin",
             email="admin@platform.internal",
-            password=admin_password
+            password=admin_password,
         )
         context.runtime_state.platform_realm_id = realm_id
         context.runtime_state.admin_user_id = user_id
@@ -88,8 +90,10 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
         logger.info("Phase 4 complete: platform identity bootstrapped")
 
     async def _wait_for_keycloak(self, url: str, timeout: int = 60):
-        import aiohttp
         import asyncio
+
+        import aiohttp
+
         start = datetime.utcnow()
         while (datetime.utcnow() - start).total_seconds() < timeout:
             try:

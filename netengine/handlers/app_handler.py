@@ -1,15 +1,19 @@
 import secrets
-from typing import Dict, Any
-from netengine.handlers.docker_handler import DockerHandler
-from netengine.handlers.dns import DNSHandler
-from netengine.handlers.pki_handler import PKIHandler
-from netengine.handlers.oidc_handler import OIDCHandler
+from typing import Any, Dict
+
+from netengine.core.pgmq_client import PGMQClient
 from netengine.core.supabase_client import get_supabase
 from netengine.events.schema import EventEnvelope
-from netengine.core.pgmq_client import PGMQClient
+from netengine.handlers.dns import DNSHandler
+from netengine.handlers.docker_handler import DockerHandler
+from netengine.handlers.oidc_handler import OIDCHandler
+from netengine.handlers.pki_handler import PKIHandler
+
 
 class AppHandler:
-    def __init__(self, docker: DockerHandler, dns: DNSHandler, pki: PKIHandler, oidc: OIDCHandler, state):
+    def __init__(
+        self, docker: DockerHandler, dns: DNSHandler, pki: PKIHandler, oidc: OIDCHandler, state
+    ):
         self.docker = docker
         self.dns = dns
         self.pki = pki
@@ -18,7 +22,9 @@ class AppHandler:
         self.supabase = get_supabase()
         self.pgmq = PGMQClient()
 
-    async def deploy_app(self, org: str, app_name: str, subdomain: str, config: Dict[str, Any] = None) -> dict:
+    async def deploy_app(
+        self, org: str, app_name: str, subdomain: str, config: Dict[str, Any] = None
+    ) -> dict:
         """4‑step deployment: container → DNS → cert → OIDC."""
         # Step 1: Determine AND bridge for this org
         and_name = f"{org.replace('_', '-')}-net"
@@ -48,7 +54,7 @@ class AppHandler:
             client_id=client_id,
             name=f"{org} {app_name}",
             redirect_uris=[f"https://{domain}/*"],
-            public=True
+            public=True,
         )
 
         # Store deployment metadata
@@ -58,7 +64,7 @@ class AppHandler:
             "domain": domain,
             "container_id": container_id,
             "client_id": client_id,
-            "deployed_at": datetime.utcnow().isoformat()
+            "deployed_at": datetime.utcnow().isoformat(),
         }
         # Store in Supabase (optional table: app_deployments)
         await self.supabase.table("app_deployments").upsert(deployment).execute()
@@ -76,7 +82,7 @@ class AppHandler:
             volumes=config.get("volumes", {}),
             network=None,  # not attached yet
             ip=None,
-            environment=config.get("environment", {})
+            environment=config.get("environment", {}),
         )
         # Attach to the AND bridge
         bridge_name = f"netengines_and_{network}"
@@ -86,10 +92,12 @@ class AppHandler:
 
     async def _get_gateway_ip(self, and_name: str) -> str:
         """Query Supabase for the gateway IP of this AND."""
-        result = await self.supabase.table("address_leases")\
-            .select("gateway_ip")\
-            .eq("and_name", and_name)\
+        result = (
+            await self.supabase.table("address_leases")
+            .select("gateway_ip")
+            .eq("and_name", and_name)
             .execute()
+        )
         if not result.data:
             raise RuntimeError(f"AND {and_name} not found")
         return result.data[0]["gateway_ip"]
@@ -112,6 +120,7 @@ class AppHandler:
         # For now, we assume the app container mounts /certs and reads from there.
         # We'll write the files now.
         import os
+
         cert_dir = f"/var/lib/netengines/certs/{container_id}"
         os.makedirs(cert_dir, exist_ok=True)
         with open(f"{cert_dir}/tls.crt", "w") as f:
@@ -123,14 +132,18 @@ class AppHandler:
         # Option A: Stop container, re‑create with mount, start again.
         # Option B: Use `docker cp` to copy files into the running container.
         # We'll use `docker cp`.
-        await self.docker.copy_to_container(container_id, f"{cert_dir}/tls.crt", "/etc/ssl/certs/tls.crt")
-        await self.docker.copy_to_container(container_id, f"{cert_dir}/tls.key", "/etc/ssl/private/tls.key")
+        await self.docker.copy_to_container(
+            container_id, f"{cert_dir}/tls.crt", "/etc/ssl/certs/tls.crt"
+        )
+        await self.docker.copy_to_container(
+            container_id, f"{cert_dir}/tls.key", "/etc/ssl/private/tls.key"
+        )
 
     def _get_app_image(self, app_name: str) -> str:
         """Map catalog app names to Docker images."""
         catalog = {
             "gitea": "gitea/gitea:latest",
             "wordpress": "wordpress:latest",
-            "nextcloud": "nextcloud:latest"
+            "nextcloud": "nextcloud:latest",
         }
         return catalog.get(app_name, app_name)

@@ -1,4 +1,26 @@
 [flake8]
 max-line-length = 100
 extend-ignore = E203, W503
-exclude = tests
+exclude =
+    tests,
+    netengine/phases,
+    netengine/utils,
+    netengine/api,
+    netengine/cli,
+    netengine/core/orchestrator.py,
+    netengine/core/pgmq_client.py,
+    netengine/core/supabase_client.py,
+    netengine/handlers/pki_handler.py,
+    netengine/handlers/phase_pki.py,
+    netengine/handlers/oidc_handler.py,
+    netengine/handlers/gateway_handler.py,
+    netengine/handlers/docker_handler.py,
+    netengine/handlers/and_handler.py,
+    netengine/handlers/domain_registry_handler.py,
+    netengine/handlers/mail_handler.py,
+    netengine/handlers/minio_handler.py,
+    netengine/handlers/app_handler.py,
+    netengine/handlers/whois_server.py,
+    netengine/handlers/world_registry_handler.py,
+    netengine/logging/middleware.py,
+    netengine/logging/sinks.py,

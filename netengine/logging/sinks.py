@@ -12,25 +12,25 @@ Provides:
 import json
 import queue
 import threading
-from typing import Optional, Callable, Any
-from datetime import datetime, timezone
-from dataclasses import dataclass
-from abc import ABC, abstractmethod
 import traceback
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Callable, Optional
 
 from loguru import logger
-
 
 # ============================================================================
 # Circuit Breaker Pattern
 # ============================================================================
+
 
 class CircuitBreaker:
     """
     Prevents cascading failures when external services are down.
     Implements half-open state for recovery detection.
     """
-    
+
     def __init__(
         self,
         failure_threshold: int = 5,
@@ -46,23 +46,23 @@ class CircuitBreaker:
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.name = name
-        
+
         self.failure_count = 0
         self.last_failure_time = None
         self.state = "closed"  # closed, open, half-open
         self._lock = threading.Lock()
-    
+
     def call(self, func: Callable, *args, **kwargs) -> Any:
         """
         Execute function with circuit breaker protection.
-        
+
         Args:
             func: Callable to execute
             *args, **kwargs: Arguments to pass to func
-            
+
         Returns:
             Result of func() if circuit is closed
-            
+
         Raises:
             CircuitBreakerOpen: If circuit is open
         """
@@ -72,7 +72,7 @@ class CircuitBreaker:
                     self.state = "half-open"
                 else:
                     raise CircuitBreakerOpen(f"{self.name} is open")
-        
+
         try:
             result = func(*args, **kwargs)
             self._on_success()
@@ -80,20 +80,20 @@ class CircuitBreaker:
         except Exception as e:
             self._on_failure()
             raise
-    
+
     def _should_attempt_recovery(self) -> bool:
         """Check if enough time has passed for recovery attempt."""
         if not self.last_failure_time:
             return True
         elapsed = datetime.now(timezone.utc).timestamp() - self.last_failure_time
         return elapsed >= self.recovery_timeout
-    
+
     def _on_success(self) -> None:
         """Handle successful call."""
         with self._lock:
             self.failure_count = 0
             self.state = "closed"
-    
+
     def _on_failure(self) -> None:
         """Handle failed call."""
         with self._lock:
@@ -101,7 +101,7 @@ class CircuitBreaker:
             self.last_failure_time = datetime.now(timezone.utc).timestamp()
             if self.failure_count >= self.failure_threshold:
                 self.state = "open"
-    
+
     def get_status(self) -> dict:
         """Get circuit breaker status."""
         with self._lock:
@@ -114,6 +114,7 @@ class CircuitBreaker:
 
 class CircuitBreakerOpen(Exception):
     """Raised when circuit breaker is open."""
+
     pass
 
 
@@ -121,12 +122,13 @@ class CircuitBreakerOpen(Exception):
 # Async Queue Sink
 # ============================================================================
 
+
 class AsyncQueueSink:
     """
     Async-friendly sink that queues logs and processes them in background.
     Prevents blocking when external services are slow.
     """
-    
+
     def __init__(
         self,
         process_func: Callable,
@@ -144,11 +146,11 @@ class AsyncQueueSink:
         self.process_func = process_func
         self.batch_size = batch_size
         self.batch_timeout = batch_timeout
-        
+
         self.queue = queue.Queue(maxsize=queue_size)
         self.batch = []
         self.last_flush = datetime.now(timezone.utc).timestamp()
-        
+
         # Start background worker
         self.worker_thread = threading.Thread(
             target=self._worker_loop,
@@ -156,7 +158,7 @@ class AsyncQueueSink:
             name=f"AsyncQueueSink-Worker",
         )
         self.worker_thread.start()
-    
+
     def __call__(self, record: dict) -> None:
         """Sink callable interface."""
         try:
@@ -168,7 +170,7 @@ class AsyncQueueSink:
                 self.queue.put_nowait(record)
             except queue.Empty:
                 pass
-    
+
     def _worker_loop(self) -> None:
         """Background worker processing loop."""
         while True:
@@ -176,28 +178,27 @@ class AsyncQueueSink:
                 # Get next item with timeout
                 record = self.queue.get(timeout=self.batch_timeout)
                 self.batch.append(record)
-                
+
                 # Process batch if full
                 if len(self.batch) >= self.batch_size:
                     self._flush_batch()
-            
+
             except queue.Empty:
                 # Timeout - flush partial batch if data exists
                 if self.batch:
-                    elapsed = (datetime.now(timezone.utc).timestamp() - 
-                              self.last_flush)
+                    elapsed = datetime.now(timezone.utc).timestamp() - self.last_flush
                     if elapsed >= self.batch_timeout:
                         self._flush_batch()
-            
+
             except Exception as e:
                 # Log error but continue
                 logger.error(f"Error in AsyncQueueSink worker: {e}")
-    
+
     def _flush_batch(self) -> None:
         """Process accumulated batch."""
         if not self.batch:
             return
-        
+
         try:
             # Process batch (synchronously for now)
             # Could be made async with asyncio integration
@@ -207,7 +208,7 @@ class AsyncQueueSink:
         except Exception as e:
             logger.error(f"Error flushing AsyncQueueSink batch: {e}")
             # Keep batch for retry
-    
+
     def flush(self) -> None:
         """Manually flush pending batch."""
         self._flush_batch()
@@ -217,16 +218,17 @@ class AsyncQueueSink:
 # Supabase Sink
 # ============================================================================
 
+
 class SupabaseSink:
     """
     PostgreSQL/Supabase sink for audit logs and structured logging.
-    
+
     Stores logs in a PostgreSQL table with:
     - Full record details (level, message, context)
     - Trace context (trace_id, span_id)
     - Query performance tracking
     - Automatic timestamp and circuit breaker protection
-    
+
     Table schema:
         CREATE TABLE logs (
             id BIGSERIAL PRIMARY KEY,
@@ -243,7 +245,7 @@ class SupabaseSink:
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
     """
-    
+
     def __init__(
         self,
         supabase_client,
@@ -259,29 +261,29 @@ class SupabaseSink:
         self.supabase = supabase_client
         self.table_name = table_name
         self.circuit_breaker = circuit_breaker or CircuitBreaker(name="SupabaseSink")
-    
+
     def __call__(self, record: dict) -> None:
         """Sink callable interface."""
         try:
             log_entry = self._format_record(record)
-            
+
             def insert():
                 self.supabase.table(self.table_name).insert(log_entry).execute()
-            
+
             self.circuit_breaker.call(insert)
-        
+
         except CircuitBreakerOpen:
             # Circuit is open, skip insert
             pass
         except Exception as e:
             # Don't crash logger on sink error
             logger.error(f"Error writing to SupabaseSink: {e}")
-    
+
     @staticmethod
     def _format_record(record: dict) -> dict:
         """Format loguru record for database insert."""
         extra = record.get("extra", {})
-        
+
         return {
             "level": record["level"].name,
             "logger": record["name"],
@@ -292,10 +294,13 @@ class SupabaseSink:
             "trace_id": extra.get("trace_id"),
             "span_id": extra.get("span_id"),
             "parent_span_id": extra.get("parent_span_id"),
-            "extra": json.dumps({
-                k: v for k, v in extra.items()
-                if k not in ("trace_id", "span_id", "parent_span_id")
-            }),
+            "extra": json.dumps(
+                {
+                    k: v
+                    for k, v in extra.items()
+                    if k not in ("trace_id", "span_id", "parent_span_id")
+                }
+            ),
             "process_id": record["process"].id,
             "thread_id": record["thread"].id,
             "timestamp": record["time"].isoformat(),
@@ -306,9 +311,11 @@ class SupabaseSink:
 # Error Tracking Sink
 # ============================================================================
 
+
 @dataclass
 class ErrorEvent:
     """Structured error event for tracking."""
+
     timestamp: str
     level: str
     logger: str
@@ -324,16 +331,16 @@ class ErrorEvent:
 class ErrorTrackingSink:
     """
     Sink for error/exception tracking.
-    
+
     Can integrate with:
     - Sentry
     - Rollbar
     - Datadog
     - Custom error tracking service
-    
+
     Only processes ERROR and CRITICAL level logs.
     """
-    
+
     def __init__(
         self,
         on_error: Callable[[ErrorEvent], None],
@@ -347,18 +354,18 @@ class ErrorTrackingSink:
         self.on_error = on_error
         self.track_warnings = track_warnings
         self.min_level = 30 if track_warnings else 40  # WARNING=30, ERROR=40
-    
+
     def __call__(self, record: dict) -> None:
         """Sink callable interface."""
         # Filter by level
         if record["level"].no < self.min_level:
             return
-        
+
         # Extract exception info
         exception_type = None
         exception_value = None
         traceback_str = None
-        
+
         if record["exception"]:
             exception_type = record["exception"].type.__name__
             exception_value = str(record["exception"].value)
@@ -369,7 +376,7 @@ class ErrorTrackingSink:
                     record["exception"].traceback,
                 )
             )
-        
+
         # Build error event
         extra = record.get("extra", {})
         error_event = ErrorEvent(
@@ -382,12 +389,9 @@ class ErrorTrackingSink:
             traceback=traceback_str,
             trace_id=extra.get("trace_id"),
             span_id=extra.get("span_id"),
-            context={
-                k: v for k, v in extra.items()
-                if k not in ("trace_id", "span_id")
-            },
+            context={k: v for k, v in extra.items() if k not in ("trace_id", "span_id")},
         )
-        
+
         try:
             self.on_error(error_event)
         except Exception as e:
@@ -398,16 +402,17 @@ class ErrorTrackingSink:
 # Performance Monitoring Sink
 # ============================================================================
 
+
 class PerformanceMetricsSink:
     """
     Sink for collecting performance metrics.
-    
+
     Tracks:
     - Operation durations
     - Slow operations
     - Performance trends
     """
-    
+
     def __init__(
         self,
         on_metric: Callable[[dict], None],
@@ -420,17 +425,17 @@ class PerformanceMetricsSink:
         """
         self.on_metric = on_metric
         self.slow_threshold_ms = slow_threshold_ms
-    
+
     def __call__(self, record: dict) -> None:
         """Sink callable interface."""
         extra = record.get("extra", {})
-        
+
         # Look for duration_ms field
         if "duration_ms" not in extra:
             return
-        
+
         duration_ms = extra["duration_ms"]
-        
+
         metric = {
             "timestamp": record["time"].isoformat(),
             "operation": extra.get("operation", "unknown"),
@@ -439,7 +444,7 @@ class PerformanceMetricsSink:
             "trace_id": extra.get("trace_id"),
             "status": extra.get("status", "unknown"),
         }
-        
+
         try:
             self.on_metric(metric)
         except Exception as e:

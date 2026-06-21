@@ -1,6 +1,8 @@
-import aiohttp
 import asyncio
 from typing import Optional
+
+import aiohttp
+
 
 class OIDCHandler:
     def __init__(self, keycloak_url: str, admin_username: str, admin_password: str):
@@ -18,7 +20,7 @@ class OIDCHandler:
             "client_id": "admin-cli",
             "username": self.admin_username,
             "password": self.admin_password,
-            "grant_type": "password"
+            "grant_type": "password",
         }
         async with aiohttp.ClientSession() as session:
             async with session.post(token_url, data=data) as resp:
@@ -72,7 +74,7 @@ class OIDCHandler:
             "email": email,
             "enabled": True,
             "emailVerified": True,
-            "credentials": [{"type": "password", "value": password, "temporary": False}]
+            "credentials": [{"type": "password", "value": password, "temporary": False}],
         }
         await self._admin_request("POST", f"realms/{realm}/users", json=payload)
         # Get user ID
@@ -82,12 +84,19 @@ class OIDCHandler:
         roles = await self._admin_request("GET", f"realms/{realm}/roles")
         admin_role = next((r for r in roles if r["name"] == "admin"), None)
         if admin_role:
-            await self._admin_request("POST", f"realms/{realm}/users/{user_id}/role-mappings/realm", json=[admin_role])
+            await self._admin_request(
+                "POST", f"realms/{realm}/users/{user_id}/role-mappings/realm", json=[admin_role]
+            )
         return user_id
 
-    async def create_client(self, realm: str, client_id: str, name: str,
-                            redirect_uris: list[str] = None,
-                            public: bool = False) -> str:
+    async def create_client(
+        self,
+        realm: str,
+        client_id: str,
+        name: str,
+        redirect_uris: list[str] = None,
+        public: bool = False,
+    ) -> str:
         """Create an OIDC client in the given realm."""
         payload = {
             "clientId": client_id,
@@ -100,7 +109,7 @@ class OIDCHandler:
             "implicitFlowEnabled": False,
             "directAccessGrantsEnabled": True,
             "serviceAccountsEnabled": False,
-            "protocol": "openid-connect"
+            "protocol": "openid-connect",
         }
         # If not public, generate a secret (we'll store it)
         if not public:
@@ -110,8 +119,15 @@ class OIDCHandler:
         clients = await self._admin_request("GET", f"realms/{realm}/clients?clientId={client_id}")
         return clients[0]["id"]
 
-    async def create_user(self, realm: str, username: str, email: str,
-                          password: str, first_name: str = "", last_name: str = "") -> str:
+    async def create_user(
+        self,
+        realm: str,
+        username: str,
+        email: str,
+        password: str,
+        first_name: str = "",
+        last_name: str = "",
+    ) -> str:
         """Create a user in the given realm."""
         payload = {
             "username": username,
@@ -120,7 +136,7 @@ class OIDCHandler:
             "emailVerified": True,
             "firstName": first_name,
             "lastName": last_name,
-            "credentials": [{"type": "password", "value": password, "temporary": False}]
+            "credentials": [{"type": "password", "value": password, "temporary": False}],
         }
         await self._admin_request("POST", f"realms/{realm}/users", json=payload)
         # Get user ID
@@ -129,4 +145,5 @@ class OIDCHandler:
 
     def _generate_secret(self) -> str:
         import secrets
+
         return secrets.token_urlsafe(32)

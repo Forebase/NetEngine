@@ -1,10 +1,12 @@
 import asyncio
 from datetime import datetime
+
 from netengine.handlers import BasePhaseHandler
-from netengine.handlers.context import PhaseContext
 from netengine.handlers.and_handler import ANDHandler
+from netengine.handlers.context import PhaseContext
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.domain_registry_handler import DomainRegistryHandler
+
 
 class ANDsPhaseHandler(BasePhaseHandler):
     """Phase 7: Administrative Network Domains."""
@@ -41,9 +43,11 @@ class ANDsPhaseHandler(BasePhaseHandler):
 
     async def _consume_org_admissions(self, context):
         """Listen for new org.admitted events and provision AND for them."""
+        import json
+
         from netengine.core.pgmq_client import PGMQClient
         from netengine.events.schema import EventEnvelope
-        import json
+
         pgmq = PGMQClient()
         docker = DockerHandler()
         and_handler = ANDHandler(docker, context.runtime_state)
