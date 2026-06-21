@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from netengine.handlers.context import PhaseContext, RuntimeState
-from netengine.logging.logger import get_logger
+from netengine.logging import get_logger
 from netengine.spec.loader import load_spec
 from netengine.spec.models import NetEngineSpec
 
