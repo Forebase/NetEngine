@@ -1,0 +1,11 @@
+# Production environment overrides
+# Merged with spec.base.yaml
+
+infrastructure:
+  debug: false
+  log_level: "ERROR"
+  timeout: 600
+  retries: 5
+  performance:
+    max_concurrent: 50
+    cache_size: 500

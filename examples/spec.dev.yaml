@@ -1,0 +1,9 @@
+# Development environment overrides
+# Merged with spec.base.yaml
+
+infrastructure:
+  debug: true
+  log_level: "DEBUG"
+  timeout: 60
+  performance:
+    max_concurrent: 2

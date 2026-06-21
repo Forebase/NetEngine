@@ -1,0 +1,26 @@
+# Base infrastructure specification
+# Can be composed with environment-specific overrides
+
+name: "my-network"
+description: "Example multi-environment network"
+version: "1.0"
+
+organizations:
+  - name: "root-org"
+    domain: "example.com"
+    description: "Root organization"
+
+domains:
+  - name: "example.com"
+    registrar: "internal"
+    tld: "com"
+
+infrastructure:
+  provider: "docker"
+  debug: false
+  log_level: "INFO"
+  timeout: 300
+  retries: 3
+  performance:
+    max_concurrent: 10
+    cache_size: 100
