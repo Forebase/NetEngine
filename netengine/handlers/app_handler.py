@@ -6,6 +6,7 @@ from typing import Any, Dict
 from netengine.core.pgmq_client import PGMQClient
 from netengine.core.supabase_client import get_supabase
 from netengine.events.schema import EventEnvelope
+from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
@@ -167,3 +168,39 @@ class AppHandler:
             "nextcloud": "nextcloud:latest",
         }
         return catalog.get(app_name, app_name)
+
+
+class OrgAppsPhaseHandler(BasePhaseHandler):
+    """Phase 9: Deploy org apps declared in spec.org_apps.deployments."""
+
+    async def execute(self, context: PhaseContext) -> None:
+        org_apps_spec = getattr(context.spec, "org_apps", None)
+        if not org_apps_spec or not org_apps_spec.enabled:
+            context.logger.info("Phase 9: org_apps not enabled, skipping deployments")
+            context.runtime_state.org_apps_output = {"deployments": []}
+            return
+
+        docker = context.docker_client
+        dns = DNSHandler()
+        pki = PKIHandler(docker, context.runtime_state, context.spec)
+        oidc = OIDCHandler(
+            keycloak_url="https://auth.platform.internal",
+            admin_username="admin",
+            admin_password=context.runtime_state.inworld_admin_password or "",
+        )
+        handler = AppHandler(docker, dns, pki, oidc, context.runtime_state, context)
+
+        deployments = []
+        for dep in org_apps_spec.deployments:
+            subdomain = dep.subdomain or dep.app
+            result = await handler.deploy_app(dep.org, dep.app, subdomain, {})
+            deployments.append(result)
+            context.logger.info(f"Phase 9: deployed {dep.app} for {dep.org} at {result['domain']}")
+
+        context.runtime_state.org_apps_output = {"deployments": deployments}
+
+    async def healthcheck(self, context: PhaseContext) -> bool:
+        return bool(context.runtime_state.org_apps_output)
+
+    async def should_skip(self, context: PhaseContext) -> bool:
+        return bool(context.runtime_state.org_apps_output)

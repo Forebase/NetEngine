@@ -13,8 +13,3 @@ app = FastAPI(
 
 app.add_middleware(StructuredLoggingMiddleware)
 app.include_router(router)
-
-
-@app.get("/")
-async def root() -> dict:
-    return {"service": "netengine-operator-api", "version": "0.1", "docs": "/docs"}

@@ -1,9 +1,12 @@
 import json
+import logging
 import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_STATE_FILE = "netengines_state.json"
 
@@ -100,3 +103,19 @@ class RuntimeState:
         state_file.parent.mkdir(parents=True, exist_ok=True)
         with open(state_file, "w") as f:
             json.dump(data, f, indent=2)
+
+    def sync_to_supabase(self) -> None:
+        """Write current state snapshot to Supabase runtime_state table (audit log)."""
+        try:
+            from netengine.core.supabase_client import get_supabase
+
+            supabase = get_supabase()
+            data = asdict(self)
+            for k, v in data.items():
+                if isinstance(v, datetime):
+                    data[k] = v.isoformat()
+            supabase.table("runtime_state").upsert(
+                {"key": "current", "value": data, "updated_at": datetime.utcnow().isoformat()}
+            ).execute()
+        except Exception as exc:
+            logger.debug(f"Supabase state sync skipped: {exc}")
