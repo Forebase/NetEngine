@@ -51,6 +51,15 @@ class RegistriesPhaseHandler(BasePhaseHandler):
         asyncio.create_task(self._consume_dns_updates(context))
 
         # 6. Update state
+        context.runtime_state.world_registry_output = {
+            "seeded": True,
+            "deployed_at": datetime.utcnow().isoformat(),
+        }
+        context.runtime_state.domain_registry_output = {
+            "address_pools_seeded": True,
+            "tld_delegations": tlds,
+            "deployed_at": datetime.utcnow().isoformat(),
+        }
         context.runtime_state.phase_completed["5"] = True
         context.runtime_state.save()
         logger.info("Phase 5 complete")
