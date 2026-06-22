@@ -33,25 +33,26 @@ class RegistriesPhaseHandler(BasePhaseHandler):
         whois = WHOISServer()
         asyncio.create_task(whois.start())
 
-        # 4. Register TLD delegations from spec
-        tlds = spec.get("domain_registry", {}).get("tld_delegations", [])
+        # 4. Register TLD delegations from DNS spec (TLDConfig has name + listen_ip)
+        tlds = spec.dns.tlds
         dns = DNSHandler()  # or get from context
         for tld in tlds:
+            ns_name = f"ns.{tld.name}"
             # Add NS records to root zone
             await dns.add_zone_record(
                 context=context,
                 zone="root.internal",
                 record_type="NS",
-                name=tld["name"],
-                value=tld["ns_server"],
+                name=tld.name,
+                value=ns_name,
             )
             # Add A record for the TLD's NS server
             await dns.add_zone_record(
                 context=context,
                 zone="root.internal",
                 record_type="A",
-                name=tld["ns_server"],
-                value=tld["listen_ip"],
+                name=ns_name,
+                value=tld.listen_ip,
             )
 
         # 5. Wire pgmq consumers
@@ -70,7 +71,7 @@ class RegistriesPhaseHandler(BasePhaseHandler):
         }
         context.runtime_state.domain_registry_output = {
             "address_pools_seeded": True,
-            "tld_delegations": tlds,
+            "tld_delegations": [t.model_dump() for t in tlds],
             "deployed_at": datetime.utcnow().isoformat(),
         }
         context.runtime_state.phase_completed["5"] = True

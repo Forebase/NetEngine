@@ -95,20 +95,24 @@ class ANDsPhaseHandler(BasePhaseHandler):
             ands_output: dict[str, Any] = {}
 
             # Validate AND profiles exist in spec
-            available_profiles = (
-                {p.name for p in ands_spec.profiles} if ands_spec.profiles else set()
-            )
+            if isinstance(ands_spec.profiles, dict):
+                available_profiles = set(ands_spec.profiles.keys())
+            elif ands_spec.profiles:
+                available_profiles = {p.name for p in ands_spec.profiles}
+            else:
+                available_profiles = set()
             if not available_profiles:
                 logger.warning("No AND profiles defined in spec; using default 'business' profile")
                 available_profiles = {"business"}
 
-            # Validate each AND instance
+            # Validate each AND instance (only when profile is a string name)
             for and_instance in ands_spec.instances:
-                if and_instance.profile not in available_profiles:
-                    raise RuntimeError(
-                        f"AND {and_instance.name} references undefined profile '{and_instance.profile}'. "
-                        f"Available: {available_profiles}"
-                    )
+                if isinstance(and_instance.profile, str):
+                    if and_instance.profile not in available_profiles:
+                        raise RuntimeError(
+                            f"AND {and_instance.name} references undefined profile "
+                            f"'{and_instance.profile}'. Available: {available_profiles}"
+                        )
 
             # Initialize gateway handler
             docker = DockerHandler()
@@ -289,16 +293,39 @@ class ANDsPhaseHandler(BasePhaseHandler):
         # 1. Allocate subnet from address pool
         # For MVP: use a fixed allocation strategy based on AND name/profile
         # (In production: would query Supabase address pool manager)
-        profile_obj = next(
-            (p for p in ands_spec.profiles if p.name == and_instance.profile),
-            None,
-        )
+        if isinstance(ands_spec.profiles, dict):
+            _pname = (
+                and_instance.profile
+                if isinstance(and_instance.profile, str)
+                else next(
+                    (k for k, v in ands_spec.profiles.items() if v == and_instance.profile),
+                    None,
+                )
+            )
+            profile_obj = ands_spec.profiles.get(_pname) if _pname else None
+        else:
+            profile_obj = next(
+                (p for p in ands_spec.profiles if p.name == and_instance.profile), None
+            )
         if not profile_obj:
             raise RuntimeError(f"Profile {and_instance.profile} not found in spec")
 
         # Simple allocation: use first available pool for this profile
         # In real scenario, would call domain registry to allocate
-        cidr = await self._allocate_address(and_instance.name, and_instance.profile, ands_spec)
+        # Pass the resolved profile name string
+        profile_name_for_alloc = (
+            and_instance.profile
+            if isinstance(and_instance.profile, str)
+            else next(
+                (k for k, v in ands_spec.profiles.items() if v == and_instance.profile),
+                "business",
+            )
+            if isinstance(ands_spec.profiles, dict)
+            else getattr(and_instance.profile, "name", "business")
+        )
+        cidr = await self._allocate_address(
+            and_instance.name, profile_name_for_alloc, ands_spec
+        )
         logger.info(f"Allocated CIDR for {and_instance.name}: {cidr}")
 
         # 2. Create isolated Docker bridge network
@@ -320,7 +347,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
 
         try:
             await docker.connect_network(
-                container=gateway.gateway_container_id,
+                container=gateway.gateway_container,
                 network=bridge_name,
                 ip=gateway_ip,
             )
@@ -330,18 +357,30 @@ class ANDsPhaseHandler(BasePhaseHandler):
             await docker.remove_network(bridge_name)
             raise RuntimeError(f"Failed to attach gateway to {bridge_name}: {e}")
 
+        # Resolve profile name string for gateway rules
+        profile_attr = and_instance.profile
+        if isinstance(profile_attr, str):
+            profile_name = profile_attr
+        elif isinstance(ands_spec.profiles, dict):
+            profile_name = next(
+                (k for k, v in ands_spec.profiles.items() if v == profile_attr),
+                "business",
+            )
+        else:
+            profile_name = getattr(profile_attr, "name", "business")
+
         # 4-5. Generate and apply nftables rules
         try:
             rules = await gateway.generate_rules(
-                rule_context=and_instance.name,
-                profile=and_instance.profile,
+                and_name=and_instance.name,
+                profile=profile_name,
                 cidr=cidr,
             )
-            await gateway.apply_rules(rule_context=and_instance.name, rules=rules)
+            await gateway.apply_rules(and_name=and_instance.name, rules=rules)
             logger.info(f"Applied nftables rules for {and_instance.name}")
         except Exception as e:
             # Clean up on failure
-            await docker.disconnect_network(gateway.gateway_container_id, bridge_name)
+            await docker.disconnect_network(gateway.gateway_container, bridge_name)
             await docker.remove_network(bridge_name)
             raise RuntimeError(f"Failed to apply rules for {and_instance.name}: {e}")
 
@@ -412,10 +451,10 @@ class ANDsPhaseHandler(BasePhaseHandler):
             RuntimeError: If no pools available
         """
         # Find profile definition
-        profile_obj = next(
-            (p for p in ands_spec.profiles if p.name == profile),
-            None,
-        )
+        if isinstance(ands_spec.profiles, dict):
+            profile_obj = ands_spec.profiles.get(profile)
+        else:
+            profile_obj = next((p for p in ands_spec.profiles if p.name == profile), None)
         if not profile_obj:
             raise RuntimeError(f"Profile {profile} not found")
 
