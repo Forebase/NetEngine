@@ -1,15 +1,16 @@
-import json
-from typing import Any, Dict, List
+import os
+import tempfile
+
+from netengine.gateways.base import BaseGatewayHandler
 
 
-class GatewayHandler:
+class GatewayHandler(BaseGatewayHandler):
     def __init__(self, docker):
         self.docker = docker
         self.gateway_container = "netengine_gateway"
 
     async def generate_rules(self, and_name: str, profile: str, cidr: str) -> str:
         """Generate nftables ruleset for the given AND profile."""
-        # Profile -> rule templates
         if profile == "residential":
             return self._residential_rules(and_name, cidr)
         elif profile == "business":
@@ -22,7 +23,6 @@ class GatewayHandler:
             raise ValueError(f"Unknown AND profile: {profile}")
 
     def _residential_rules(self, and_name: str, cidr: str) -> str:
-        # Masquerade outbound, drop unsolicited inbound
         return f"""
 table ip netengine_{and_name} {{
     chain forward {{
@@ -43,7 +43,6 @@ table ip netengine_{and_name} {{
 """
 
     def _business_rules(self, and_name: str, cidr: str) -> str:
-        # Stateful accept inbound, no lateral movement
         return f"""
 table ip netengine_{and_name} {{
     chain forward {{
@@ -55,28 +54,23 @@ table ip netengine_{and_name} {{
     }}
     chain postrouting {{
         type nat hook postrouting priority 100; policy accept;
-        # no masquerade, but could add optional NAT
     }}
 }}
 """
 
     def _datacenter_rules(self, and_name: str, cidr: str) -> str:
-        # Full inbound, no NAT, allow all
         return f"""
 table ip netengine_{and_name} {{
     chain forward {{
         type filter hook forward priority 0; policy accept;
-        # Allow all forwarding
     }}
     chain postrouting {{
         type nat hook postrouting priority 100; policy accept;
-        # No NAT
     }}
 }}
 """
 
     def _airgapped_rules(self, and_name: str, cidr: str) -> str:
-        # Drop all traffic on all interfaces
         return f"""
 table ip netengine_{and_name} {{
     chain forward {{
@@ -86,35 +80,37 @@ table ip netengine_{and_name} {{
 """
 
     async def apply_rules(self, and_name: str, rules: str) -> None:
-        """Write rules to gateway container and reload nftables."""
-        # Write rules to a file inside the gateway container
-        # We'll use a volume mount to share rules, or use `docker exec` to write.
-        # Simpler: `docker exec` with `cat` redirection.
-        # We'll write the rules to /etc/nftables/rules/{and_name}.nft
-        # Then reload: `nft -f /etc/nftables/rules/{and_name}.nft`
-        # But nftables needs to load the whole table atomically.
-        # For MVP, we'll just `nft -f` directly.
-        # We'll combine all rules into a single file and load.
-        # We'll store rules in the container's /etc/nftables/rules/ directory.
-        # We can mount a volume or exec.
-        # Using exec:
-        cmd = ["sh", "-c", f"echo '{rules}' > /etc/nftables/rules/{and_name}.nft"]
+        """Write rules to gateway container via a temp file and reload nftables."""
+        dest_path = f"/etc/nftables/rules/{and_name}.nft"
+
+        # Write to a local temp file then copy into the container — avoids shell
+        # injection and handles multi-line rulesets correctly.
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".nft", delete=False) as f:
+            f.write(rules)
+            tmp_path = f.name
+        try:
+            await self.docker.copy_to_container(self.gateway_container, tmp_path, dest_path)
+        finally:
+            os.unlink(tmp_path)
+
+        cmd = ["nft", "-f", dest_path]
         exit_code, output = await self.docker.exec_command(self.gateway_container, cmd)
         if exit_code != 0:
-            raise RuntimeError(f"Failed to write rules: {output}")
-        # Load the ruleset atomically
-        cmd = ["nft", "-f", f"/etc/nftables/rules/{and_name}.nft"]
-        exit_code, output = await self.docker.exec_command(self.gateway_container, cmd)
-        if exit_code != 0:
-            raise RuntimeError(f"Failed to apply rules: {output}")
+            raise RuntimeError(f"Failed to apply nftables rules for {and_name}: {output}")
 
     async def remove_rules(self, and_name: str) -> None:
         """Delete the nftables table for this AND."""
         cmd = ["nft", "delete", "table", "ip", f"netengine_{and_name}"]
         exit_code, output = await self.docker.exec_command(self.gateway_container, cmd)
-        if exit_code != 0 and "No such file or directory" not in output:
-            # Table might not exist, ignore
-            pass
-        # Also remove the rules file
+        # Table-not-found is acceptable on teardown
+        if exit_code != 0 and "No such table" not in output:
+            raise RuntimeError(f"Failed to remove nftables table for {and_name}: {output}")
         cmd = ["rm", "-f", f"/etc/nftables/rules/{and_name}.nft"]
         await self.docker.exec_command(self.gateway_container, cmd)
+
+    async def reload(self) -> None:
+        """Reload all nftables rules on the gateway container."""
+        cmd = ["nft", "-f", "/etc/nftables/rules/main.nft"]
+        exit_code, output = await self.docker.exec_command(self.gateway_container, cmd)
+        if exit_code != 0:
+            raise RuntimeError(f"Gateway nftables reload failed: {output}")

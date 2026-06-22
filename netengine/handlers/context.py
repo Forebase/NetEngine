@@ -1,11 +1,14 @@
 """Phase execution context and runtime state."""
 
 import logging
-from dataclasses import dataclass
-from typing import Any, Optional
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Optional
 
 from netengine.core.state import RuntimeState
 from netengine.spec.models import NetEngineSpec
+
+if TYPE_CHECKING:
+    from netengine.core.consumer_supervisor import ConsumerSupervisor
 
 
 @dataclass
@@ -25,6 +28,10 @@ class PhaseContext:
     kubernetes_client: Any = None
     supabase_client: Any = None
     pgmq_client: Any = None
+
+    # Background task supervisor — always present; handlers register long-running
+    # consumers here rather than calling asyncio.create_task() directly.
+    consumer_supervisor: Optional["ConsumerSupervisor"] = None
 
     # Phase-specific config
     phase_name: Optional[str] = None

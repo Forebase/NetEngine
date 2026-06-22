@@ -3,6 +3,7 @@ from typing import Any, List, Type
 
 from pydantic import ValidationError
 
+from netengine.core.consumer_supervisor import ConsumerSupervisor
 from netengine.core.state import RuntimeState
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -18,6 +19,16 @@ from netengine.spec.loader import SpecLoadError
 from netengine.spec.models import NetEngineSpec
 
 logger = logging.getLogger(__name__)
+
+# Required runtime_state field(s) that must be truthy before a phase runs.
+_PHASE_PREREQUISITES: dict[int, list[str]] = {
+    3: ["dns_output"],
+    4: ["pki_bootstrapped"],
+    5: ["identity_platform_output"],
+    6: ["world_registry_output", "domain_registry_output"],
+    7: ["identity_inworld_output"],
+    8: ["ands_output"],
+}
 
 
 class Orchestrator:
@@ -41,19 +52,29 @@ class Orchestrator:
         (8, ServicesPhaseHandler),
     ]
 
-    def __init__(self, spec: NetEngineSpec | dict[str, Any]):
+    def __init__(self, spec: NetEngineSpec | dict[str, Any], mock_mode: bool = False):
         """Initialize orchestrator with a validated NetEngine spec.
 
         Args:
             spec: Validated NetEngineSpec or raw YAML specification dictionary
+            mock_mode: When True, no real Docker/DNS/PKI calls are made
         """
         self.spec = self._normalize_spec(spec)
+        self.mock_mode = mock_mode
         self.runtime_state = RuntimeState.load()
+        self.consumer_supervisor = ConsumerSupervisor()
         self.context = PhaseContext(
             spec=self.spec,
             runtime_state=self.runtime_state,
             logger=logger,
+            consumer_supervisor=self.consumer_supervisor,
         )
+
+        if mock_mode:
+            logger.warning(
+                "WARNING: running in mock mode — no real infrastructure will be created. "
+                "All phase outputs are simulated."
+            )
 
     @staticmethod
     def _normalize_spec(spec: NetEngineSpec | dict[str, Any]) -> NetEngineSpec:
@@ -69,6 +90,16 @@ class Orchestrator:
         except ValidationError as e:
             raise SpecLoadError(f"Spec validation failed: {e}") from e
 
+    def _check_prerequisites(self, phase_num: int) -> None:
+        """Raise RuntimeError if required prior-phase outputs are absent."""
+        required = _PHASE_PREREQUISITES.get(phase_num, [])
+        missing = [field for field in required if not getattr(self.runtime_state, field, None)]
+        if missing:
+            raise RuntimeError(
+                f"Phase {phase_num} prerequisite(s) not satisfied: {', '.join(missing)}. "
+                "Run earlier phases first."
+            )
+
     async def execute_phases(self, up_to_phase: int = 8) -> None:
         """Execute phases 0 through up_to_phase.
 
@@ -82,10 +113,8 @@ class Orchestrator:
             if phase_num > up_to_phase:
                 break
 
-            # Instantiate handler
             handler = handler_class()
 
-            # Check if should skip (already executed)
             if await handler.should_skip(self.context):
                 logger.info(
                     f"Phase {phase_num}: {handler_class.__name__} already completed, skipping"
@@ -93,25 +122,28 @@ class Orchestrator:
                 self._mark_phase_complete(phase_num, handler)
                 continue
 
+            self._check_prerequisites(phase_num)
+
             logger.info(f"Phase {phase_num}: {handler_class.__name__} starting")
             try:
-                # Execute phase
                 await handler.execute(self.context)
 
-                # Healthcheck
                 if not await handler.healthcheck(self.context):
                     raise RuntimeError(f"Phase {phase_num} healthcheck failed")
 
-                # Mark complete
                 self._mark_phase_complete(phase_num, handler)
                 self.runtime_state.save()
                 logger.info(f"Phase {phase_num} completed successfully")
 
             except Exception as e:
                 logger.error(f"Phase {phase_num} failed: {e}")
-                self.runtime_state.error = str(e)
+                self.runtime_state.last_error = str(e)
                 self.runtime_state.save()
                 raise
+
+    async def start_consumers(self) -> None:
+        """Start all registered background consumers."""
+        await self.consumer_supervisor.start_all()
 
     def _mark_phase_complete(self, phase_num: int, handler: BasePhaseHandler) -> None:
         """Record user-facing phase completion for a completed handler.

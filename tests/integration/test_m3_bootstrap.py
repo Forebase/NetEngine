@@ -10,35 +10,9 @@ from netengine.phases.phase_platform_identity import PlatformIdentityPhaseHandle
 
 
 @pytest.fixture
-def m3_spec():
-    """Spec with PKI and Platform Identity configuration."""
-    return {
-        "name": "m3-test-world",
-        "version": "0.1.0",
-        "substrate": {"orchestrator_type": "docker"},
-        "dns": {"root_domain": "internal"},
-        "pki": {
-            "root_ca": {
-                "common_name": "NetEngines Root CA",
-                "organization": "NetEngines",
-                "country": "US",
-                "cert_lifetime_days": 3650,
-            },
-            "acme": {
-                "listen_ip": "10.0.0.6",
-                "canonical_name": "ca.platform.internal",
-            },
-        },
-        "identity_platform": {
-            "listen_ip": "10.0.0.7",
-            "realm_name": "platform",
-            "issuer": "https://auth.platform.internal/realms/platform",
-            "admin_user": {
-                "username": "admin",
-                "email": "admin@platform.internal",
-            },
-        },
-    }
+def m3_spec(single_org_spec):
+    """Full spec used for M3 orchestrator integration tests."""
+    return single_org_spec
 
 
 class TestPKIPhaseHandlerContract:
@@ -173,6 +147,13 @@ class TestM3OrchestratorIntegration:
 
         phase_numbers = [phase_num for phase_num, _ in orchestrator.PHASE_HANDLERS]
         assert phase_numbers == sorted(phase_numbers), "Phases not in ascending order"
-        assert phase_numbers == [0, 1, 3, 4, 5, 6, 7, 8], (
-            "DNS is registered once at Phase 1 and marks Phase 2 complete"
-        )
+        assert phase_numbers == [
+            0,
+            1,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+        ], "DNS is registered once at Phase 1 and marks Phase 2 complete"

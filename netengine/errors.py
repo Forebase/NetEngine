@@ -1,32 +1,33 @@
-# TODO: NetEngine exceptions, error handling/reporting/etc module
+"""NetEngine exception hierarchy."""
 
-from .logging import get_logger
-from omegaconf import DictConfig as Config
 
-class BaseNetEngineException(Exception):  # TODO: Comprehensive Engine Exception Base
-    def __init__(self, message: str = "An unknown NetEngine exception occurred.", *args, **kwargs):
-        """
+class NetEngineError(Exception):
+    """Base class for all NetEngine exceptions."""
 
-        :param message:
-        :param args:
-        :param kwargs:
-        """
-        self._msg = message
-        self._code: int | str | None = None
-        self._log_rules: Config | dict = Config({
-            "log_on_init": True,
-            "at_lvl": "TRACE",
-            "with_msg": self.message,
-        })
-        self._log_xt: Config | dict = Config({})
 
-        if kwargs:
-            for k, v in kwargs:
-                self._log_xt.update({k: v})
+class SubstrateError(NetEngineError):
+    """Phase 0: Docker/substrate provisioning failure."""
 
-        super().__init__(self.message)
 
-    @property
-    def message(self) -> str:
-        return self._msg or "An unknown NetEngine exception occurred."
+class DNSError(NetEngineError):
+    """Phase 1-2: DNS zone or record failure."""
 
+
+class PKIError(NetEngineError):
+    """Phase 3: PKI / step-ca failure."""
+
+
+class IdentityError(NetEngineError):
+    """Phase 4 / 6: Identity provider failure."""
+
+
+class RegistryError(NetEngineError):
+    """Phase 5: World or domain registry failure."""
+
+
+class GatewayError(NetEngineError):
+    """Phase 7: Gateway / nftables rule failure."""
+
+
+class ServicesError(NetEngineError):
+    """Phase 8: World services failure."""
