@@ -1,3 +1,4 @@
+import logging
 import secrets
 from datetime import datetime
 from typing import Any, Dict
@@ -5,6 +6,7 @@ from typing import Any, Dict
 from netengine.core.pgmq_client import PGMQClient
 from netengine.core.supabase_client import get_supabase
 from netengine.events.schema import EventEnvelope
+from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.oidc_handler import OIDCHandler
@@ -13,8 +15,17 @@ from netengine.handlers.pki_handler import PKIHandler
 
 class AppHandler:
     def __init__(
-        self, docker: DockerHandler, dns: DNSHandler, pki: PKIHandler, oidc: OIDCHandler, state
+        self,
+        docker: DockerHandler,
+        dns: DNSHandler,
+        pki: PKIHandler,
+        oidc: OIDCHandler,
+        state,
+        context: PhaseContext | None = None,
     ):
+        self.context = context or PhaseContext(
+            spec={}, runtime_state=state, logger=logging.getLogger(__name__)
+        )
         self.docker = docker
         self.dns = dns
         self.pki = pki
@@ -41,7 +52,9 @@ class AppHandler:
         domain = f"{subdomain}.{org}.internal"
         # Get gateway IP for this AND (from address_leases)
         gateway_ip = await self._get_gateway_ip(and_name)
-        await self.dns.add_zone_record(f"{org}.internal", "A", subdomain, gateway_ip, 300)
+        await self.dns.add_zone_record(
+            self.context, f"{org}.internal", "A", subdomain, gateway_ip, 300
+        )
 
         # Step 4: Issue TLS certificate via PKI
         cert, key = await self.pki.issue_cert(domain, [f"*.{org}.internal"])

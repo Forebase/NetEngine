@@ -37,7 +37,12 @@ class PKIPhaseHandler(BasePhaseHandler):
         # But we need to call the add_zone_record method (which is a stub currently).
         # We'll implement it below.
         await dns_handler.add_zone_record(
-            zone="platform.internal", record_type="A", name="ca", value=pki.ca_ip, ttl=300
+            context=context,
+            zone="platform.internal",
+            record_type="A",
+            name="ca",
+            value=pki.ca_ip,
+            ttl=300,
         )
 
         # 3. Update state

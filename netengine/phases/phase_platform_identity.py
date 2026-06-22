@@ -68,7 +68,7 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
 
         # 4. Register DNS record for auth.platform.internal
         dns = DNSHandler()  # or get from context
-        await dns.add_zone_record("platform.internal", "A", "auth", "10.0.0.7", 300)
+        await dns.add_zone_record(context, "platform.internal", "A", "auth", "10.0.0.7", 300)
 
         # 5. Bootstrap platform realm via OIDC handler
         oidc = OIDCHandler(

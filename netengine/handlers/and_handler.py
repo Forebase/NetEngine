@@ -1,10 +1,12 @@
 import asyncio
 import ipaddress
+import logging
 from typing import Any, Dict
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.core.supabase_client import get_supabase
 from netengine.events.schema import EventEnvelope
+from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.domain_registry_handler import DomainRegistryHandler
@@ -12,7 +14,10 @@ from netengine.handlers.gateway_handler import GatewayHandler
 
 
 class ANDHandler:
-    def __init__(self, docker: DockerHandler, state):
+    def __init__(self, docker: DockerHandler, state, context: PhaseContext | None = None):
+        self.context = context or PhaseContext(
+            spec={}, runtime_state=state, logger=logging.getLogger(__name__)
+        )
         self.docker = docker
         self.state = state
         self.domain_registry = DomainRegistryHandler()
@@ -40,7 +45,12 @@ class ANDHandler:
         await self.gateway.apply_rules(and_name, rules)
         # 5. Register DNS suffix zone
         await self.dns.add_zone_record(
-            zone=dns_suffix, record_type="A", name="@", value=gateway_ip, ttl=300
+            context=self.context,
+            zone=dns_suffix,
+            record_type="A",
+            name="@",
+            value=gateway_ip,
+            ttl=300,
         )
         # 6. Update state in Supabase
         await self.supabase.table("address_leases").upsert(

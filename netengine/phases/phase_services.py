@@ -86,7 +86,7 @@ class ServicesPhaseHandler(BasePhaseHandler):
             # Deploy Storage service (MinIO)
             if spec.world_services.storage.enabled:
                 logger.info("Deploying Storage service (MinIO)")
-                storage_handler = StorageHandler(docker, dns, pki, runtime_state)
+                storage_handler = StorageHandler(context, docker, dns, pki, runtime_state)
                 storage_output = await storage_handler.deploy_minio()
                 services_output["storage"] = storage_output
                 logger.info("Storage deployment complete")

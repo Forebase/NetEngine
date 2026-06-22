@@ -6,7 +6,8 @@ from netengine.handlers.pki_handler import PKIHandler
 
 
 class StorageHandler:
-    def __init__(self, docker: DockerHandler, dns: DNSHandler, pki: PKIHandler, state):
+    def __init__(self, context, docker: DockerHandler, dns: DNSHandler, pki: PKIHandler, state):
+        self.context = context
         self.docker = docker
         self.dns = dns
         self.pki = pki
@@ -49,7 +50,9 @@ class StorageHandler:
             },
         )
         # 4. Register DNS
-        await self.dns.add_zone_record("platform.internal", "A", "storage", self.storage_ip, 300)
+        await self.dns.add_zone_record(
+            self.context, "platform.internal", "A", "storage", self.storage_ip, 300
+        )
         # 5. Create platform bucket (via API or mc)
         # We'll use `mc` CLI inside a one‑off container.
         await self._create_bucket("platform", access_key, secret_key)
