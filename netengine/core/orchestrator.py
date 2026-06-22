@@ -1,8 +1,10 @@
 import logging
-from typing import Any, List, Type
+import os
+from typing import Any, List, Optional, Type
 
 from pydantic import ValidationError
 
+from netengine.core.consumer_supervisor import ConsumerSupervisor
 from netengine.core.state import RuntimeState
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -41,18 +43,44 @@ class Orchestrator:
         (8, ServicesPhaseHandler),
     ]
 
-    def __init__(self, spec: NetEngineSpec | dict[str, Any]):
+    def __init__(self, spec: NetEngineSpec | dict[str, Any], mock_mode: Optional[bool] = None):
         """Initialize orchestrator with a validated NetEngine spec.
 
         Args:
             spec: Validated NetEngineSpec or raw YAML specification dictionary
+            mock_mode: Override for mock mode. When None, reads NETENGINE_MOCK env var.
         """
         self.spec = self._normalize_spec(spec)
         self.runtime_state = RuntimeState.load()
+
+        # Resolve mock_mode: explicit arg wins, then env var
+        effective_mock = (
+            mock_mode
+            if mock_mode is not None
+            else os.environ.get("NETENGINE_MOCK", "").lower() in ("1", "true", "yes")
+        )
+
+        # Initialise Docker client only when running for real
+        docker_client = None
+        if not effective_mock:
+            try:
+                from netengine.handlers.docker_handler import DockerHandler
+
+                docker_client = DockerHandler()
+            except Exception as exc:
+                logger.warning(f"Docker unavailable, falling back to mock mode: {exc}")
+                effective_mock = True
+
+        # Initialize consumer supervisor for background tasks
+        self.consumer_supervisor = ConsumerSupervisor()
+
         self.context = PhaseContext(
             spec=self.spec,
             runtime_state=self.runtime_state,
             logger=logger,
+            docker_client=docker_client,
+            mock_mode=effective_mock,
+            consumer_supervisor=self.consumer_supervisor,
         )
 
     @staticmethod
@@ -109,9 +137,13 @@ class Orchestrator:
 
             except Exception as e:
                 logger.error(f"Phase {phase_num} failed: {e}")
-                self.runtime_state.error = str(e)
+                self.runtime_state.last_error = str(e)
                 self.runtime_state.save()
                 raise
+
+    async def start_consumers(self) -> None:
+        """Start all registered consumer tasks."""
+        await self.consumer_supervisor.start_all()
 
     def _mark_phase_complete(self, phase_num: int, handler: BasePhaseHandler) -> None:
         """Record user-facing phase completion for a completed handler.
