@@ -16,7 +16,7 @@ class StorageHandler:
         self.storage_ip = "10.0.0.14"
         self.storage_dns = "storage.platform.internal"
 
-    async def deploy_minio(self) -> None:
+    async def deploy_minio(self) -> dict:
         """Start MinIO container with TLS and create platform bucket."""
         # 1. Issue cert for storage.platform.internal
         cert, key = await self.pki.issue_cert(self.storage_dns, [])
@@ -61,6 +61,14 @@ class StorageHandler:
         self.state.minio_secret_key = secret_key
         self.state.storage_deployed = True
         self.state.save()
+
+        return {
+            "container_name": self.container_name,
+            "ip": self.storage_ip,
+            "dns": self.storage_dns,
+            "access_key": access_key,
+            "bucket": "platform",
+        }
 
     async def _create_bucket(self, bucket_name: str, access_key: str, secret_key: str) -> None:
         """Use `mc` to create a bucket."""

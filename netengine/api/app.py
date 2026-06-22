@@ -112,16 +112,57 @@ async def get_event_chain(correlation_id: str, user=Depends(get_current_user)):
     return {"correlation_id": correlation_id, "events": []}
 
 
+@app.get("/api/v1/status")
+async def get_status(user=Depends(get_current_user)):
+    state = RuntimeState.load()
+    phase_labels = {
+        "0": "Substrate",
+        "1": "DNS root/platform zones",
+        "2": "DNS TLD setup",
+        "3": "PKI",
+        "4": "Platform identity",
+        "5": "Registries",
+        "6": "In-world identity",
+        "7": "ANDs",
+        "8": "Services",
+        "9": "Org apps",
+    }
+    phases = {
+        num: {"label": label, "completed": state.phase_completed.get(num, False)}
+        for num, label in phase_labels.items()
+    }
+    return {"phases": phases, "last_error": state.last_error}
+
+
+@app.get("/api/v1/orgs")
+async def list_orgs(user=Depends(get_current_user)):
+    supabase = get_supabase()
+    result = await supabase.table("world_registry").select("*").execute()
+    return result.data
+
+
+@app.get("/api/v1/apps")
+async def list_apps(user=Depends(get_current_user)):
+    supabase = get_supabase()
+    result = await supabase.table("app_deployments").select("*").execute()
+    return result.data
+
+
 @app.post("/api/v1/orgs")
 async def admit_org(org: dict, user=Depends(get_current_user)):
+    if not org.get("name"):
+        raise HTTPException(status_code=400, detail="org.name is required")
     from ..handlers.world_registry_handler import WorldRegistryHandler
 
     handler = WorldRegistryHandler()
-    await handler.admit_org(
-        name=org["name"],
-        capabilities=org.get("capabilities", []),
-        and_profile=org.get("and_profile", "business"),
-    )
+    try:
+        await handler.admit_org(
+            name=org["name"],
+            capabilities=org.get("capabilities", []),
+            and_profile=org.get("and_profile", "business"),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
     return {"status": "admitted"}
 
 
@@ -144,7 +185,10 @@ async def delete_and(and_name: str, user=Depends(get_current_user)):
     from netengine.handlers.docker_handler import DockerHandler
 
     handler = ANDHandler(DockerHandler(), RuntimeState.load())
-    await handler.deprovision_and(and_name)
+    try:
+        await handler.deprovision_and(and_name)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
     return {"status": "deleted"}
 
 
@@ -171,5 +215,8 @@ async def deploy_app(org: str, payload: dict, user=Depends(get_current_user)):
         admin_password=RuntimeState.load().inworld_admin_password,
     )
     handler = AppHandler(docker, dns, pki, oidc, RuntimeState.load())
-    deployment = await handler.deploy_app(org, app_name, subdomain, config)
+    try:
+        deployment = await handler.deploy_app(org, app_name, subdomain, config)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
     return deployment

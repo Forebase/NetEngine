@@ -122,8 +122,72 @@ def status() -> None:
 
 @cli.command()
 def down() -> None:
-    """Tear down the world (kill containers, remove volumes)."""
-    click.echo("Teardown not yet implemented.")
+    """Tear down the world (kill containers, remove networks)."""
+    asyncio.run(_down())
+
+
+async def _down() -> None:
+    import docker as docker_lib
+
+    client = docker_lib.from_env()
+    state = RuntimeState.load()
+
+    # Container names registered by phase handlers
+    known_containers = [
+        "netengines_coredns",
+        "netengines_step_ca",
+        "netengines_keycloak_platform",
+        "netengines_keycloak_inworld",
+        "netengines_postfix",
+        "netengines_minio",
+    ]
+    # Also include any container IDs tracked in state
+    tracked_ids = [
+        state.dns_root_container_id,
+        state.step_ca_container_id,
+        state.keycloak_platform_container_id,
+        state.inworld_keycloak_container_id,
+        state.gateway_container_id,
+    ]
+
+    removed = 0
+    for name in known_containers:
+        try:
+            c = await asyncio.to_thread(client.containers.get, name)
+            await asyncio.to_thread(c.remove, **{"force": True})
+            click.echo(f"  removed container {name}")
+            removed += 1
+        except docker_lib.errors.NotFound:
+            pass
+
+    for cid in tracked_ids:
+        if not cid:
+            continue
+        try:
+            c = await asyncio.to_thread(client.containers.get, cid)
+            await asyncio.to_thread(c.remove, **{"force": True})
+            click.echo(f"  removed container {cid[:12]}")
+            removed += 1
+        except docker_lib.errors.NotFound:
+            pass
+
+    # Remove known networks
+    known_networks = ["core", "platform"]
+    for net_name in known_networks:
+        try:
+            net = await asyncio.to_thread(client.networks.get, net_name)
+            await asyncio.to_thread(net.remove)
+            click.echo(f"  removed network {net_name}")
+        except docker_lib.errors.NotFound:
+            pass
+
+    # Clear state file
+    state_file = Path(os.environ.get("NETENGINES_STATE_FILE", "netengines_state.json"))
+    if state_file.exists():
+        state_file.unlink()
+        click.echo(f"  cleared state file {state_file}")
+
+    click.echo(f"Done. Removed {removed} container(s).")
 
 
 if __name__ == "__main__":

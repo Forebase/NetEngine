@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from netengine.core.consumer_supervisor import ConsumerSupervisor
 from netengine.core.state import RuntimeState
 from netengine.handlers._base import BasePhaseHandler
+from netengine.handlers.app_handler import OrgAppsPhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.phase_pki import PKIPhaseHandler
@@ -41,6 +42,7 @@ class Orchestrator:
         (6, InWorldIdentityPhaseHandler),
         (7, ANDsPhaseHandler),
         (8, ServicesPhaseHandler),
+        (9, OrgAppsPhaseHandler),
     ]
 
     def __init__(self, spec: NetEngineSpec | dict[str, Any], mock_mode: Optional[bool] = None):
@@ -97,7 +99,7 @@ class Orchestrator:
         except ValidationError as e:
             raise SpecLoadError(f"Spec validation failed: {e}") from e
 
-    async def execute_phases(self, up_to_phase: int = 8) -> None:
+    async def execute_phases(self, up_to_phase: int = 9) -> None:
         """Execute phases 0 through up_to_phase.
 
         Args:
@@ -133,6 +135,7 @@ class Orchestrator:
                 # Mark complete
                 self._mark_phase_complete(phase_num, handler)
                 self.runtime_state.save()
+                await self.runtime_state.sync_to_supabase()
                 logger.info(f"Phase {phase_num} completed successfully")
 
             except Exception as e:
