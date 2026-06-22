@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.events.schema import EventEnvelope
@@ -66,12 +66,12 @@ class RegistriesPhaseHandler(BasePhaseHandler):
         # 6. Update state
         context.runtime_state.world_registry_output = {
             "seeded": True,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(timezone.utc).isoformat(),
         }
         context.runtime_state.domain_registry_output = {
             "address_pools_seeded": True,
             "tld_delegations": tlds,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(timezone.utc).isoformat(),
         }
         context.runtime_state.phase_completed["5"] = True
         context.runtime_state.save()

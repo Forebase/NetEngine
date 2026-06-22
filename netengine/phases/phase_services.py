@@ -9,7 +9,7 @@ Responsibilities:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from netengine.handlers._base import BasePhaseHandler
@@ -62,7 +62,7 @@ class ServicesPhaseHandler(BasePhaseHandler):
         # Validate prerequisites
         self._validate_prerequisites(runtime_state, logger)
 
-        runtime_state.started_at = datetime.utcnow()
+        runtime_state.started_at = datetime.now(timezone.utc)
 
         try:
             services_output: dict[str, Any] = {}
@@ -92,9 +92,9 @@ class ServicesPhaseHandler(BasePhaseHandler):
                 logger.info("Storage deployment complete")
 
             # Record deployment info
-            services_output["deployed_at"] = datetime.utcnow().isoformat()
+            services_output["deployed_at"] = datetime.now(timezone.utc).isoformat()
             runtime_state.world_services_output = services_output
-            runtime_state.completed_at = datetime.utcnow()
+            runtime_state.completed_at = datetime.now(timezone.utc)
 
             logger.info("Phase 8 complete: world services ready")
 
@@ -110,7 +110,7 @@ class ServicesPhaseHandler(BasePhaseHandler):
 
         except Exception as e:
             runtime_state.last_error = str(e)
-            runtime_state.last_error_at = datetime.utcnow()
+            runtime_state.last_error_at = datetime.now(timezone.utc)
             logger.error(f"Phase 8 deployment failed: {e}")
             raise
 

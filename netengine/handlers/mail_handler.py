@@ -9,7 +9,7 @@ Responsibilities:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from cryptography.hazmat.backends import default_backend
@@ -84,7 +84,7 @@ class MailHandler:
             "dmarc_enabled": self.mail_config.dmarc.enabled,
             "orgs_configured": orgs_configured,
             "mailboxes_provisioned": mailbox_count,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(timezone.utc).isoformat(),
         }
 
         self.logger.info(

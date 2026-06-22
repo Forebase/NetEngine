@@ -1,6 +1,6 @@
 import logging
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from netengine.core.pgmq_client import PGMQClient
@@ -78,7 +78,7 @@ class AppHandler:
             "domain": domain,
             "container_id": container_id,
             "client_id": client_id,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(timezone.utc).isoformat(),
         }
         # Store in Supabase (optional table: app_deployments)
         await self.supabase.table("app_deployments").upsert(deployment).execute()

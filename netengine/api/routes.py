@@ -515,7 +515,7 @@ async def export_world(user: dict = Depends(require_auth)) -> dict[str, Any]:
     import datetime as _dt
 
     return {
-        "exported_at": _dt.datetime.utcnow().isoformat(),
+        "exported_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         "spec": state.world_spec,
         "phase_completed": state.phase_completed,
         "ca_cert_pem": state.ca_cert_pem,

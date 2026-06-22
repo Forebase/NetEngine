@@ -4,7 +4,7 @@ Locked at M0. All inter-handler events (M4+) must use this schema.
 """
 
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -85,7 +85,7 @@ class EventEnvelope:
             parent_event_id=parent_event_id,
             event_type=event_type,
             emitted_by=emitted_by,
-            emitted_at=datetime.utcnow(),
+            emitted_at=datetime.now(timezone.utc),
             payload=payload,
         )
 
