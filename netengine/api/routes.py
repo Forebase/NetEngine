@@ -63,6 +63,7 @@ async def health() -> dict[str, Any]:
 # World
 # ─────────────────────────────────────────────
 
+
 @router.get("/world")
 async def get_world(user: dict = Depends(require_auth)) -> dict[str, Any]:
     """Return current spec and runtime state."""
@@ -92,7 +93,9 @@ async def reload_world(body: ReloadRequest, user: dict = Depends(require_auth)) 
     state = RuntimeState.load()
 
     if not state.world_spec:
-        raise HTTPException(status_code=409, detail="No world is currently running — use netengines up first")
+        raise HTTPException(
+            status_code=409, detail="No world is currently running — use netengines up first"
+        )
 
     # Parse incoming spec
     try:
@@ -114,8 +117,14 @@ async def reload_world(body: ReloadRequest, user: dict = Depends(require_auth)) 
     status_code = 200 if result.success else 422
     response = {
         "success": result.success,
-        "applied": [{"section": e.section, "change_type": e.change_type, "detail": e.detail} for e in result.applied],
-        "rejected": [{"section": e.section, "change_type": e.change_type, "detail": e.detail} for e in result.rejected],
+        "applied": [
+            {"section": e.section, "change_type": e.change_type, "detail": e.detail}
+            for e in result.applied
+        ],
+        "rejected": [
+            {"section": e.section, "change_type": e.change_type, "detail": e.detail}
+            for e in result.rejected
+        ],
         "errors": result.errors,
         "immutability_violations": result.immutability_violations,
     }
@@ -129,7 +138,9 @@ class WorldTeardownRequest(BaseModel):
 
 
 @router.delete("/world")
-async def teardown_world(body: WorldTeardownRequest, user: dict = Depends(require_auth)) -> dict[str, Any]:
+async def teardown_world(
+    body: WorldTeardownRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
     """Tear down the running world.
 
     Ephemeral: proceeds immediately.
@@ -194,11 +205,13 @@ async def teardown_world(body: WorldTeardownRequest, user: dict = Depends(requir
 # Services
 # ─────────────────────────────────────────────
 
+
 @router.get("/services")
 async def get_services(user: dict = Depends(require_auth)) -> dict[str, Any]:
     """List running NetEngines containers and their status."""
     try:
         import docker as docker_sdk
+
         client = docker_sdk.from_env()
         containers = [
             {"name": c.name, "status": c.status, "image": c.image.tags}
@@ -216,6 +229,7 @@ async def get_services(user: dict = Depends(require_auth)) -> dict[str, Any]:
 # Orgs
 # ─────────────────────────────────────────────
 
+
 class OrgAdmitRequest(BaseModel):
     name: str
     description: str = ""
@@ -227,6 +241,7 @@ class OrgAdmitRequest(BaseModel):
 async def admit_org(body: OrgAdmitRequest, user: dict = Depends(require_auth)) -> dict[str, Any]:
     """Admit a new organisation to the world registry and trigger provisioning."""
     from netengine.handlers.world_registry_handler import WorldRegistryHandler
+
     handler = WorldRegistryHandler()
     await handler.admit_org(
         name=body.name,
@@ -243,9 +258,12 @@ class AppDeployRequest(BaseModel):
 
 
 @router.post("/orgs/{org}/apps")
-async def deploy_app(org: str, body: AppDeployRequest, user: dict = Depends(require_auth)) -> dict[str, Any]:
+async def deploy_app(
+    org: str, body: AppDeployRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
     """Deploy a catalog app into an org's AND (container → DNS → cert → OIDC)."""
     from netengine.core.supabase_client import get_supabase
+
     supabase = get_supabase()
     result = await supabase.table("world_registry").select("org_name").eq("org_name", org).execute()
     if not result.data:
@@ -276,9 +294,11 @@ async def deploy_app(org: str, body: AppDeployRequest, user: dict = Depends(requ
 # Registry
 # ─────────────────────────────────────────────
 
+
 @router.get("/registry/domains")
 async def list_domains(user: dict = Depends(require_auth)) -> Any:
     from netengine.core.supabase_client import get_supabase
+
     supabase = get_supabase()
     result = await supabase.table("domain_records").select("*").execute()
     return result.data
@@ -287,6 +307,7 @@ async def list_domains(user: dict = Depends(require_auth)) -> Any:
 @router.get("/registry/addresses")
 async def list_addresses(user: dict = Depends(require_auth)) -> Any:
     from netengine.core.supabase_client import get_supabase
+
     supabase = get_supabase()
     result = await supabase.table("address_leases").select("*").execute()
     return result.data
@@ -296,8 +317,11 @@ async def list_addresses(user: dict = Depends(require_auth)) -> Any:
 # DNS proxy
 # ─────────────────────────────────────────────
 
+
 @router.get("/dns/{domain:path}")
-async def dns_query(domain: str, record_type: str = "A", user: dict = Depends(require_auth)) -> dict[str, Any]:
+async def dns_query(
+    domain: str, record_type: str = "A", user: dict = Depends(require_auth)
+) -> dict[str, Any]:
     """Proxy a DNS query into the in-world resolver."""
     state = RuntimeState.load()
     dns_output = state.dns_output or {}
@@ -305,7 +329,12 @@ async def dns_query(domain: str, record_type: str = "A", user: dict = Depends(re
 
     try:
         proc = await asyncio.create_subprocess_exec(
-            "dig", f"@{root_ip}", domain, record_type, "+short", "+time=3",
+            "dig",
+            f"@{root_ip}",
+            domain,
+            record_type,
+            "+short",
+            "+time=3",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -320,6 +349,7 @@ async def dns_query(domain: str, record_type: str = "A", user: dict = Depends(re
 # PKI
 # ─────────────────────────────────────────────
 
+
 @router.get("/pki/certs")
 async def list_certs(user: dict = Depends(require_auth)) -> dict[str, Any]:
     """List issued certs tracked in runtime state and step-ca inventory."""
@@ -327,7 +357,7 @@ async def list_certs(user: dict = Depends(require_auth)) -> dict[str, Any]:
     pki_out = state.pki_output or {}
 
     # Pull cert list from step-ca admin API if the CA is running
-    step_ca_ip = (pki_out.get("step_ca_ip") or "10.0.0.6")
+    step_ca_ip = pki_out.get("step_ca_ip") or "10.0.0.6"
     ca_cert_pem = state.ca_cert_pem
 
     certs: list[dict[str, Any]] = []
@@ -346,6 +376,7 @@ async def list_certs(user: dict = Depends(require_auth)) -> dict[str, Any]:
 # ─────────────────────────────────────────────
 # Identity
 # ─────────────────────────────────────────────
+
 
 @router.get("/identity/realms")
 async def list_realms(user: dict = Depends(require_auth)) -> dict[str, Any]:
@@ -384,6 +415,7 @@ KNOWN_QUEUES = [
 async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
     """Return pgmq queue depths and DLQ state for all handler boundaries."""
     from netengine.core.supabase_client import get_supabase
+
     try:
         supabase = get_supabase()
         queue_stats: list[dict[str, Any]] = []
@@ -396,18 +428,22 @@ async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
                 metrics = {}
 
             try:
-                dlq_result = await supabase.rpc("pgmq_metrics", {"queue_name": f"{q}_dlq"}).execute()
+                dlq_result = await supabase.rpc(
+                    "pgmq_metrics", {"queue_name": f"{q}_dlq"}
+                ).execute()
                 dlq_metrics = dlq_result.data[0] if dlq_result.data else {}
             except Exception:
                 dlq_metrics = {}
 
-            queue_stats.append({
-                "queue": q,
-                "depth": metrics.get("queue_length", 0),
-                "oldest_msg_age_sec": metrics.get("oldest_msg_age_sec"),
-                "dlq": f"{q}_dlq",
-                "dlq_depth": dlq_metrics.get("queue_length", 0),
-            })
+            queue_stats.append(
+                {
+                    "queue": q,
+                    "depth": metrics.get("queue_length", 0),
+                    "oldest_msg_age_sec": metrics.get("oldest_msg_age_sec"),
+                    "dlq": f"{q}_dlq",
+                    "dlq_depth": dlq_metrics.get("queue_length", 0),
+                }
+            )
         return {"queues": queue_stats}
     except Exception as exc:
         # Supabase not available (e.g. ephemeral world, no DB connection)
@@ -418,6 +454,7 @@ async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
 async def replay_dlq(queue_name: str, user: dict = Depends(require_auth)) -> dict[str, Any]:
     """Move all messages from a DLQ back to the main queue for retry."""
     from netengine.core.pgmq_client import PGMQClient
+
     client = PGMQClient()
     dlq = f"{queue_name}_dlq"
     replayed = 0
@@ -430,6 +467,7 @@ async def replay_dlq(queue_name: str, user: dict = Depends(require_auth)) -> dic
             # Re-send to main queue and delete from DLQ
             import json as _json
             from netengine.events.schema import EventEnvelope
+
             envelope = EventEnvelope(**_json.loads(msg["message"]))
             envelope.retry_count = 0  # reset retry counter
             await client.send(queue_name, envelope)
@@ -442,17 +480,22 @@ async def replay_dlq(queue_name: str, user: dict = Depends(require_auth)) -> dic
 
 
 @router.get("/events/{correlation_id}")
-async def get_event_chain(correlation_id: str, user: dict = Depends(require_auth)) -> dict[str, Any]:
+async def get_event_chain(
+    correlation_id: str, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
     """Return full causal event chain for a correlation ID from pgmq archive."""
     from netengine.core.supabase_client import get_supabase
+
     try:
         supabase = get_supabase()
         # pgmq_archive stores processed messages; query by correlation_id in the payload
-        result = await supabase.table("pgmq_archive") \
-            .select("*") \
-            .filter("message->>correlation_id", "eq", correlation_id) \
-            .order("enqueued_at") \
+        result = (
+            await supabase.table("pgmq_archive")
+            .select("*")
+            .filter("message->>correlation_id", "eq", correlation_id)
+            .order("enqueued_at")
             .execute()
+        )
         events = result.data or []
         return {"correlation_id": correlation_id, "events": events, "count": len(events)}
     except Exception as exc:
@@ -463,11 +506,13 @@ async def get_event_chain(correlation_id: str, user: dict = Depends(require_auth
 # Export / Import
 # ─────────────────────────────────────────────
 
+
 @router.get("/export")
 async def export_world(user: dict = Depends(require_auth)) -> dict[str, Any]:
     """Return exportable world state snapshot (spec + runtime state)."""
     state = RuntimeState.load()
     import datetime as _dt
+
     return {
         "exported_at": _dt.datetime.utcnow().isoformat(),
         "spec": state.world_spec,
@@ -497,7 +542,9 @@ async def import_world(body: ImportRequest, user: dict = Depends(require_auth)) 
     if state.world_spec:
         raw_lifecycle = (state.world_spec.get("metadata") or {}).get("lifecycle", "ephemeral")
         if raw_lifecycle == "ephemeral":
-            raise HTTPException(status_code=409, detail="Import is only valid for persistent worlds")
+            raise HTTPException(
+                status_code=409, detail="Import is only valid for persistent worlds"
+            )
 
     phases_restored = list(body.phase_completed.keys())
     state.world_spec = body.spec

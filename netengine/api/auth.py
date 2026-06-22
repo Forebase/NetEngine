@@ -39,15 +39,16 @@ async def require_auth(
         # Also allow an unauthenticated health check
         if request.url.path.endswith("/health"):
             return {"sub": "anon"}
-        raise HTTPException(status_code=401, detail="Bootstrap secret required (Phase 4 not yet complete)")
+        raise HTTPException(
+            status_code=401, detail="Bootstrap secret required (Phase 4 not yet complete)"
+        )
 
     if not credentials:
         raise HTTPException(status_code=401, detail="Bearer token required")
 
     token = credentials.credentials
-    admin_password = (
-        getattr(state, "bootstrap_admin_password", None)
-        or os.environ.get("KEYCLOAK_ADMIN_PASSWORD", "")
+    admin_password = getattr(state, "bootstrap_admin_password", None) or os.environ.get(
+        "KEYCLOAK_ADMIN_PASSWORD", ""
     )
     if not admin_password:
         raise HTTPException(status_code=500, detail="Keycloak admin credentials not configured")

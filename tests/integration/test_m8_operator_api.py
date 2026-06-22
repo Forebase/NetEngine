@@ -43,12 +43,14 @@ def _make_client(monkeypatch, tmp_path) -> TestClient:
     monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
     monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
     from netengine.api.app import app
+
     return TestClient(app)
 
 
 # ─────────────────────────────────────────────
 # Reload engine unit tests
 # ─────────────────────────────────────────────
+
 
 class TestImmutabilityCheck:
     def test_identical_specs_produce_no_violations(self):
@@ -181,11 +183,13 @@ class TestApplyReload:
 # API route tests
 # ─────────────────────────────────────────────
 
+
 class TestHealthRoute:
     def test_health_returns_ok_when_no_state(self, tmp_path, monkeypatch):
         monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
         from netengine.api.app import app
+
         client = TestClient(app)
         resp = client.get("/api/v1/health")
         assert resp.status_code == 200
@@ -198,6 +202,7 @@ class TestHealthRoute:
         monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
         from netengine.api.app import app
+
         client = TestClient(app)
         resp = client.get("/api/v1/health")
         assert resp.json()["status"] == "degraded"
@@ -208,6 +213,7 @@ class TestWorldRoute:
         monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "real-secret")
         from netengine.api.app import app
+
         client = TestClient(app)
         resp = client.get("/api/v1/world")
         assert resp.status_code == 401
@@ -216,6 +222,7 @@ class TestWorldRoute:
         monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
         from netengine.api.app import app
+
         client = TestClient(app)
         resp = client.get("/api/v1/world", headers={"X-Bootstrap-Secret": "test-secret"})
         assert resp.status_code == 200
@@ -232,6 +239,7 @@ class TestWorldRoute:
         state.save()
 
         from netengine.api.app import app
+
         client = TestClient(app)
         resp = client.get("/api/v1/world", headers={"X-Bootstrap-Secret": "test-secret"})
         assert resp.status_code == 200
@@ -243,6 +251,7 @@ class TestReloadRoute:
         monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
         from netengine.api.app import app
+
         client = TestClient(app)
 
         spec = _load_example("minimal.yaml")
@@ -267,6 +276,7 @@ class TestReloadRoute:
         new_dict["dns"]["root"]["listen_ip"] = "10.99.0.1"
 
         from netengine.api.app import app
+
         client = TestClient(app)
         resp = client.post(
             "/api/v1/reload",
@@ -287,6 +297,7 @@ class TestReloadRoute:
         state.save()
 
         from netengine.api.app import app
+
         client = TestClient(app)
         resp = client.post(
             "/api/v1/reload",
@@ -307,6 +318,7 @@ class TestServicesRoute:
 
         with patch("docker.from_env", return_value=mock_docker):
             from netengine.api.app import app
+
             client = TestClient(app)
             resp = client.get("/api/v1/services", headers={"X-Bootstrap-Secret": "test-secret"})
 
@@ -324,6 +336,7 @@ class TestDNSRoute:
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             from netengine.api.app import app
+
             client = TestClient(app)
             resp = client.get(
                 "/api/v1/dns/gitea.acme.internal",
@@ -352,6 +365,7 @@ class TestTeardownRoute:
 
         with patch("docker.from_env", return_value=mock_docker):
             from netengine.api.app import app
+
             client = TestClient(app)
             resp = client.request(
                 "DELETE",
@@ -371,6 +385,7 @@ class TestTeardownRoute:
         state.save()
 
         from netengine.api.app import app
+
         client = TestClient(app)
         resp = client.request(
             "DELETE",
@@ -392,6 +407,7 @@ class TestExportImportRoutes:
         state.save()
 
         from netengine.api.app import app
+
         client = TestClient(app)
         resp = client.get("/api/v1/export", headers={"X-Bootstrap-Secret": "test-secret"})
         assert resp.status_code == 200
@@ -410,6 +426,7 @@ class TestExportImportRoutes:
         state.save()
 
         from netengine.api.app import app
+
         client = TestClient(app)
         resp = client.post(
             "/api/v1/import",
@@ -433,6 +450,7 @@ class TestQueuesRoute:
 
         with patch("netengine.core.supabase_client.get_supabase", return_value=mock_supabase):
             from netengine.api.app import app
+
             client = TestClient(app)
             resp = client.get("/api/v1/queues", headers={"X-Bootstrap-Secret": "test-secret"})
 
@@ -446,11 +464,20 @@ class TestIdentityRealmsRoute:
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
 
         state = RuntimeState()
-        state.identity_platform_output = {"realm_name": "platform", "issuer": "https://auth.platform.internal/realms/platform", "user_count": 1}
-        state.identity_inworld_output = {"realm_name": "inworld", "issuer": "https://auth.internal/realms/inworld", "org_realms": ["acme-corp"]}
+        state.identity_platform_output = {
+            "realm_name": "platform",
+            "issuer": "https://auth.platform.internal/realms/platform",
+            "user_count": 1,
+        }
+        state.identity_inworld_output = {
+            "realm_name": "inworld",
+            "issuer": "https://auth.internal/realms/inworld",
+            "org_realms": ["acme-corp"],
+        }
         state.save()
 
         from netengine.api.app import app
+
         client = TestClient(app)
         resp = client.get("/api/v1/identity/realms", headers={"X-Bootstrap-Secret": "test-secret"})
         assert resp.status_code == 200

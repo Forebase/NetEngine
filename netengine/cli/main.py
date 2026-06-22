@@ -141,6 +141,7 @@ def down(yes: bool) -> None:
 
     try:
         import docker as docker_sdk
+
         client = docker_sdk.from_env()
 
         for container in client.containers.list(all=True):
@@ -173,6 +174,7 @@ def down(yes: bool) -> None:
 
     # Clear local state file
     from netengine.core.state import get_state_file
+
     state_file = get_state_file()
     if state_file.exists():
         state_file.unlink()
@@ -216,6 +218,8 @@ def _print_status(state: RuntimeState) -> None:
         click.echo("CA certificate: present")
     if state.step_ca_container_id:
         click.echo(f"step-ca container: {state.step_ca_container_id}")
+
+
 @click.option(
     "--mock",
     is_flag=True,
