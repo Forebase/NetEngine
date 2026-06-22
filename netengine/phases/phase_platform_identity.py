@@ -44,6 +44,9 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
         with open(f"{cert_dir}/auth.key", "w") as f:
             f.write(key)
 
+        auth_ip = spec.identity_platform.listen_ip
+        auth_hostname = spec.identity_platform.canonical_name
+
         docker = DockerHandler()
         container_id = await docker.start_container(
             name="netengines_keycloak_platform",
@@ -51,9 +54,10 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
             command=["start"],
             volumes={cert_dir: {"bind": "/certs", "mode": "ro"}},
             network="core",
+            ip=auth_ip,
             ip=spec.identity_platform.listen_ip,
             environment={
-                "KC_HOSTNAME": "auth.platform.internal",
+                "KC_HOSTNAME": auth_hostname,
                 "KC_HTTPS_CERTIFICATE_FILE": "/certs/auth.crt",
                 "KC_HTTPS_CERTIFICATE_KEY_FILE": "/certs/auth.key",
                 "KC_BOOTSTRAP_ADMIN_USERNAME": "admin",
@@ -64,11 +68,11 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
         context.runtime_state.save()
 
         # Wait for Keycloak to be ready (healthcheck)
-        await self._wait_for_keycloak("https://10.0.0.7/health/ready")
+        await self._wait_for_keycloak(f"https://{auth_ip}/health/ready")
 
         # 4. Register DNS record for auth.platform.internal
         dns = DNSHandler()  # or get from context
-        await dns.add_zone_record(context, "platform.internal", "A", "auth", "10.0.0.7", 300)
+        await dns.add_zone_record(context, "platform.internal", "A", "auth", auth_ip, 300)
 
         # 5. Bootstrap platform realm via OIDC handler
         oidc = OIDCHandler(

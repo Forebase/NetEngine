@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.core.supabase_client import get_supabase
+from netengine.errors import ServicesError
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -116,7 +117,7 @@ class AppHandler:
             .execute()
         )
         if not result.data:
-            raise RuntimeError(f"AND {and_name} not found")
+            raise ServicesError(f"AND {and_name} not found")
         cidr = result.data[0]["cidr"]
         # Gateway IP is the first usable IP in the CIDR block
         network = ipaddress.ip_network(cidr, strict=False)

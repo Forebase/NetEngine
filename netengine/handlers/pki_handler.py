@@ -9,6 +9,7 @@ from typing import Optional
 import aiohttp
 
 from netengine.core.state import RuntimeState
+from netengine.errors import PKIError
 from netengine.handlers.docker_handler import DockerHandler
 
 
@@ -48,7 +49,7 @@ class PKIHandler:
 
         # 4. Healthcheck
         if not await self.healthcheck():
-            raise RuntimeError("step‑ca is not responding after bootstrap")
+            raise PKIError("step‑ca is not responding after bootstrap")
 
     # ─────────────────────────────────────────────
     # CA generation (one‑off)
@@ -87,7 +88,7 @@ class PKIHandler:
                 image=self.image, command=cmd, volumes=volumes, environment={}
             )
             if result["exit_code"] != 0:
-                raise RuntimeError(f"step ca init failed: {result['logs']}")
+                raise PKIError(f"step ca init failed: {result['logs']}")
 
             # Persist password to volume so _start_server can retrieve it
             persist_result = await self.docker.run_container_one_off(
@@ -116,7 +117,7 @@ class PKIHandler:
             image=self.image, command=cmd, volumes=volumes, environment={}
         )
         if result["exit_code"] != 0:
-            raise RuntimeError(f"Failed to read {path}: {result['logs']}")
+            raise PKIError(f"Failed to read {path}: {result['logs']}")
         return result["logs"]
 
     # ─────────────────────────────────────────────
@@ -137,7 +138,7 @@ class PKIHandler:
         password = await self._get_password()
         if password is None:
             # If no password found, we need to re-generate? Not for now.
-            raise RuntimeError("CA password not found; cannot start step-ca")
+            raise PKIError("CA password not found; cannot start step-ca")
 
         volumes = {self.volume_name: {"bind": "/home/step", "mode": "rw"}}
         container_id = await self.docker.start_container(
@@ -212,7 +213,7 @@ class PKIHandler:
             image=self.image, command=cmd, volumes=volumes, environment={}
         )
         if result["exit_code"] != 0:
-            raise RuntimeError(f"Certificate issuance failed: {result['logs']}")
+            raise PKIError(f"Certificate issuance failed: {result['logs']}")
         # Now read the cert and key from the container? We mounted /tmp, but we need to read from volume.
         # Actually we can mount a temporary directory to extract the certs.
         # Simpler: use a shared volume or write to the CA volume and read.

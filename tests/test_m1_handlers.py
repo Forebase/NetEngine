@@ -5,6 +5,7 @@ Tests the execute/healthcheck/should_skip interface for Phase 0 and Phases 1-2.
 
 from datetime import datetime
 
+from netengine.errors import DNSError
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.substrate import SubstrateHandler
@@ -314,6 +315,6 @@ class TestDNSZoneRecordUpdates:
                 value="10.0.0.6",
             )
             # Should not reach here
-            assert False, "Expected RuntimeError"
-        except RuntimeError as e:
+            assert False, "Expected DNSError"
+        except DNSError as e:
             assert "DNS phase must run" in str(e)

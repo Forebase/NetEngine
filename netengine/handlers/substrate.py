@@ -11,6 +11,7 @@ Responsibilities:
 from datetime import datetime
 from typing import Any
 
+from netengine.errors import SubstrateError
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -236,7 +237,7 @@ class SubstrateHandler(BasePhaseHandler):
             }
 
         else:
-            raise RuntimeError(f"Unsupported orchestrator type: {orchestrator_type}")
+            raise SubstrateError(f"Unsupported orchestrator type: {orchestrator_type}")
 
     async def _create_networks(
         self, context: PhaseContext, networks_config: dict[str, Any]
