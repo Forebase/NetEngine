@@ -123,7 +123,9 @@ class RegistriesPhaseHandler(BasePhaseHandler):
                         value="10.0.0.1",  # placeholder – would be replaced with actual IP from AND handler
                     )
                     await pgmq.delete("dns_updates", msg["msg_id"])
-                    logger.info(f"Successfully processed DNS update for domain: {payload.get('domain')}")
+                    logger.info(
+                        f"Successfully processed DNS update for domain: {payload.get('domain')}"
+                    )
                 except Exception as e:
                     logger.error(f"Error processing DNS update: {e}")
                     await pgmq.archive_to_dlq("dns_updates", msg["msg_id"], str(e))

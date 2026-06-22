@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Callable, Dict, List
+from typing import Any, Callable, Coroutine, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -8,11 +8,11 @@ logger = logging.getLogger(__name__)
 class ConsumerSupervisor:
     """Manages long-running consumer tasks with automatic restart on failure."""
 
-    def __init__(self):
-        self.tasks: Dict[str, asyncio.Task] = {}
-        self.consumers: Dict[str, Callable] = {}
+    def __init__(self) -> None:
+        self.tasks: Dict[str, asyncio.Task[Any]] = {}
+        self.consumers: Dict[str, Callable[[], Coroutine[Any, Any, None]]] = {}
 
-    def register(self, name: str, consumer_coro: Callable) -> None:
+    def register(self, name: str, consumer_coro: Callable[[], Coroutine[Any, Any, None]]) -> None:
         """Register a consumer coroutine function."""
         self.consumers[name] = consumer_coro
 
@@ -21,9 +21,12 @@ class ConsumerSupervisor:
         for name, consumer_func in self.consumers.items():
             await self.start_consumer(name, consumer_func)
 
-    async def start_consumer(self, name: str, consumer_func: Callable) -> None:
+    async def start_consumer(
+        self, name: str, consumer_func: Callable[[], Coroutine[Any, Any, None]]
+    ) -> None:
         """Start a single consumer with automatic restart on failure."""
-        async def supervised_consumer():
+
+        async def supervised_consumer() -> None:
             while True:
                 try:
                     logger.info(f"Starting consumer: {name}")
@@ -35,9 +38,9 @@ class ConsumerSupervisor:
                     logger.error(f"Consumer {name} crashed: {e}. Restarting in 5s...")
                     await asyncio.sleep(5)
 
-        task = asyncio.create_task(supervised_consumer())
+        task: asyncio.Task[None] = asyncio.create_task(supervised_consumer())
         self.tasks[name] = task
-        logger.info(f"Consumer {name} started (task ID: {task.name})")
+        logger.info(f"Consumer {name} started")
 
     async def stop_all(self) -> None:
         """Stop all consumers gracefully."""
@@ -51,7 +54,7 @@ class ConsumerSupervisor:
 
     def get_status(self) -> Dict[str, str]:
         """Get status of all consumers."""
-        status = {}
+        status: Dict[str, str] = {}
         for name, task in self.tasks.items():
             if task.done():
                 status[name] = "crashed" if task.exception() else "completed"
