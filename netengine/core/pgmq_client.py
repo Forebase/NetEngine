@@ -52,19 +52,29 @@ class PGMQClient:
             return
 
         envelope = EventEnvelope(**json.loads(msg["message"]))
-        updated = EventEnvelope(
-            event_id=envelope.event_id,
-            correlation_id=envelope.correlation_id,
-            event_type=envelope.event_type,
-            emitted_by=envelope.emitted_by,
-            emitted_at=envelope.emitted_at,
-            payload={**envelope.payload, "dlq_reason": reason},
-            parent_event_id=envelope.parent_event_id,
-            retry_count=envelope.retry_count + 1,
-        )
-
         await self.delete(queue_name, msg_id)
-        if updated.retry_count >= MAX_RETRIES:
-            await self.send(f"{queue_name}_dlq", updated)
+
+        if envelope.retry_count + 1 >= MAX_RETRIES:
+            dlq_envelope = EventEnvelope(
+                event_id=envelope.event_id,
+                correlation_id=envelope.correlation_id,
+                event_type=envelope.event_type,
+                emitted_by=envelope.emitted_by,
+                emitted_at=envelope.emitted_at,
+                payload={**envelope.payload, "dlq_reason": reason},
+                parent_event_id=envelope.parent_event_id,
+                retry_count=envelope.retry_count + 1,
+            )
+            await self.send(f"{queue_name}_dlq", dlq_envelope)
         else:
-            await self.send(queue_name, updated)
+            requeue_envelope = EventEnvelope(
+                event_id=envelope.event_id,
+                correlation_id=envelope.correlation_id,
+                event_type=envelope.event_type,
+                emitted_by=envelope.emitted_by,
+                emitted_at=envelope.emitted_at,
+                payload=envelope.payload,
+                parent_event_id=envelope.parent_event_id,
+                retry_count=envelope.retry_count + 1,
+            )
+            await self.send(queue_name, requeue_envelope)

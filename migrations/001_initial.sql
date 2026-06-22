@@ -104,6 +104,26 @@ BEGIN
 END;
 $$;
 
+-- pgmq_read_by_id(queue_name, msg_id)
+CREATE OR REPLACE FUNCTION pgmq_read_by_id(queue_name text, msg_id bigint)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    msg RECORD;
+BEGIN
+    SELECT * FROM pgmq.read(queue_name, msg_id) INTO msg;
+    RETURN CASE WHEN msg IS NULL THEN NULL ELSE json_build_object(
+        'msg_id', msg.msg_id,
+        'message', msg.message,
+        'read_ct', msg.read_ct,
+        'enqueued_at', msg.enqueued_at,
+        'first_received_at', msg.first_received_at,
+        'next_msg_scheduled_for', msg.next_msg_scheduled_for
+    ) END;
+END;
+$$;
+
 -- App deployments (tracks deployed applications)
 CREATE TABLE IF NOT EXISTS app_deployments (
     id              BIGSERIAL PRIMARY KEY,

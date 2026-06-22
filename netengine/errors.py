@@ -12,7 +12,7 @@ class BaseNetEngineException(Exception):
     ) -> None:
         self._msg = message
         self._code: int | str | None = None
-        self._log_rules: Config | dict[str, Any] = {
+        self._log_rules: dict[str, Any] = {
             "log_on_init": True,
             "at_lvl": "TRACE",
             "with_msg": message,
