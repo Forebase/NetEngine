@@ -43,7 +43,7 @@ async def test_phase_3_pki_inserts_ca_dns_record(context_with_zone_files):
 
 
 @pytest.mark.asyncio
-async def test_storage_handler_inserts_minio_dns_record(context_with_zone_files):
+async def test_storage_handler_inserts_minio_dns_record(context_with_zone_files, tmp_path):
     """Phase 8 storage helper should store context and insert DNS records."""
     docker = SimpleNamespace(start_container=AsyncMock())
     pki = SimpleNamespace(issue_cert=AsyncMock(return_value=("cert", "key")))
@@ -54,7 +54,19 @@ async def test_storage_handler_inserts_minio_dns_record(context_with_zone_files)
     )
     handler._create_bucket = AsyncMock()
 
-    await handler.deploy_minio()
+    with (
+        patch("os.makedirs"),
+        patch(
+            "builtins.open",
+            MagicMock(
+                return_value=MagicMock(
+                    __enter__=MagicMock(return_value=MagicMock()),
+                    __exit__=MagicMock(return_value=False),
+                )
+            ),
+        ),
+    ):
+        await handler.deploy_minio()
 
     platform_zone = context_with_zone_files.runtime_state.dns_output["zone_files"][
         "platform.internal"

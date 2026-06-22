@@ -1,7 +1,7 @@
 """Phase execution context and runtime state."""
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
 from netengine.core.state import RuntimeState
