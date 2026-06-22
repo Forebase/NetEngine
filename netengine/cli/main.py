@@ -78,6 +78,19 @@ async def _up(spec_file: str, mock: bool, skip_migrations: bool) -> None:
     orchestrator = Orchestrator(spec, mock_mode=mock)
     await orchestrator.execute_phases()
 
+    # Start background consumers (DNS updates, etc.)
+    logger.info("All phases complete. Starting background consumers.")
+    await orchestrator.start_consumers()
+
+    # Keep the event loop alive for background consumers
+    logger.info("Background consumers started. Keeping event loop alive (Ctrl+C to exit).")
+    try:
+        await asyncio.sleep(float("inf"))
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user")
+        await orchestrator.consumer_supervisor.stop_all()
+        logger.info("Consumers stopped")
+
 
 @cli.command()
 def status() -> None:

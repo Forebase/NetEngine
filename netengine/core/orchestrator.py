@@ -4,6 +4,7 @@ from typing import Any, List, Optional, Type
 
 from pydantic import ValidationError
 
+from netengine.core.consumer_supervisor import ConsumerSupervisor
 from netengine.core.state import RuntimeState
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -70,12 +71,16 @@ class Orchestrator:
                 logger.warning(f"Docker unavailable, falling back to mock mode: {exc}")
                 effective_mock = True
 
+        # Initialize consumer supervisor for background tasks
+        self.consumer_supervisor = ConsumerSupervisor()
+
         self.context = PhaseContext(
             spec=self.spec,
             runtime_state=self.runtime_state,
             logger=logger,
             docker_client=docker_client,
             mock_mode=effective_mock,
+            consumer_supervisor=self.consumer_supervisor,
         )
 
     @staticmethod
@@ -135,6 +140,10 @@ class Orchestrator:
                 self.runtime_state.last_error = str(e)
                 self.runtime_state.save()
                 raise
+
+    async def start_consumers(self) -> None:
+        """Start all registered consumer tasks."""
+        await self.consumer_supervisor.start_all()
 
     def _mark_phase_complete(self, phase_num: int, handler: BasePhaseHandler) -> None:
         """Record user-facing phase completion for a completed handler.

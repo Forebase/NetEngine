@@ -143,6 +143,26 @@ class OIDCHandler:
         users = await self._admin_request("GET", f"realms/{realm}/users?username={username}")
         return users[0]["id"]
 
+    async def add_token_mapper(
+        self,
+        realm: str,
+        client_id: str,
+        mapper_name: str,
+        protocol_mapper_type: str,
+        config: dict,
+    ) -> str:
+        """Add a protocol mapper (token claim) to a client."""
+        payload = {
+            "name": mapper_name,
+            "protocolMapper": protocol_mapper_type,
+            "protocol": "openid-connect",
+            "config": config,
+        }
+        await self._admin_request(
+            "POST", f"realms/{realm}/clients/{client_id}/protocol-mappers/models", json=payload
+        )
+        return mapper_name
+
     def _generate_secret(self) -> str:
         import secrets
 
