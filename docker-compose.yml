@@ -95,3 +95,4 @@ services:
 volumes:
   postgres_data:
   netengine_data:
+  netengines_pki_data:

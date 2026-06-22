@@ -160,4 +160,5 @@ class TestM3OrchestratorIntegration:
             6,
             7,
             8,
+            9,
         ], "DNS is registered once at Phase 1 and marks Phase 2 complete"
