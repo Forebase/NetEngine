@@ -221,3 +221,6 @@ __marimo__/
 
 # Unspecifed
 /netengine/_BASE/
+
+# NetEngine local runtime state
+netengines_state.json

@@ -9,6 +9,18 @@ from netengine.handlers.phase_pki import PKIPhaseHandler
 from netengine.phases.phase_platform_identity import PlatformIdentityPhaseHandler
 
 
+async def _set_substrate_output(context):
+    context.runtime_state.substrate_output = {"healthy": True}
+
+
+async def _set_dns_output(context):
+    context.runtime_state.dns_output = {"healthy": True}
+
+
+async def _set_pki_output(context):
+    context.runtime_state.pki_bootstrapped = True
+
+
 @pytest.fixture
 def m3_spec():
     """Spec with PKI and Platform Identity configuration."""
@@ -78,7 +90,11 @@ class TestOrchestratorPhaseExecution:
         """Orchestrator should stop execution at up_to_phase limit."""
         orchestrator = Orchestrator(m3_spec)
 
-        with patch("netengine.core.orchestrator.SubstrateHandler.execute", new_callable=AsyncMock):
+        with patch(
+            "netengine.core.orchestrator.SubstrateHandler.execute",
+            new_callable=AsyncMock,
+            side_effect=_set_substrate_output,
+        ):
             with patch(
                 "netengine.core.orchestrator.SubstrateHandler.should_skip",
                 new_callable=AsyncMock,
@@ -90,7 +106,9 @@ class TestOrchestratorPhaseExecution:
                     return_value=True,
                 ):
                     with patch(
-                        "netengine.core.orchestrator.DNSHandler.execute", new_callable=AsyncMock
+                        "netengine.core.orchestrator.DNSHandler.execute",
+                        new_callable=AsyncMock,
+                        side_effect=_set_dns_output,
                     ):
                         with patch(
                             "netengine.core.orchestrator.DNSHandler.should_skip",
@@ -103,7 +121,10 @@ class TestOrchestratorPhaseExecution:
                                 return_value=True,
                             ):
                                 with patch.object(
-                                    PKIPhaseHandler, "execute", new_callable=AsyncMock
+                                    PKIPhaseHandler,
+                                    "execute",
+                                    new_callable=AsyncMock,
+                                    side_effect=_set_pki_output,
                                 ):
                                     with patch.object(
                                         PKIPhaseHandler,
@@ -152,7 +173,11 @@ class TestOrchestratorPhaseExecution:
         """Orchestrator should mark phase as complete after successful execution."""
         orchestrator = Orchestrator(m3_spec)
 
-        with patch("netengine.core.orchestrator.SubstrateHandler.execute", new_callable=AsyncMock):
+        with patch(
+            "netengine.core.orchestrator.SubstrateHandler.execute",
+            new_callable=AsyncMock,
+            side_effect=_set_substrate_output,
+        ):
             with patch(
                 "netengine.core.orchestrator.SubstrateHandler.should_skip",
                 new_callable=AsyncMock,
@@ -164,7 +189,9 @@ class TestOrchestratorPhaseExecution:
                     return_value=True,
                 ):
                     with patch(
-                        "netengine.core.orchestrator.DNSHandler.execute", new_callable=AsyncMock
+                        "netengine.core.orchestrator.DNSHandler.execute",
+                        new_callable=AsyncMock,
+                        side_effect=_set_dns_output,
                     ):
                         with patch(
                             "netengine.core.orchestrator.DNSHandler.should_skip",
@@ -187,7 +214,11 @@ class TestOrchestratorPhaseExecution:
         """Orchestrator should raise error if phase healthcheck fails."""
         orchestrator = Orchestrator(m3_spec)
 
-        with patch("netengine.core.orchestrator.SubstrateHandler.execute", new_callable=AsyncMock):
+        with patch(
+            "netengine.core.orchestrator.SubstrateHandler.execute",
+            new_callable=AsyncMock,
+            side_effect=_set_substrate_output,
+        ):
             with patch(
                 "netengine.core.orchestrator.SubstrateHandler.should_skip",
                 new_callable=AsyncMock,

@@ -5,7 +5,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-STATE_FILE = Path(os.environ.get("NETENGINES_STATE_FILE", "netengines_state.json"))
+DEFAULT_STATE_FILE = "netengines_state.json"
+
+
+def get_state_file() -> Path:
+    """Return the runtime state file path for the current environment."""
+    return Path(os.environ.get("NETENGINES_STATE_FILE", DEFAULT_STATE_FILE))
 
 
 @dataclass
@@ -51,21 +56,47 @@ class RuntimeState:
 
     @classmethod
     def load(cls) -> "RuntimeState":
-        if STATE_FILE.exists():
-            with open(STATE_FILE, "r") as f:
+        state_file = get_state_file()
+        if state_file.exists():
+            with open(state_file, "r") as f:
                 data = json.load(f)
             # datetime fields are stored as ISO strings
             for dt_field in ("started_at", "completed_at", "last_error_at"):
                 if data.get(dt_field):
                     data[dt_field] = datetime.fromisoformat(data[dt_field])
-            return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+            state = cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+            state._discard_completion_flags_without_outputs()
+            return state
         return cls()
 
+    def _discard_completion_flags_without_outputs(self) -> None:
+        """Ignore completion flags that do not have their matching phase output."""
+        phase_outputs = {
+            "0": ("substrate_output",),
+            "1": ("dns_output",),
+            "2": ("dns_output",),
+            "3": ("pki_bootstrapped",),
+            "4": ("identity_platform_output",),
+            "5": ("world_registry_output", "domain_registry_output"),
+            "6": ("identity_inworld_output",),
+            "7": ("ands_output",),
+            "8": ("world_services_output",),
+            "9": ("org_apps_output",),
+        }
+        for phase, output_fields in phase_outputs.items():
+            if self.phase_completed.get(phase) is True and not all(
+                getattr(self, output_field, None) for output_field in output_fields
+            ):
+                self.phase_completed.pop(phase, None)
+
     def save(self) -> None:
+        self._discard_completion_flags_without_outputs()
         data = asdict(self)
         # Serialize datetime fields to ISO strings
         for k, v in data.items():
             if isinstance(v, datetime):
                 data[k] = v.isoformat()
-        with open(STATE_FILE, "w") as f:
+        state_file = get_state_file()
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(state_file, "w") as f:
             json.dump(data, f, indent=2)

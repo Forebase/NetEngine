@@ -85,6 +85,12 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
         )
         context.runtime_state.platform_realm_id = realm_id
         context.runtime_state.admin_user_id = user_id
+        context.runtime_state.identity_platform_output = {
+            "keycloak_container_id": container_id,
+            "platform_realm_id": realm_id,
+            "admin_user_id": user_id,
+            "deployed_at": datetime.utcnow().isoformat(),
+        }
         context.runtime_state.phase_completed["4"] = True
         context.runtime_state.save()
 

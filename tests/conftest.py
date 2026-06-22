@@ -58,6 +58,12 @@ def dev_sandbox_spec() -> NetEngineSpec:
 # ─────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def isolated_runtime_state_file(tmp_path, monkeypatch):
+    """Keep tests from reading or writing the repository-root runtime state file."""
+    monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "netengines_state.json"))
+
+
 @pytest.fixture
 def runtime_state() -> RuntimeState:
     """Fresh runtime state for each test."""
