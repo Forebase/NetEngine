@@ -1,5 +1,7 @@
 import logging
-from typing import Any, Dict, List, Type
+from typing import Any, List, Type
+
+from pydantic import ValidationError
 
 from netengine.core.state import RuntimeState
 from netengine.handlers._base import BasePhaseHandler
@@ -12,6 +14,8 @@ from netengine.phases.phase_inworld_identity import InWorldIdentityPhaseHandler
 from netengine.phases.phase_platform_identity import PlatformIdentityPhaseHandler
 from netengine.phases.phase_registries import RegistriesPhaseHandler
 from netengine.phases.phase_services import ServicesPhaseHandler
+from netengine.spec.loader import SpecLoadError
+from netengine.spec.models import NetEngineSpec
 
 logger = logging.getLogger(__name__)
 
@@ -36,19 +40,33 @@ class Orchestrator:
         (8, ServicesPhaseHandler),
     ]
 
-    def __init__(self, spec: Dict[str, Any]):
-        """Initialize orchestrator with spec.
+    def __init__(self, spec: NetEngineSpec | dict[str, Any]):
+        """Initialize orchestrator with a validated NetEngine spec.
 
         Args:
-            spec: Loaded YAML specification with all phase configs
+            spec: Validated NetEngineSpec or raw YAML specification dictionary
         """
-        self.spec = spec
+        self.spec = self._normalize_spec(spec)
         self.runtime_state = RuntimeState.load()
         self.context = PhaseContext(
-            spec=spec,
+            spec=self.spec,
             runtime_state=self.runtime_state,
             logger=logger,
         )
+
+    @staticmethod
+    def _normalize_spec(spec: NetEngineSpec | dict[str, Any]) -> NetEngineSpec:
+        """Normalize raw spec dictionaries into the canonical spec model."""
+        if isinstance(spec, NetEngineSpec):
+            return spec
+
+        if not isinstance(spec, dict):
+            raise SpecLoadError("Spec must be a NetEngineSpec or YAML object (dict)")
+
+        try:
+            return NetEngineSpec.model_validate(spec)
+        except ValidationError as e:
+            raise SpecLoadError(f"Spec validation failed: {e}") from e
 
     async def execute_phases(self, up_to_phase: int = 8) -> None:
         """Execute phases 0 through up_to_phase.
