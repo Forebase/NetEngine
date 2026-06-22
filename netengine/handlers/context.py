@@ -1,11 +1,17 @@
 """Phase execution context and runtime state."""
 
 import logging
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional
 
 from netengine.core.state import RuntimeState
 from netengine.spec.models import NetEngineSpec
+
+# Default directory for CoreDNS Corefile and zone files.
+# Overridden by NETENGINE_ZONE_DIR env var.
+DEFAULT_ZONE_DIR = str(Path.cwd() / "data" / "coredns")
 
 
 @dataclass
@@ -29,3 +35,15 @@ class PhaseContext:
     # Phase-specific config
     phase_name: Optional[str] = None
     phase_config: Optional[dict[str, Any]] = None
+
+    # When True, handlers skip real infrastructure calls (Docker, DNS queries, etc.)
+    # and return stub outputs. Set via NETENGINE_MOCK=true env var.
+    mock_mode: bool = field(
+        default_factory=lambda: os.environ.get("NETENGINE_MOCK", "").lower() in ("1", "true", "yes")
+    )
+
+    # Directory where the DNS handler writes Corefile + zone files.
+    # CoreDNS container bind-mounts this directory to /etc/coredns.
+    zone_dir: str = field(
+        default_factory=lambda: os.environ.get("NETENGINE_ZONE_DIR", DEFAULT_ZONE_DIR)
+    )
