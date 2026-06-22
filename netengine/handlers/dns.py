@@ -793,7 +793,9 @@ class DNSHandler(BasePhaseHandler):
             # Signal CoreDNS to reload zones (SIGUSR1)
             await self._reload_coredns(context)
         else:
-            logger.warning(f"Zone directory does not exist, disk flush skipped: {zone_file_path.parent}")
+            logger.warning(
+                f"Zone directory does not exist, disk flush skipped: {zone_file_path.parent}"
+            )
 
         logger.info(f"Zone record updated: {zone} {record_type} {name} -> {value} (TTL: {ttl})")
 
