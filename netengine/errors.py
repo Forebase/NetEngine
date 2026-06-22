@@ -1,7 +1,5 @@
 from typing import Any
 
-from omegaconf import DictConfig as Config
-
 
 class BaseNetEngineException(Exception):
     def __init__(
