@@ -2,7 +2,14 @@
 
 **Date:** 2026-06-21  
 **Audit Scope:** `netengine/handlers/dns.py`, related tests, downstream dependencies  
-**Status:** CRITICAL BLOCKER IDENTIFIED
+**Status:** ~~CRITICAL BLOCKER IDENTIFIED~~ **RESOLVED** (see resolution note below)
+
+> **Resolution note (2026-06-22):** The `add_zone_record()` stub (`pass`) was fixed in
+> commit `2991ef3`. The method now updates zone files in-memory and flushes them to disk,
+> then signals CoreDNS to reload. The hardcoded L1 service IPs in
+> `_generate_platform_zone_file` were also replaced with spec-derived values. The remaining
+> open item (shallow `_verify_dns_service` — Section 2.1) is tracked as a future improvement
+> for when the CoreDNS container is running live in M3+.
 
 ---
 

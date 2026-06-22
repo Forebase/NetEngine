@@ -10,7 +10,11 @@ from netengine.core.state import RuntimeState
 from netengine.spec.models import NetEngineSpec
 
 if TYPE_CHECKING:
+    import docker as docker_sdk  # type: ignore[import]
+    from supabase import AsyncClient as SupabaseClient  # type: ignore[import]
+
     from netengine.core.consumer_supervisor import ConsumerSupervisor
+    from netengine.core.pgmq_client import PGMQClient
 
 # Default directory for CoreDNS Corefile and zone files.
 # Overridden by NETENGINE_ZONE_DIR env var.
@@ -29,11 +33,11 @@ class PhaseContext:
     runtime_state: RuntimeState
     logger: logging.Logger
 
-    # Service clients (stubbed in M0, populated in M1+)
-    docker_client: Any = None
+    # Service clients (None until the relevant phase wires them up)
+    docker_client: Optional["docker_sdk.DockerClient"] = None
     kubernetes_client: Any = None
-    supabase_client: Any = None
-    pgmq_client: Any = None
+    supabase_client: Optional["SupabaseClient"] = None
+    pgmq_client: Optional["PGMQClient"] = None
     consumer_supervisor: Optional["ConsumerSupervisor"] = None
 
     # Phase-specific config

@@ -344,7 +344,7 @@ class DNSHandler(BasePhaseHandler):
             logger.debug("Generated root zone file")
 
         # Platform zone file
-        platform_content = self._generate_platform_zone_file(platform_zone, root_zone)
+        platform_content = self._generate_platform_zone_file(platform_zone, root_zone, context)
         zone_files["platform.internal"] = platform_content
         logger.debug("Generated platform zone file")
 
@@ -529,16 +529,20 @@ class DNSHandler(BasePhaseHandler):
         return "\n".join(lines)
 
     def _generate_platform_zone_file(
-        self, platform_zone: dict[str, Any], root_zone: dict[str, Any]
+        self,
+        platform_zone: dict[str, Any],
+        root_zone: dict[str, Any],
+        context: "PhaseContext",
     ) -> str:
-        """Generate platform zone file with L1 service records.
-
-        This is a stub; real implementation populates from identity, registry, etc.
-        """
+        """Generate platform zone file with L1 service records."""
         platform_soa = (
             f"{platform_zone['name']}. SOA {root_zone['soa_primary_ns']}. "
             f"root.internal. 1 3600 1800 604800 86400"
         )
+
+        auth_ip = context.spec.identity_platform.listen_ip
+        ca_ip = context.spec.pki.acme.listen_ip
+        registry_ip = context.spec.world_registry.listen_ip
 
         lines = [
             f"; Platform zone: {platform_zone['name']}",
@@ -548,9 +552,9 @@ class DNSHandler(BasePhaseHandler):
             f"{platform_zone['ns_server']}. A {platform_zone['listen_ip']}",
             "",
             "; L1 service records (populated by M4+ handlers)",
-            f"auth.{platform_zone['name']}. A 10.0.0.7",
-            f"ca.{platform_zone['name']}. A 10.0.0.6",
-            f"registry.{platform_zone['name']}. A 10.0.0.8",
+            f"auth.{platform_zone['name']}. A {auth_ip}",
+            f"ca.{platform_zone['name']}. A {ca_ip}",
+            f"registry.{platform_zone['name']}. A {registry_ip}",
             "",
         ]
 
@@ -781,7 +785,28 @@ class DNSHandler(BasePhaseHandler):
         # Update the zone file in runtime_state
         dns_output["zone_files"][zone] = updated_content
 
+        # Flush to disk so the running CoreDNS container picks up the change
+        zone_file_path = Path(context.zone_dir) / f"{zone}.zone"
+        if zone_file_path.parent.exists():
+            await asyncio.to_thread(zone_file_path.write_text, updated_content)
+            logger.debug(f"Zone file flushed to disk: {zone_file_path}")
+            # Signal CoreDNS to reload zones (SIGUSR1)
+            await self._reload_coredns(context)
+
         logger.info(f"Zone record updated: {zone} {record_type} {name} -> {value} (TTL: {ttl})")
+
+    async def _reload_coredns(self, context: "PhaseContext") -> None:
+        """Send SIGUSR1 to the CoreDNS container to trigger a zone reload."""
+        if context.mock_mode or context.docker_client is None:
+            return
+        try:
+            import docker  # type: ignore[import]
+
+            container = context.docker_client.containers.get(COREDNS_CONTAINER_NAME)
+            container.kill(signal="SIGUSR1")
+            context.logger.debug("CoreDNS reload signal sent (SIGUSR1)")
+        except Exception as e:
+            context.logger.warning(f"CoreDNS reload signal failed (non-fatal): {e}")
 
     @staticmethod
     def _build_record_line(name: str, record_type: str, value: str, ttl: int) -> str:
