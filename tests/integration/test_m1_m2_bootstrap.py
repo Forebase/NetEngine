@@ -49,8 +49,10 @@ class TestSubstrateThenDNSBootstrap:
         assert "platform_zone" in context.runtime_state.dns_output
         assert "zone_files" in context.runtime_state.dns_output
         assert context.runtime_state.dns_output["healthy"] is True
+        assert context.runtime_state.phase_completed["1"] is True
+        assert context.runtime_state.phase_completed["2"] is True
 
-        # Both phases should mark completion
+        # DNS should mark both user-facing DNS phases complete
         assert context.runtime_state.started_at is not None
         assert context.runtime_state.completed_at is not None
 

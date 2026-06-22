@@ -218,8 +218,10 @@ class TestSubstrateAndDNSIntegration:
         dns = DNSHandler()
         await dns.execute(phase_context)
         assert phase_context.runtime_state.dns_output is not None
+        assert phase_context.runtime_state.phase_completed["1"] is True
+        assert phase_context.runtime_state.phase_completed["2"] is True
 
-        # Both should be marked complete
+        # DNS should be marked complete
         assert phase_context.runtime_state.completed_at is not None
 
     async def test_correlation_ids_preserved(self, phase_context: PhaseContext) -> None:

@@ -173,4 +173,6 @@ class TestM3OrchestratorIntegration:
 
         phase_numbers = [phase_num for phase_num, _ in orchestrator.PHASE_HANDLERS]
         assert phase_numbers == sorted(phase_numbers), "Phases not in ascending order"
-        assert phase_numbers == list(range(9)), "Phase numbers should be 0-8"
+        assert phase_numbers == [0, 1, 3, 4, 5, 6, 7, 8], (
+            "DNS is registered once at Phase 1 and marks Phase 2 complete"
+        )
