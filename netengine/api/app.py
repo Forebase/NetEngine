@@ -1,23 +1,18 @@
-import os
+"""FastAPI application entry point for the NetEngine operator API."""
 
-import aiohttp
-from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import FastAPI
 
-from netengine.core.state import RuntimeState
-from netengine.core.supabase_client import get_supabase
-from netengine.handlers.app_handler import AppHandler
-from netengine.handlers.dns import DNSHandler
-from netengine.handlers.docker_handler import DockerHandler
-from netengine.handlers.oidc_handler import OIDCHandler
-from netengine.handlers.pki_handler import PKIHandler
+from netengine.api.routes import router
+from netengine.logging.middleware import StructuredLoggingMiddleware
 
-app = FastAPI(title="NetEngine Operator API", version="0.1")
+app = FastAPI(
+    title="NetEngine Operator API",
+    version="0.1",
+    description="L1 operator surface for world management, phase orchestration, and inspection.",
+)
 
-# Bootstrap secret (from env)
-BOOTSTRAP_SECRET = os.environ.get("BOOTSTRAP_SECRET", "")
-KEYCLOAK_ISSUER = "https://auth.platform.internal/realms/platform"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{KEYCLOAK_ISSUER}/protocol/openid-connect/token")
+app.add_middleware(StructuredLoggingMiddleware)
+app.include_router(router)
 
 
 # ─────────────────────────────────────────────
@@ -220,3 +215,6 @@ async def deploy_app(org: str, payload: dict, user=Depends(get_current_user)):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     return deployment
+@app.get("/")
+async def root() -> dict:
+    return {"service": "netengine-operator-api", "version": "0.1", "docs": "/docs"}
