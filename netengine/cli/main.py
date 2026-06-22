@@ -1,13 +1,10 @@
 # netengines/cli/main.py
 import asyncio
 import logging
-from pathlib import Path
-
 import click
-import yaml
-
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
+from netengine.spec.loader import load_spec
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,8 +19,7 @@ def cli():
 @click.argument("spec_file", type=click.Path(exists=True))
 def up(spec_file):
     """Boot a world from the given spec YAML."""
-    with open(spec_file, "r") as f:
-        spec = yaml.safe_load(f)
+    spec = load_spec(spec_file)
     orchestrator = Orchestrator(spec)
     asyncio.run(orchestrator.run())
 
