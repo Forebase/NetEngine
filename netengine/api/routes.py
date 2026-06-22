@@ -466,6 +466,7 @@ async def replay_dlq(queue_name: str, user: dict = Depends(require_auth)) -> dic
                 break
             # Re-send to main queue and delete from DLQ
             import json as _json
+
             from netengine.events.schema import EventEnvelope
 
             envelope = EventEnvelope(**_json.loads(msg["message"]))

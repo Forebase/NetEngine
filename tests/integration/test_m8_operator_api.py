@@ -16,16 +16,10 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from netengine.core.reload import (
-    IMMUTABLE_PATHS,
-    DiffEntry,
-    check_immutability,
-    compute_diff,
-)
+from netengine.core.reload import IMMUTABLE_PATHS, DiffEntry, check_immutability, compute_diff
 from netengine.core.state import RuntimeState
 from netengine.spec.loader import load_spec
 from netengine.spec.models import NetEngineSpec
-
 
 # ─────────────────────────────────────────────
 # Helpers

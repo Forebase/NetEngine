@@ -2,8 +2,8 @@
 
 import asyncio
 import logging
-import sys
 import os
+import sys
 from pathlib import Path
 
 import click
