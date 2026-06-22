@@ -4,10 +4,13 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from netengine.core.state import RuntimeState
 from netengine.spec.models import NetEngineSpec
+
+if TYPE_CHECKING:
+    from netengine.core.consumer_supervisor import ConsumerSupervisor
 
 # Default directory for CoreDNS Corefile and zone files.
 # Overridden by NETENGINE_ZONE_DIR env var.
@@ -31,6 +34,7 @@ class PhaseContext:
     kubernetes_client: Any = None
     supabase_client: Any = None
     pgmq_client: Any = None
+    consumer_supervisor: Optional["ConsumerSupervisor"] = None
 
     # Phase-specific config
     phase_name: Optional[str] = None
