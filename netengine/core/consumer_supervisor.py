@@ -4,6 +4,9 @@ from typing import Any, Callable, Coroutine, Dict
 
 logger = logging.getLogger(__name__)
 
+_BACKOFF_BASE = 5
+_BACKOFF_MAX = 60
+
 
 class ConsumerSupervisor:
     """Manages long-running consumer tasks with automatic restart on failure."""
@@ -24,19 +27,22 @@ class ConsumerSupervisor:
     async def start_consumer(
         self, name: str, consumer_func: Callable[[], Coroutine[Any, Any, None]]
     ) -> None:
-        """Start a single consumer with automatic restart on failure."""
+        """Start a single consumer with automatic restart and exponential backoff."""
 
         async def supervised_consumer() -> None:
+            delay = _BACKOFF_BASE
             while True:
                 try:
                     logger.info(f"Starting consumer: {name}")
                     await consumer_func()
+                    delay = _BACKOFF_BASE  # reset on clean exit
                 except asyncio.CancelledError:
                     logger.info(f"Consumer {name} cancelled")
                     break
                 except Exception as e:
-                    logger.error(f"Consumer {name} crashed: {e}. Restarting in 5s...")
-                    await asyncio.sleep(5)
+                    logger.error(f"Consumer {name} crashed: {e}. Restarting in {delay}s...")
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, _BACKOFF_MAX)
 
         task: asyncio.Task[None] = asyncio.create_task(supervised_consumer())
         self.tasks[name] = task

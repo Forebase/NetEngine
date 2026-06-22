@@ -13,7 +13,7 @@ DEFAULT_STATE_FILE = "netengines_state.json"
 
 def get_state_file() -> Path:
     """Return the runtime state file path for the current environment."""
-    return Path(os.environ.get("NETENGINES_STATE_FILE", DEFAULT_STATE_FILE))
+    return Path(os.environ.get("NETENGINE_STATE_FILE", DEFAULT_STATE_FILE))
 
 
 @dataclass
