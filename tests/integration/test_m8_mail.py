@@ -8,7 +8,6 @@ Tests cover:
 - Prerequisites validation
 """
 
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -251,8 +250,6 @@ class TestM8DKIMSetup:
 
     async def test_m8_disables_dkim_when_not_configured(self) -> None:
         """M8 should respect DKIM disabled setting."""
-        handler = ServicesPhaseHandler()
-
         dkim_config = DKIMConfig(enabled=False)
         mail_config = MailConfig(enabled=True, dkim=dkim_config)
         world_services = WorldServicesPhase(mail=mail_config)
@@ -316,11 +313,6 @@ class TestM8DNSRecords:
 
     async def test_m8_injects_mx_records(self) -> None:
         """M8 should inject MX records pointing to mail server."""
-        handler = ServicesPhaseHandler()
-
-        org_spec = MagicMock()
-        org_spec.name = "acme"
-
         mail_config = MailConfig(
             enabled=True, listen_ip="10.0.0.13", canonical_name="mail.internal"
         )
@@ -333,8 +325,6 @@ class TestM8DNSRecords:
 
     async def test_m8_injects_dmarc_records(self) -> None:
         """M8 should inject DMARC records if enabled."""
-        handler = ServicesPhaseHandler()
-
         dmarc_config = DMARCConfig(enabled=True, policy="reject")
         mail_config = MailConfig(enabled=True, dmarc=dmarc_config)
         world_services = WorldServicesPhase(mail=mail_config)
@@ -403,8 +393,6 @@ class TestM8MailboxProvisioning:
 
     async def test_m8_respects_mailbox_quota(self) -> None:
         """M8 should use configured mailbox quota."""
-        handler = ServicesPhaseHandler()
-
         mailbox_policy = MailboxPolicy(auto_provision_from_orgs=True, quota_mb=2000)
         mail_config = MailConfig(enabled=True, mailbox_policy=mailbox_policy)
         world_services = WorldServicesPhase(mail=mail_config)

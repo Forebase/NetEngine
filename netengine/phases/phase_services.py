@@ -79,7 +79,8 @@ class ServicesPhaseHandler(BasePhaseHandler):
                 mail_output = await mail_handler.deploy_postfix()
                 services_output["mail"] = mail_output
                 logger.info(
-                    f"Mail deployment complete: {mail_output.get('orgs_configured', [])} orgs configured"
+                    "Mail deployment complete: "
+                    f"{mail_output.get('orgs_configured', [])} orgs configured"
                 )
 
             # Deploy Storage service (MinIO)
