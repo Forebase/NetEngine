@@ -244,7 +244,7 @@ class TestOrchestratorPhaseExecution:
                     pass
 
                 # Error should be recorded in state
-                assert orchestrator.runtime_state.error == "test error"
+                assert orchestrator.runtime_state.last_error == "test error"
 
 
 class TestOrchestratorPhaseOrdering:

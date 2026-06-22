@@ -20,6 +20,8 @@ def test_up_invokes_execute_phases_with_example_spec():
     with patch("netengine.cli.main.Orchestrator") as mock_orchestrator_class:
         mock_orchestrator = mock_orchestrator_class.return_value
         mock_orchestrator.execute_phases = AsyncMock()
+        # Mock consumer_supervisor as empty (no consumers registered)
+        mock_orchestrator.consumer_supervisor.consumers = {}
 
         result = CliRunner().invoke(cli_main.cli, ["up", str(spec_file)])
 

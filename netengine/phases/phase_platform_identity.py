@@ -83,12 +83,40 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
             email="admin@platform.internal",
             password=admin_password,
         )
+
+        # Create platform client for API authentication
+        client_id = await oidc.create_client(
+            realm="platform",
+            client_id="platform-api",
+            name="Platform API",
+            redirect_uris=["https://api.platform.internal/callback"],
+            public=False,
+        )
+
+        # Add token mapper to include org claim in JWT
+        await oidc.add_token_mapper(
+            realm="platform",
+            client_id=client_id,
+            mapper_name="org-claim-mapper",
+            protocol_mapper_type="oidc-usermodel-property-mapper",
+            config={
+                "user.attribute": "org",
+                "claim.name": "org",
+                "jsonType.label": "String",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true",
+            },
+        )
+
         context.runtime_state.platform_realm_id = realm_id
         context.runtime_state.admin_user_id = user_id
+        context.runtime_state.platform_client_id = client_id
         context.runtime_state.identity_platform_output = {
             "keycloak_container_id": container_id,
             "platform_realm_id": realm_id,
             "admin_user_id": user_id,
+            "platform_client_id": client_id,
             "deployed_at": datetime.utcnow().isoformat(),
         }
         context.runtime_state.phase_completed["4"] = True

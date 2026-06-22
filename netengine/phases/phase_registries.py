@@ -54,9 +54,14 @@ class RegistriesPhaseHandler(BasePhaseHandler):
                 value=tld["listen_ip"],
             )
 
-        # 5. Wire pgmq consumers (stub – in production, run a loop)
-        # We'll set up a consumer for DNS updates in a background task.
-        asyncio.create_task(self._consume_dns_updates(context))
+        # 5. Wire pgmq consumers
+        # Register consumer with supervisor to run after all phases complete
+        if context.consumer_supervisor:
+            # Create a wrapper that captures the context
+            async def dns_consumer():
+                await self._consume_dns_updates(context)
+
+            context.consumer_supervisor.register("dns_updates", dns_consumer)
 
         # 6. Update state
         context.runtime_state.world_registry_output = {
@@ -92,26 +97,38 @@ class RegistriesPhaseHandler(BasePhaseHandler):
 
     async def _consume_dns_updates(self, context: PhaseContext):
         """pgmq consumer: domain.registered -> DNSHandler.add_zone_record."""
+        logger = context.logger
         pgmq = PGMQClient()
         dns = DNSHandler()
         while True:
-            msg = await pgmq.receive("dns_updates")
-            if not msg:
-                await asyncio.sleep(1)
-                continue
             try:
-                envelope = EventEnvelope(**json.loads(msg["message"]))
-                payload = envelope.payload
-                # Add zone record for the domain (e.g., acme.internal -> IP)
-                # For MVP, we add an A record pointing to a placeholder or to the AND gateway.
-                # In real use, the IP would come from the AND allocation.
-                await dns.add_zone_record(
-                    context=context,
-                    zone=payload["domain"],
-                    record_type="A",
-                    name="@",
-                    value="10.0.0.1",  # placeholder – would be replaced with actual IP from AND handler
-                )
-                await pgmq.delete("dns_updates", msg["msg_id"])
+                msg = await pgmq.receive("dns_updates")
+                if not msg:
+                    await asyncio.sleep(1)
+                    continue
+
+                try:
+                    envelope = EventEnvelope(**json.loads(msg["message"]))
+                    payload = envelope.payload
+                    logger.info(f"Processing DNS update for domain: {payload.get('domain')}")
+
+                    # Add zone record for the domain (e.g., acme.internal -> IP)
+                    # For MVP, we add an A record pointing to a placeholder or to the AND gateway.
+                    # In real use, the IP would come from the AND allocation.
+                    await dns.add_zone_record(
+                        context=context,
+                        zone=payload["domain"],
+                        record_type="A",
+                        name="@",
+                        value="10.0.0.1",  # placeholder – would be replaced with actual IP from AND handler
+                    )
+                    await pgmq.delete("dns_updates", msg["msg_id"])
+                    logger.info(
+                        f"Successfully processed DNS update for domain: {payload.get('domain')}"
+                    )
+                except Exception as e:
+                    logger.error(f"Error processing DNS update: {e}")
+                    await pgmq.archive_to_dlq("dns_updates", msg["msg_id"], str(e))
             except Exception as e:
-                await pgmq.archive_to_dlq("dns_updates", msg["msg_id"], str(e))
+                logger.error(f"Error in DNS update consumer loop: {e}")
+                await asyncio.sleep(5)  # backoff before retrying

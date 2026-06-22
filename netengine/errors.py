@@ -9,8 +9,11 @@ from .logging import get_logger
 
 class BaseNetEngineException(Exception):  # TODO: Comprehensive Engine Exception Base
     def __init__(
-        self, message: str = "An unknown NetEngine exception occurred.", *args: Any, **kwargs: Any
-    ):
+        self,
+        message: str = "An unknown NetEngine exception occurred.",
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
         self._msg = message
         self._code: int | str | None = None
         self._log_rules: Config | dict[str, Any] = Config(
