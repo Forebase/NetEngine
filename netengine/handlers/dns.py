@@ -12,10 +12,11 @@ Responsibilities:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from netengine.errors import DNSError, SubstrateError
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -67,12 +68,12 @@ class DNSHandler(BasePhaseHandler):
 
         # Validate substrate dependency
         if context.runtime_state.substrate_output is None:
-            raise RuntimeError(
+            raise SubstrateError(
                 "Substrate phase (Phase 0) must complete before DNS setup. "
                 "Ensure Phase 0 has run and created networks."
             )
 
-        context.runtime_state.started_at = datetime.utcnow()
+        context.runtime_state.started_at = datetime.now(timezone.utc)
 
         try:
             dns_output: dict[str, Any] = {}
@@ -113,14 +114,14 @@ class DNSHandler(BasePhaseHandler):
             dns_healthy = await self._verify_dns_service(context, dns_output)
             dns_output["healthy"] = dns_healthy
             if not dns_healthy:
-                raise RuntimeError("DNS service verification failed")
+                raise DNSError("DNS service verification failed")
 
-            dns_output["deployed_at"] = datetime.utcnow().isoformat()
+            dns_output["deployed_at"] = datetime.now(timezone.utc).isoformat()
 
             context.runtime_state.dns_output = dns_output
             context.runtime_state.phase_completed["1"] = True
             context.runtime_state.phase_completed["2"] = True
-            context.runtime_state.completed_at = datetime.utcnow()
+            context.runtime_state.completed_at = datetime.now(timezone.utc)
 
             logger.info("Phases 1-2: DNS setup complete")
 
@@ -137,7 +138,7 @@ class DNSHandler(BasePhaseHandler):
 
         except Exception as e:
             context.runtime_state.last_error = str(e)
-            context.runtime_state.last_error_at = datetime.utcnow()
+            context.runtime_state.last_error_at = datetime.now(timezone.utc)
             logger.error(f"Phases 1-2 DNS setup failed: {e}")
             raise
 
@@ -234,7 +235,7 @@ class DNSHandler(BasePhaseHandler):
             "soa_primary_ns": root_config.soa_primary_ns,
             "soa_email": root_config.soa_email,
             "serial_policy": root_config.serial_policy.value,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(timezone.utc).isoformat(),
         }
 
     async def _setup_platform_zone(
@@ -265,7 +266,7 @@ class DNSHandler(BasePhaseHandler):
             "type": platform_config.type,
             "listen_ip": platform_config.listen_ip,
             "ns_server": "ns.platform.internal",
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(timezone.utc).isoformat(),
         }
 
     # ─────────────────────────────────────────────
@@ -305,7 +306,7 @@ class DNSHandler(BasePhaseHandler):
                 "listen_ip": tld_config.listen_ip,
                 "description": tld_config.description,
                 "ns_server": f"ns{tld_config.listen_ip.split('.')[-1]}.internal",
-                "deployed_at": datetime.utcnow().isoformat(),
+                "deployed_at": datetime.now(timezone.utc).isoformat(),
             }
 
         return tlds_output
@@ -502,7 +503,7 @@ class DNSHandler(BasePhaseHandler):
 
         lines = [
             f"; Root zone: {root_zone['name']}",
-            f"; Generated: {datetime.utcnow().isoformat()}",
+            f"; Generated: {datetime.now(timezone.utc).isoformat()}",
             soa_record,
             f"{root_zone['name']}. NS ns.root.internal.",
             "",
@@ -546,7 +547,7 @@ class DNSHandler(BasePhaseHandler):
 
         lines = [
             f"; Platform zone: {platform_zone['name']}",
-            f"; Generated: {datetime.utcnow().isoformat()}",
+            f"; Generated: {datetime.now(timezone.utc).isoformat()}",
             platform_soa,
             f"{platform_zone['name']}. NS {platform_zone['ns_server']}.",
             f"{platform_zone['ns_server']}. A {platform_zone['listen_ip']}",
@@ -574,7 +575,7 @@ class DNSHandler(BasePhaseHandler):
 
         lines = [
             f"; TLD zone: {tld_name}",
-            f"; Generated: {datetime.utcnow().isoformat()}",
+            f"; Generated: {datetime.now(timezone.utc).isoformat()}",
             tld_soa,
             f"{tld_name}. NS {tld_config['ns_server']}.",
             f"{tld_config['ns_server']}. A {tld_config['listen_ip']}",
@@ -599,7 +600,7 @@ class DNSHandler(BasePhaseHandler):
             Serial number as string
         """
         if policy == "timestamp":
-            return str(int(datetime.utcnow().timestamp()))
+            return str(int(datetime.now(timezone.utc).timestamp()))
         else:
             # Fallback for unknown policy
             return "1"
@@ -759,8 +760,8 @@ class DNSHandler(BasePhaseHandler):
 
         # Validate that DNS phase has run
         if context.runtime_state.dns_output is None:
-            raise RuntimeError(
-                "DNS phase must run before adding records. " "Call DNS handler execute() first."
+            raise DNSError(
+                "DNS phase must run before adding records. Call DNS handler execute() first."
             )
 
         dns_output = context.runtime_state.dns_output
@@ -768,9 +769,10 @@ class DNSHandler(BasePhaseHandler):
 
         # Check if zone exists
         if zone not in zone_files:
-            raise RuntimeError(
-                f"Zone '{zone}' not found in zone_files. "
-                f"Available zones: {list(zone_files.keys())}"
+            raise DNSError(
+                f"Zone '{zone}' not found in zone_files.",
+                zone=zone,
+                available=list(zone_files.keys()),
             )
 
         # Update the zone file in-memory

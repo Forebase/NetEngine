@@ -3,8 +3,9 @@
 Tests the execute/healthcheck/should_skip interface for Phase 0 and Phases 1-2.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 
+from netengine.errors import DNSError
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.substrate import SubstrateHandler
@@ -47,9 +48,9 @@ class TestSubstrateHandler:
     async def test_execute_sets_timestamps(self, phase_context_substrate: PhaseContext) -> None:
         """Substrate handler should set started_at and completed_at timestamps."""
         handler = SubstrateHandler()
-        before = datetime.utcnow()
+        before = datetime.now(timezone.utc)
         await handler.execute(phase_context_substrate)
-        after = datetime.utcnow()
+        after = datetime.now(timezone.utc)
 
         assert phase_context_substrate.runtime_state.started_at is not None
         assert phase_context_substrate.runtime_state.completed_at is not None
@@ -313,7 +314,6 @@ class TestDNSZoneRecordUpdates:
                 name="ca",
                 value="10.0.0.6",
             )
-            # Should not reach here
-            assert False, "Expected RuntimeError"
-        except RuntimeError as e:
+            assert False, "Expected DNSError"
+        except DNSError as e:
             assert "DNS phase must run" in str(e)

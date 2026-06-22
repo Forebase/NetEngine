@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from netengine.core.orchestrator import Orchestrator
+from netengine.errors import BaseNetEngineException
 from netengine.handlers.phase_pki import PKIPhaseHandler
 from netengine.phases.phase_platform_identity import PlatformIdentityPhaseHandler
 from netengine.spec.loader import load_spec
@@ -220,7 +221,7 @@ class TestOrchestratorPhaseExecution:
                     new_callable=AsyncMock,
                     return_value=False,
                 ):
-                    with pytest.raises(RuntimeError, match="healthcheck failed"):
+                    with pytest.raises(BaseNetEngineException, match="healthcheck failed"):
                         await orchestrator.execute_phases(up_to_phase=0)
 
     @pytest.mark.asyncio

@@ -1,8 +1,9 @@
 import os
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 
 from netengine.core.supabase_client import get_supabase
+from netengine.errors import IdentityError
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
@@ -117,7 +118,7 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
             "platform_realm_id": realm_id,
             "admin_user_id": user_id,
             "platform_client_id": client_id,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(timezone.utc).isoformat(),
         }
         context.runtime_state.phase_completed["4"] = True
         context.runtime_state.save()
@@ -174,8 +175,8 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
 
         import aiohttp
 
-        start = datetime.utcnow()
-        while (datetime.utcnow() - start).total_seconds() < timeout:
+        start = datetime.now(timezone.utc)
+        while (datetime.now(timezone.utc) - start).total_seconds() < timeout:
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(url, ssl=False) as resp:
@@ -184,4 +185,4 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
             except Exception:
                 pass
             await asyncio.sleep(2)
-        raise RuntimeError("Keycloak did not become ready in time")
+        raise IdentityError("Keycloak did not become ready in time")

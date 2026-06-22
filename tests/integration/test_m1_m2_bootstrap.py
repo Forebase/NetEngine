@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from netengine.errors import BaseNetEngineException, DNSError, SubstrateError
 from netengine.handlers.context import PhaseContext, RuntimeState
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.substrate import SubstrateHandler
@@ -98,7 +99,7 @@ class TestSubstrateThenDNSBootstrap:
         # Try to execute DNS without running Substrate first
         dns = DNSHandler()
 
-        with pytest.raises(RuntimeError, match="Substrate phase.*must complete"):
+        with pytest.raises(SubstrateError, match="Substrate phase.*must complete"):
             await dns.execute(context)
 
     async def test_dns_zones_structure_after_execution(self, minimal_spec: NetEngineSpec) -> None:
@@ -369,7 +370,7 @@ class TestDNSZoneRecordDynamicUpdates:
         # Try to add record without running DNS
         dns = DNSHandler()
 
-        with pytest.raises(RuntimeError, match="DNS phase must run before adding records"):
+        with pytest.raises(DNSError, match="DNS phase must run before adding records"):
             await dns.add_zone_record(
                 context=context,
                 zone="platform.internal",
@@ -399,7 +400,7 @@ class TestDNSZoneRecordDynamicUpdates:
         await dns.execute(context)
 
         # Try to add record to nonexistent zone
-        with pytest.raises(RuntimeError, match="Zone.*not found in zone_files"):
+        with pytest.raises(DNSError, match="Zone.*not found in zone_files"):
             await dns.add_zone_record(
                 context=context,
                 zone="nonexistent.zone",

@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from netengine.core.consumer_supervisor import ConsumerSupervisor
 from netengine.core.state import RuntimeState
+from netengine.errors import BaseNetEngineException
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
@@ -128,7 +129,11 @@ class Orchestrator:
 
                 # Healthcheck
                 if not await handler.healthcheck(self.context):
-                    raise RuntimeError(f"Phase {phase_num} healthcheck failed")
+                    raise BaseNetEngineException(
+                        f"Phase {phase_num} healthcheck failed",
+                        phase=phase_num,
+                        handler=handler_class.__name__,
+                    )
 
                 # Mark complete
                 self._mark_phase_complete(phase_num, handler)

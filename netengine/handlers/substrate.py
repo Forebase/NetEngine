@@ -8,9 +8,10 @@ Responsibilities:
 - Emit substrate.initialized event on success
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
+from netengine.errors import SubstrateError
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -51,7 +52,7 @@ class SubstrateHandler(BasePhaseHandler):
         substrate_config = spec.substrate
 
         logger.info("Starting Phase 0: Substrate initialization")
-        context.runtime_state.started_at = datetime.utcnow()
+        context.runtime_state.started_at = datetime.now(timezone.utc)
 
         try:
             substrate_output: dict[str, Any] = {}
@@ -79,10 +80,10 @@ class SubstrateHandler(BasePhaseHandler):
             substrate_output["gateway"] = gateway_status
             logger.info("Gateway network stub verified")
 
-            substrate_output["deployed_at"] = datetime.utcnow().isoformat()
+            substrate_output["deployed_at"] = datetime.now(timezone.utc).isoformat()
 
             context.runtime_state.substrate_output = substrate_output
-            context.runtime_state.completed_at = datetime.utcnow()
+            context.runtime_state.completed_at = datetime.now(timezone.utc)
 
             logger.info("Phase 0: Substrate initialization complete")
 
@@ -99,7 +100,7 @@ class SubstrateHandler(BasePhaseHandler):
 
         except Exception as e:
             context.runtime_state.last_error = str(e)
-            context.runtime_state.last_error_at = datetime.utcnow()
+            context.runtime_state.last_error_at = datetime.now(timezone.utc)
             logger.error(f"Phase 0 substrate initialization failed: {e}")
             raise
 
@@ -203,7 +204,7 @@ class SubstrateHandler(BasePhaseHandler):
                     "status": "ready",
                     "healthy": True,
                     "version": "24.0+ (mock)",
-                    "initialized_at": datetime.utcnow().isoformat(),
+                    "initialized_at": datetime.now(timezone.utc).isoformat(),
                 }
 
             # Real: check if already in swarm; init if not
@@ -222,7 +223,7 @@ class SubstrateHandler(BasePhaseHandler):
                 "status": "ready",
                 "healthy": True,
                 "version": version,
-                "initialized_at": datetime.utcnow().isoformat(),
+                "initialized_at": datetime.now(timezone.utc).isoformat(),
             }
 
         elif orchestrator_type == "kubernetes":
@@ -232,11 +233,14 @@ class SubstrateHandler(BasePhaseHandler):
                 "status": "ready",
                 "healthy": True,
                 "version": "1.28+",
-                "initialized_at": datetime.utcnow().isoformat(),
+                "initialized_at": datetime.now(timezone.utc).isoformat(),
             }
 
         else:
-            raise RuntimeError(f"Unsupported orchestrator type: {orchestrator_type}")
+            raise SubstrateError(
+                f"Unsupported orchestrator type: {orchestrator_type}",
+                orchestrator_type=orchestrator_type,
+            )
 
     async def _create_networks(
         self, context: PhaseContext, networks_config: dict[str, Any]
@@ -272,7 +276,7 @@ class SubstrateHandler(BasePhaseHandler):
                 "type": net_config.type,
                 "subnet": net_config.subnet,
                 "description": net_config.description,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
 
             logger.info(f"Network ready: {net_name} ({net_config.subnet}) id={net_id}")
@@ -327,7 +331,7 @@ class SubstrateHandler(BasePhaseHandler):
             "servers": servers,
             "synchronized": True,
             "stratum": 2,
-            "configured_at": datetime.utcnow().isoformat(),
+            "configured_at": datetime.now(timezone.utc).isoformat(),
         }
 
     async def _setup_gateway_stub(
@@ -358,7 +362,7 @@ class SubstrateHandler(BasePhaseHandler):
             "core_ip": gateway_config.core_ip,
             "description": gateway_config.description,
             "status": "ready",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
     async def _emit_event(
