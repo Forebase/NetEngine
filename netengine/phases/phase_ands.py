@@ -95,7 +95,9 @@ class ANDsPhaseHandler(BasePhaseHandler):
             ands_output: dict[str, Any] = {}
 
             # Validate AND profiles exist in spec
-            available_profiles = {p.name for p in ands_spec.profiles} if ands_spec.profiles else set()
+            available_profiles = (
+                {p.name for p in ands_spec.profiles} if ands_spec.profiles else set()
+            )
             if not available_profiles:
                 logger.warning("No AND profiles defined in spec; using default 'business' profile")
                 available_profiles = {"business"}
@@ -161,7 +163,9 @@ class ANDsPhaseHandler(BasePhaseHandler):
             )
 
             # Start event consumer for org.admitted events (background task)
-            asyncio.create_task(self._consume_org_admission_events(context, docker, gateway, ands_spec))
+            asyncio.create_task(
+                self._consume_org_admission_events(context, docker, gateway, ands_spec)
+            )
 
         except Exception as e:
             context.runtime_state.last_error = str(e)
