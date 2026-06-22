@@ -12,12 +12,6 @@ class BaseNetEngineException(Exception):  # TODO: Comprehensive Engine Exception
         *args: Any,
         **kwargs: Any,
     ) -> None:
-        """
-
-        :param message:
-        :param args:
-        :param kwargs:
-        """
         self._msg = message
         self._code: int | str | None = None
         self._log_rules: Config | dict[str, Any] = Config(

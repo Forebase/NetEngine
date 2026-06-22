@@ -10,11 +10,13 @@ from netengine.handlers.phase_pki import PKIPhaseHandler
 from netengine.phases.phase_platform_identity import PlatformIdentityPhaseHandler
 from netengine.spec.loader import load_spec
 
+_EXAMPLES = Path(__file__).parent.parent.parent / "examples"
+
 
 @pytest.fixture
 def m3_spec():
-    """Load minimal valid spec for orchestrator tests."""
-    return load_spec(Path(__file__).parent.parent.parent / "examples" / "minimal.yaml")
+    """Full valid spec for M3 orchestrator tests."""
+    return load_spec(_EXAMPLES / "minimal.yaml")
 
 
 class TestPKIPhaseHandlerContract:
