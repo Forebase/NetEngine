@@ -26,5 +26,5 @@ def test_up_invokes_execute_phases_with_example_spec():
     assert result.exit_code == 0, result.output
     mock_orchestrator_class.assert_called_once()
     spec_arg = mock_orchestrator_class.call_args.args[0]
-    assert spec_arg["metadata"]["name"] == "minimal-example"
-    mock_orchestrator.execute_phases.assert_awaited_once_with()
+    assert spec_arg.metadata.name == "minimal-example"
+    mock_orchestrator.execute_phases.assert_awaited_once_with(up_to_phase=8)

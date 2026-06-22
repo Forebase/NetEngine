@@ -98,9 +98,15 @@ def compute_diff(old_spec: NetEngineSpec, new_spec: NetEngineSpec) -> list[DiffE
         if old_sec == new_sec:
             continue
         if old_sec is None:
-            entries.append(DiffEntry(section=section, change_type="added", detail=f"Section {section} added"))
+            entries.append(
+                DiffEntry(section=section, change_type="added", detail=f"Section {section} added")
+            )
         elif new_sec is None:
-            entries.append(DiffEntry(section=section, change_type="removed", detail=f"Section {section} removed"))
+            entries.append(
+                DiffEntry(
+                    section=section, change_type="removed", detail=f"Section {section} removed"
+                )
+            )
         else:
             # Drill into sub-keys for finer-grained entries
             if isinstance(old_sec, dict) and isinstance(new_sec, dict):
@@ -110,13 +116,31 @@ def compute_diff(old_spec: NetEngineSpec, new_spec: NetEngineSpec) -> list[DiffE
                     if ov == nv:
                         continue
                     if ov is None:
-                        entries.append(DiffEntry(section=section, change_type="added", detail=f"{section}.{k} added"))
+                        entries.append(
+                            DiffEntry(
+                                section=section, change_type="added", detail=f"{section}.{k} added"
+                            )
+                        )
                     elif nv is None:
-                        entries.append(DiffEntry(section=section, change_type="removed", detail=f"{section}.{k} removed"))
+                        entries.append(
+                            DiffEntry(
+                                section=section,
+                                change_type="removed",
+                                detail=f"{section}.{k} removed",
+                            )
+                        )
                     else:
-                        entries.append(DiffEntry(section=section, change_type="updated", detail=f"{section}.{k} updated"))
+                        entries.append(
+                            DiffEntry(
+                                section=section,
+                                change_type="updated",
+                                detail=f"{section}.{k} updated",
+                            )
+                        )
             else:
-                entries.append(DiffEntry(section=section, change_type="updated", detail=f"{section} updated"))
+                entries.append(
+                    DiffEntry(section=section, change_type="updated", detail=f"{section} updated")
+                )
 
     return entries
 
@@ -172,7 +196,10 @@ async def apply_reload(
             if entry.section == "pki":
                 rejected.append(entry)
                 errors.append(f"PKI reconfiguration refused in persistent mode: {entry.detail}")
-            elif entry.change_type == "removed" and entry.section in ("world_registry", "identity_inworld"):
+            elif entry.change_type == "removed" and entry.section in (
+                "world_registry",
+                "identity_inworld",
+            ):
                 rejected.append(entry)
                 errors.append(f"Org removal refused in persistent mode: use explicit API call")
         if rejected:
@@ -196,17 +223,17 @@ async def apply_reload(
 
     for entry in diff:
         try:
-            if entry.section in ("world_registry", "identity_inworld") and entry.change_type == "added":
+            if (
+                entry.section in ("world_registry", "identity_inworld")
+                and entry.change_type == "added"
+            ):
                 # New org — run registries + identity phases for added orgs
                 if entry.section == "world_registry":
-                    handler = RegistriesPhaseHandler()
-                    await handler.execute(context)
+                    await RegistriesPhaseHandler().execute(context)
                 elif entry.section == "identity_inworld":
-                    handler = InWorldIdentityPhaseHandler()
-                    await handler.execute(context)
+                    await InWorldIdentityPhaseHandler().execute(context)
             elif entry.section == "ands":
-                handler = ANDsPhaseHandler()
-                await handler.execute(context)
+                await ANDsPhaseHandler().execute(context)
             # Other sections: log as applied without re-running a full phase
             # (DNS, PKI, services changes may need targeted handler calls added here)
             applied.append(entry)

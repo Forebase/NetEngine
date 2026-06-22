@@ -1,5 +1,6 @@
 """Tests for Orchestrator with M3 phases."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -7,6 +8,9 @@ import pytest
 from netengine.core.orchestrator import Orchestrator
 from netengine.handlers.phase_pki import PKIPhaseHandler
 from netengine.phases.phase_platform_identity import PlatformIdentityPhaseHandler
+from netengine.spec.loader import load_spec
+
+_EXAMPLES = Path(__file__).parent.parent.parent / "examples"
 
 
 async def _set_substrate_output(context):
@@ -23,21 +27,8 @@ async def _set_pki_output(context):
 
 @pytest.fixture
 def m3_spec():
-    """Spec with PKI and Platform Identity configuration."""
-    return {
-        "name": "m3-test-world",
-        "version": "0.1.0",
-        "pki": {
-            "acme": {
-                "listen_ip": "10.0.0.6",
-                "canonical_name": "ca.platform.internal",
-            },
-        },
-        "identity_platform": {
-            "listen_ip": "10.0.0.7",
-            "realm_name": "platform",
-        },
-    }
+    """Full valid spec for M3 orchestrator tests."""
+    return load_spec(_EXAMPLES / "minimal.yaml")
 
 
 class TestOrchestratorPhaseExecution:
@@ -264,9 +255,7 @@ class TestOrchestratorPhaseOrdering:
         orchestrator = Orchestrator(m3_spec)
 
         phases = [phase_num for phase_num, _ in orchestrator.PHASE_HANDLERS]
-        assert phases == [0, 1, 3, 4, 5, 6, 7, 8], (
-            f"Unexpected phase handler registry: {phases}"
-        )
+        assert phases == [0, 1, 3, 4, 5, 6, 7, 8], f"Unexpected phase handler registry: {phases}"
 
     def test_phase_handlers_are_distinct(self, m3_spec):
         """Each phase should have a handler registered."""
