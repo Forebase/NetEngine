@@ -197,7 +197,7 @@ class SubstrateHandler(BasePhaseHandler):
         if orchestrator_type == "swarm":
             logger.info("Initializing Docker Swarm orchestrator")
 
-            if context.mock_mode:
+            if context.mock_mode or context.docker_client is None:
                 return {
                     "type": "docker_swarm",
                     "status": "ready",
@@ -259,7 +259,7 @@ class SubstrateHandler(BasePhaseHandler):
         for net_name, net_config in networks_config.items():
             logger.debug(f"Creating network '{net_name}' with subnet {net_config.subnet}")
 
-            if context.mock_mode:
+            if context.mock_mode or context.docker_client is None:
                 net_id = f"mock-net-{net_name}"
             else:
                 net_id = await self._ensure_docker_network(

@@ -98,7 +98,7 @@ class DNSHandler(BasePhaseHandler):
             dns_output["zone_files"] = zone_files
             logger.info(f"Generated {len(zone_files)} zone files")
 
-            if not context.mock_mode:
+            if not context.mock_mode and context.docker_client is not None:
                 # Write Corefile + zone files to disk and start CoreDNS container
                 zone_dir = await self._write_zone_files_to_disk(
                     context, zone_files, root_zone, platform_zone, tlds_output
