@@ -10,8 +10,8 @@ from netengine.core.state import RuntimeState
 from netengine.spec.models import NetEngineSpec
 
 if TYPE_CHECKING:
-    import docker as docker_sdk  # type: ignore[import]
-    from supabase import AsyncClient as SupabaseClient  # type: ignore[import]
+    import docker as docker_sdk
+    from supabase import AsyncClient as SupabaseClient
 
     from netengine.core.consumer_supervisor import ConsumerSupervisor
     from netengine.core.pgmq_client import PGMQClient

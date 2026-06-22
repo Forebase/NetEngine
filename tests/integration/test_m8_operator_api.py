@@ -35,7 +35,7 @@ def _load_example(name: str) -> NetEngineSpec:
 def _make_client(monkeypatch, tmp_path) -> TestClient:
     """Return a pre-auth TestClient using monkeypatched env."""
     monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
-    monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+    monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
     from netengine.api.app import app
 
     return TestClient(app)
@@ -180,7 +180,7 @@ class TestApplyReload:
 
 class TestHealthRoute:
     def test_health_returns_ok_when_no_state(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
         from netengine.api.app import app
 
@@ -193,7 +193,7 @@ class TestHealthRoute:
         assert set(data["phases"].keys()) == {"0", "1", "2", "3", "4", "5", "6", "7", "8"}
 
     def test_health_reports_degraded_when_phases_incomplete(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
         from netengine.api.app import app
 
@@ -204,7 +204,7 @@ class TestHealthRoute:
 
 class TestWorldRoute:
     def test_get_world_requires_auth(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "real-secret")
         from netengine.api.app import app
 
@@ -213,7 +213,7 @@ class TestWorldRoute:
         assert resp.status_code == 401
 
     def test_get_world_with_bootstrap_secret(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
         from netengine.api.app import app
 
@@ -224,7 +224,7 @@ class TestWorldRoute:
         assert "phase_completed" in data
 
     def test_get_world_returns_stored_spec(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
 
         # Seed state with a spec
@@ -242,7 +242,7 @@ class TestWorldRoute:
 
 class TestReloadRoute:
     def test_reload_returns_409_when_no_running_world(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
         from netengine.api.app import app
 
@@ -257,7 +257,7 @@ class TestReloadRoute:
         assert resp.status_code == 409
 
     def test_reload_rejects_immutable_field_change(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
 
         spec = _load_example("minimal.yaml")
@@ -282,7 +282,7 @@ class TestReloadRoute:
         assert detail["immutability_violations"]
 
     def test_reload_with_no_changes_returns_success(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
 
         spec = _load_example("minimal.yaml")
@@ -304,7 +304,7 @@ class TestReloadRoute:
 
 class TestServicesRoute:
     def test_services_returns_containers_list(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
 
         mock_docker = MagicMock()
@@ -322,7 +322,7 @@ class TestServicesRoute:
 
 class TestDNSRoute:
     def test_dns_query_calls_dig(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
 
         mock_proc = AsyncMock()
@@ -345,7 +345,7 @@ class TestDNSRoute:
 
 class TestTeardownRoute:
     def test_teardown_ephemeral_world(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
 
         state = RuntimeState()
@@ -371,7 +371,7 @@ class TestTeardownRoute:
         assert resp.status_code == 200
 
     def test_teardown_persistent_requires_confirm(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
 
         state = RuntimeState()
@@ -392,7 +392,7 @@ class TestTeardownRoute:
 
 class TestExportImportRoutes:
     def test_export_returns_spec_and_phase_data(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
 
         state = RuntimeState()
@@ -411,7 +411,7 @@ class TestExportImportRoutes:
         assert "exported_at" in data
 
     def test_import_updates_state(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
 
         # Seed a persistent world
@@ -436,7 +436,7 @@ class TestExportImportRoutes:
 
 class TestQueuesRoute:
     def test_queues_returns_list(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
 
         mock_supabase = AsyncMock()
@@ -454,7 +454,7 @@ class TestQueuesRoute:
 
 class TestIdentityRealmsRoute:
     def test_realms_returns_platform_and_inworld(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
 
         state = RuntimeState()

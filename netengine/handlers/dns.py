@@ -800,8 +800,6 @@ class DNSHandler(BasePhaseHandler):
         if context.mock_mode or context.docker_client is None:
             return
         try:
-            import docker  # type: ignore[import]
-
             container = context.docker_client.containers.get(COREDNS_CONTAINER_NAME)
             container.kill(signal="SIGUSR1")
             context.logger.debug("CoreDNS reload signal sent (SIGUSR1)")
