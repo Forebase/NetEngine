@@ -23,9 +23,13 @@ IMMUTABLE_PATHS: dict[str, str] = {
     "substrate.gateway.platform_ip": "Hardcoded into every resolver config — reset required",
     "substrate.gateway.core_ip": "Hardcoded into every resolver config — reset required",
     "dns.root.listen_ip": "Hardcoded into every container resolver config — reset required",
-    "pki.acme.listen_ip": "Hardcoded into every service ACME config and trust store — reset required",
+    "pki.acme.listen_ip": (
+        "Hardcoded into every service ACME config and trust store — reset required"
+    ),
     "metadata.lifecycle": "Ephemeral ↔ persistent requires explicit migration, not a reload",
-    "domain_registry.address_space": "Existing AND leases reference these CIDRs — new pool entries only",
+    "domain_registry.address_space": (
+        "Existing AND leases reference these CIDRs — new pool entries only"
+    ),
 }
 
 # Phase dependency order for applying diffs
@@ -201,7 +205,7 @@ async def apply_reload(
                 "identity_inworld",
             ):
                 rejected.append(entry)
-                errors.append(f"Org removal refused in persistent mode: use explicit API call")
+                errors.append("Org removal refused in persistent mode: use explicit API call")
         if rejected:
             return ReloadResult(
                 success=False,
@@ -218,8 +222,6 @@ async def apply_reload(
     from netengine.phases.phase_registries import RegistriesPhaseHandler
 
     context = PhaseContext(spec=new_spec, runtime_state=runtime_state, logger=logger)
-
-    sections_to_rerun: set[str] = {e.section for e in diff}
 
     for entry in diff:
         try:

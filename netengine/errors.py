@@ -4,8 +4,6 @@ from typing import Any
 
 from omegaconf import DictConfig as Config
 
-from .logging import get_logger
-
 
 class BaseNetEngineException(Exception):  # TODO: Comprehensive Engine Exception Base
     def __init__(
