@@ -28,7 +28,22 @@ def up(spec_file):
 def status():
     """Show current world state."""
     state = RuntimeState.load()
-    click.echo(f"Phases completed: {state.phase_completed}")
+    phase_labels = {
+        "0": "Substrate",
+        "1": "DNS root/platform zones",
+        "2": "DNS TLD setup",
+        "3": "PKI",
+        "4": "Platform identity",
+        "5": "Registries",
+        "6": "In-world identity",
+        "7": "ANDs",
+        "8": "Services",
+    }
+    click.echo("Phases completed:")
+    for phase, label in phase_labels.items():
+        completed = state.phase_completed.get(phase, False)
+        marker = "✓" if completed else "·"
+        click.echo(f"  {marker} Phase {phase}: {label}")
     click.echo(f"CA certificate present: {bool(state.ca_cert_pem)}")
     click.echo(f"step‑ca container ID: {state.step_ca_container_id}")
 

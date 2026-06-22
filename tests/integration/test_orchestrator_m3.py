@@ -264,7 +264,9 @@ class TestOrchestratorPhaseOrdering:
         orchestrator = Orchestrator(m3_spec)
 
         phases = [phase_num for phase_num, _ in orchestrator.PHASE_HANDLERS]
-        assert phases == list(range(9)), f"Phases not sequential: {phases}"
+        assert phases == [0, 1, 3, 4, 5, 6, 7, 8], (
+            f"Unexpected phase handler registry: {phases}"
+        )
 
     def test_phase_handlers_are_distinct(self, m3_spec):
         """Each phase should have a handler registered."""
@@ -273,7 +275,7 @@ class TestOrchestratorPhaseOrdering:
         handlers = {
             phase_num: handler_class for phase_num, handler_class in orchestrator.PHASE_HANDLERS
         }
-        assert len(handlers) == 9, f"Expected 9 phases, got {len(handlers)}"
+        assert len(handlers) == 8, f"Expected 8 handler milestones, got {len(handlers)}"
         assert min(handlers.keys()) == 0, "Lowest phase should be 0"
         assert max(handlers.keys()) == 8, "Highest phase should be 8"
 

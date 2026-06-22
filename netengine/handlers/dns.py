@@ -101,6 +101,8 @@ class DNSHandler(BasePhaseHandler):
             dns_output["deployed_at"] = datetime.utcnow().isoformat()
 
             context.runtime_state.dns_output = dns_output
+            context.runtime_state.phase_completed["1"] = True
+            context.runtime_state.phase_completed["2"] = True
             context.runtime_state.completed_at = datetime.utcnow()
 
             logger.info("Phases 1-2: DNS setup complete")
@@ -176,6 +178,8 @@ class DNSHandler(BasePhaseHandler):
             True if DNS already deployed, False if should execute
         """
         if context.runtime_state.dns_output is not None:
+            context.runtime_state.phase_completed["1"] = True
+            context.runtime_state.phase_completed["2"] = True
             context.logger.info("DNS already deployed, skipping Phases 1-2")
             return True
         return False

@@ -28,10 +28,11 @@ class Orchestrator:
     """
 
     # Phase registry: (phase_number, handler_class)
+    # DNS is a single combined milestone: one handler performs both Phase 1
+    # (root/platform zones) and Phase 2 (TLD setup), then marks both complete.
     PHASE_HANDLERS: List[tuple[int, Type[BasePhaseHandler]]] = [
         (0, SubstrateHandler),
         (1, DNSHandler),
-        (2, DNSHandler),  # DNS phases 1-2 in same handler
         (3, PKIPhaseHandler),
         (4, PlatformIdentityPhaseHandler),
         (5, RegistriesPhaseHandler),
@@ -89,7 +90,7 @@ class Orchestrator:
                 logger.info(
                     f"Phase {phase_num}: {handler_class.__name__} already completed, skipping"
                 )
-                self.runtime_state.phase_completed[str(phase_num)] = True
+                self._mark_phase_complete(phase_num, handler)
                 continue
 
             logger.info(f"Phase {phase_num}: {handler_class.__name__} starting")
@@ -102,7 +103,7 @@ class Orchestrator:
                     raise RuntimeError(f"Phase {phase_num} healthcheck failed")
 
                 # Mark complete
-                self.runtime_state.phase_completed[str(phase_num)] = True
+                self._mark_phase_complete(phase_num, handler)
                 self.runtime_state.save()
                 logger.info(f"Phase {phase_num} completed successfully")
 
@@ -111,3 +112,15 @@ class Orchestrator:
                 self.runtime_state.error = str(e)
                 self.runtime_state.save()
                 raise
+
+    def _mark_phase_complete(self, phase_num: int, handler: BasePhaseHandler) -> None:
+        """Record user-facing phase completion for a completed handler.
+
+        DNS is intentionally registered once because it performs Phase 1 and
+        Phase 2 in one combined operation. Preserve user-facing progress by
+        marking both phase numbers complete when that combined milestone is
+        healthy or skipped.
+        """
+        self.runtime_state.phase_completed[str(phase_num)] = True
+        if isinstance(handler, DNSHandler):
+            self.runtime_state.phase_completed["2"] = True
