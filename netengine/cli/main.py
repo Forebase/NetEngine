@@ -1,4 +1,4 @@
-# netengines/cli/main.py
+# netengine/cli/main.py
 import asyncio
 import logging
 from pathlib import Path
@@ -25,7 +25,7 @@ def up(spec_file):
     with open(spec_file, "r") as f:
         spec = yaml.safe_load(f)
     orchestrator = Orchestrator(spec)
-    asyncio.run(orchestrator.run())
+    asyncio.run(orchestrator.execute_phases())
 
 
 @cli.command()
