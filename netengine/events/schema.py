@@ -9,7 +9,7 @@ from typing import Any, Optional
 from uuid import uuid4
 
 
-@dataclass
+@dataclass(frozen=True)
 class EventEnvelope:
     """Message envelope for pgmq inter-handler events.
 
