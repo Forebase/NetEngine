@@ -39,11 +39,19 @@ class RegistriesPhaseHandler(BasePhaseHandler):
         for tld in tlds:
             # Add NS records to root zone
             await dns.add_zone_record(
-                zone="root.internal", record_type="NS", name=tld["name"], value=tld["ns_server"]
+                context=context,
+                zone="root.internal",
+                record_type="NS",
+                name=tld["name"],
+                value=tld["ns_server"],
             )
             # Add A record for the TLD's NS server
             await dns.add_zone_record(
-                zone="root.internal", record_type="A", name=tld["ns_server"], value=tld["listen_ip"]
+                context=context,
+                zone="root.internal",
+                record_type="A",
+                name=tld["ns_server"],
+                value=tld["listen_ip"],
             )
 
         # 5. Wire pgmq consumers (stub – in production, run a loop)
@@ -89,6 +97,7 @@ class RegistriesPhaseHandler(BasePhaseHandler):
                 # For MVP, we add an A record pointing to a placeholder or to the AND gateway.
                 # In real use, the IP would come from the AND allocation.
                 await dns.add_zone_record(
+                    context=context,
                     zone=payload["domain"],
                     record_type="A",
                     name="@",
