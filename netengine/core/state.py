@@ -56,6 +56,7 @@ class RuntimeState:
     inworld_admin_password: Optional[str] = None
     world_spec: Optional[Dict[str, Any]] = None
     bootstrap_admin_password: Optional[str] = None
+    platform_client_id: Optional[str] = None
 
     @classmethod
     def load(cls) -> "RuntimeState":
@@ -101,8 +102,13 @@ class RuntimeState:
                 data[k] = v.isoformat()
         state_file = get_state_file()
         state_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(state_file, "w") as f:
+        # Atomic write: write to .tmp then rename to avoid corruption on concurrent access.
+        # 0o600 permissions protect plaintext secrets stored in the state file.
+        tmp_file = state_file.with_suffix(".tmp")
+        with open(tmp_file, "w") as f:
             json.dump(data, f, indent=2)
+        tmp_file.chmod(0o600)
+        tmp_file.replace(state_file)
 
     def sync_to_supabase(self) -> None:
         """Write current state snapshot to Supabase runtime_state table (audit log)."""

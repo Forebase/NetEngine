@@ -90,6 +90,18 @@ class PKIHandler:
             if result["exit_code"] != 0:
                 raise PKIError(f"step ca init failed: {result['logs']}")
 
+            # Persist password to volume so _start_server can retrieve it
+            persist_result = await self.docker.run_container_one_off(
+                image=self.image,
+                command=["cp", "/tmp/pass/password.txt", "/home/step/password.txt"],
+                volumes=volumes,
+                environment={},
+            )
+            if persist_result["exit_code"] != 0:
+                raise RuntimeError(
+                    f"Failed to persist CA password to volume: {persist_result['logs']}"
+                )
+
         # Read the CA certificate from the volume
         ca_cert = await self._read_file_from_volume("/home/step/certs/ca.crt")
         self.state.ca_cert_pem = ca_cert
@@ -177,8 +189,9 @@ class PKIHandler:
         # This is simpler than REST API for MVP.
         # We'll run: step ca certificate --provisioner acme <cn> <cert> <key> --ca-config /home/step/config/ca.json
         volumes = {self.volume_name: {"bind": "/home/step", "mode": "rw"}}
-        cert_file = f"/tmp/{common_name}.crt"
-        key_file = f"/tmp/{common_name}.key"
+        # Write certs to volume path so _read_file_from_volume can retrieve them
+        cert_file = f"/home/step/{common_name}.crt"
+        key_file = f"/home/step/{common_name}.key"
         cmd = [
             "step",
             "ca",

@@ -1,4 +1,5 @@
-import json
+import os
+import tempfile
 from typing import Any, Dict, List
 
 from netengine.errors import GatewayError
@@ -104,11 +105,21 @@ table ip netengine_{and_name} {{
         exit_code, output = await self.docker.exec_command(self.gateway_container, cmd)
         if exit_code != 0:
             raise GatewayError(f"Failed to write rules: {output}")
+        # Write rules to a temp file then copy into container to avoid shell injection
+        # and multi-line content issues with echo/shell quoting.
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".nft", delete=False) as f:
+            f.write(rules)
+            tmp_path = f.name
+        try:
+            dest_path = f"/etc/nftables/rules/{and_name}.nft"
+            await self.docker.copy_to_container(self.gateway_container, tmp_path, dest_path)
+        finally:
+            os.unlink(tmp_path)
         # Load the ruleset atomically
         cmd = ["nft", "-f", f"/etc/nftables/rules/{and_name}.nft"]
         exit_code, output = await self.docker.exec_command(self.gateway_container, cmd)
         if exit_code != 0:
-            raise GatewayError(f"Failed to apply rules: {output}")
+            raise RuntimeError(f"Failed to apply nftables rules for {and_name}: {output}")
 
     async def remove_rules(self, and_name: str) -> None:
         """Delete the nftables table for this AND."""

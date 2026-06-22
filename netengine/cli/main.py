@@ -57,18 +57,60 @@ def cli() -> None:
 @cli.command()
 @click.argument("spec_file", type=click.Path(exists=True))
 @click.option("--up-to", default=8, help="Stop after this phase number (0-8).")
-def up(spec_file: str, up_to: int) -> None:
+@click.option(
+    "--mock",
+    is_flag=True,
+    default=False,
+    envvar="NETENGINE_MOCK",
+    help="Run in mock mode (no real Docker/DNS calls).",
+)
+@click.option(
+    "--skip-migrations",
+    is_flag=True,
+    default=False,
+    help="Skip running database migrations on startup.",
+)
+def up(spec_file: str, up_to: int, mock: bool, skip_migrations: bool) -> None:
     """Boot a world from SPEC_FILE."""
+    asyncio.run(_up(spec_file, up_to, mock, skip_migrations))
+
+
+async def _up(spec_file: str, up_to: int, mock: bool, skip_migrations: bool) -> None:
     spec = load_spec(spec_file)
-    orchestrator = Orchestrator(spec)
+
+    if mock:
+        click.echo("WARNING: running in mock mode — no real infrastructure will be created.")
+
+    if not skip_migrations and not mock:
+        db_url = os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+        if db_url:
+            try:
+                await _run_migrations(db_url)
+            except Exception as exc:
+                logger.warning(f"Migrations failed (continuing anyway): {exc}")
+
+    orchestrator = Orchestrator(spec, mock_mode=mock)
     click.echo(f"Booting world from {spec_file} (phases 0–{up_to})…")
     try:
-        asyncio.run(orchestrator.execute_phases(up_to_phase=up_to))
-        click.echo("World bootstrapped.")
-        _print_status(orchestrator.runtime_state)
+        await orchestrator.execute_phases(up_to_phase=up_to)
     except Exception as exc:
         click.echo(f"Bootstrap failed: {exc}", err=True)
         sys.exit(1)
+
+    click.echo("World bootstrapped.")
+    _print_status(orchestrator.runtime_state)
+
+    # Start background consumers if any were registered
+    if orchestrator.consumer_supervisor.consumers:
+        logger.info("Starting background consumers (Ctrl+C to stop).")
+        await orchestrator.start_consumers()
+        try:
+            await asyncio.sleep(float("inf"))
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
+        finally:
+            await orchestrator.consumer_supervisor.stop_all()
+            logger.info("Consumers stopped.")
 
 
 @cli.command()

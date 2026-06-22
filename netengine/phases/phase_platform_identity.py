@@ -55,6 +55,7 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
             volumes={cert_dir: {"bind": "/certs", "mode": "ro"}},
             network="core",
             ip=auth_ip,
+            ip=spec.identity_platform.listen_ip,
             environment={
                 "KC_HOSTNAME": auth_hostname,
                 "KC_HTTPS_CERTIFICATE_FILE": "/certs/auth.crt",
