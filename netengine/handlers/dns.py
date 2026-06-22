@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from netengine.errors import DNSError
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -67,7 +68,7 @@ class DNSHandler(BasePhaseHandler):
 
         # Validate substrate dependency
         if context.runtime_state.substrate_output is None:
-            raise RuntimeError(
+            raise DNSError(
                 "Substrate phase (Phase 0) must complete before DNS setup. "
                 "Ensure Phase 0 has run and created networks."
             )
@@ -113,7 +114,7 @@ class DNSHandler(BasePhaseHandler):
             dns_healthy = await self._verify_dns_service(context, dns_output)
             dns_output["healthy"] = dns_healthy
             if not dns_healthy:
-                raise RuntimeError("DNS service verification failed")
+                raise DNSError("DNS service verification failed")
 
             dns_output["deployed_at"] = datetime.utcnow().isoformat()
 
@@ -759,8 +760,8 @@ class DNSHandler(BasePhaseHandler):
 
         # Validate that DNS phase has run
         if context.runtime_state.dns_output is None:
-            raise RuntimeError(
-                "DNS phase must run before adding records. " "Call DNS handler execute() first."
+            raise DNSError(
+                "DNS phase must run before adding records. Call DNS handler execute() first."
             )
 
         dns_output = context.runtime_state.dns_output
@@ -768,7 +769,7 @@ class DNSHandler(BasePhaseHandler):
 
         # Check if zone exists
         if zone not in zone_files:
-            raise RuntimeError(
+            raise DNSError(
                 f"Zone '{zone}' not found in zone_files. "
                 f"Available zones: {list(zone_files.keys())}"
             )

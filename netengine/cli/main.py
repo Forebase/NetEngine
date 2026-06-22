@@ -359,7 +359,7 @@ async def _down() -> None:
             pass
 
     # Clear state file
-    state_file = Path(os.environ.get("NETENGINES_STATE_FILE", "netengines_state.json"))
+    state_file = Path(os.environ.get("NETENGINE_STATE_FILE", "netengine_state.json"))
     if state_file.exists():
         state_file.unlink()
         click.echo(f"  cleared state file {state_file}")

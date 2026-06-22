@@ -30,7 +30,8 @@ class RegistriesPhaseHandler(BasePhaseHandler):
         await domain.seed_address_pools(spec)
 
         # 3. Start WHOIS server (in a background task)
-        whois = WHOISServer()
+        whois_cfg = spec.domain_registry.whois
+        whois = WHOISServer(host=whois_cfg.listen_ip, port=whois_cfg.port)
         asyncio.create_task(whois.start())
 
         # 4. Register TLD delegations from spec

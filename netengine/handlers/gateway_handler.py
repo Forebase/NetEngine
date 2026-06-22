@@ -1,6 +1,8 @@
 import json
 from typing import Any, Dict, List
 
+from netengine.errors import GatewayError
+
 
 class GatewayHandler:
     def __init__(self, docker):
@@ -19,7 +21,7 @@ class GatewayHandler:
         elif profile == "airgapped":
             return self._airgapped_rules(and_name, cidr)
         else:
-            raise ValueError(f"Unknown AND profile: {profile}")
+            raise GatewayError(f"Unknown AND profile: {profile}")
 
     def _residential_rules(self, and_name: str, cidr: str) -> str:
         # Masquerade outbound, drop unsolicited inbound
@@ -101,12 +103,12 @@ table ip netengine_{and_name} {{
         cmd = ["sh", "-c", f"echo '{rules}' > /etc/nftables/rules/{and_name}.nft"]
         exit_code, output = await self.docker.exec_command(self.gateway_container, cmd)
         if exit_code != 0:
-            raise RuntimeError(f"Failed to write rules: {output}")
+            raise GatewayError(f"Failed to write rules: {output}")
         # Load the ruleset atomically
         cmd = ["nft", "-f", f"/etc/nftables/rules/{and_name}.nft"]
         exit_code, output = await self.docker.exec_command(self.gateway_container, cmd)
         if exit_code != 0:
-            raise RuntimeError(f"Failed to apply rules: {output}")
+            raise GatewayError(f"Failed to apply rules: {output}")
 
     async def remove_rules(self, and_name: str) -> None:
         """Delete the nftables table for this AND."""

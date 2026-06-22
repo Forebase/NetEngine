@@ -14,8 +14,8 @@ class StorageHandler:
         self.pki = pki
         self.state = state
         self.container_name = "netengines_minio"
-        self.storage_ip = "10.0.0.14"
-        self.storage_dns = "storage.platform.internal"
+        self.storage_ip = context.spec.world_services.storage.listen_ip
+        self.storage_dns = context.spec.world_services.storage.canonical_name
 
     async def deploy_minio(self) -> dict:
         """Start MinIO container with TLS and create platform bucket."""

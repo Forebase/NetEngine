@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.core.supabase_client import get_supabase
+from netengine.errors import RegistryError
 from netengine.events.schema import EventEnvelope
 
 
@@ -32,7 +33,7 @@ class DomainRegistryHandler:
             .execute()
         )
         if not result.data:
-            raise RuntimeError(f"No address pool for profile {profile}")
+            raise RegistryError(f"No address pool for profile {profile}")
         pool_cidr = result.data[0]["cidr"]
         # For MVP: just assign the whole pool CIDR to the AND.
         # In reality, you'd split it and track usage.
