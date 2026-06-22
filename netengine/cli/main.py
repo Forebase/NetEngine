@@ -1,4 +1,4 @@
-# netengines/cli/main.py
+# netengine/cli/main.py
 import asyncio
 import logging
 import click
@@ -21,7 +21,7 @@ def up(spec_file):
     """Boot a world from the given spec YAML."""
     spec = load_spec(spec_file)
     orchestrator = Orchestrator(spec)
-    asyncio.run(orchestrator.run())
+    asyncio.run(orchestrator.execute_phases())
 
 
 @cli.command()
