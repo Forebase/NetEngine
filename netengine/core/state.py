@@ -1,11 +1,10 @@
 import json
+import logging
 import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +104,7 @@ class RuntimeState:
         with open(state_file, "w") as f:
             json.dump(data, f, indent=2)
 
-    async def sync_to_supabase(self) -> None:
+    def sync_to_supabase(self) -> None:
         """Write current state snapshot to Supabase runtime_state table (audit log)."""
         try:
             from netengine.core.supabase_client import get_supabase
@@ -115,7 +114,7 @@ class RuntimeState:
             for k, v in data.items():
                 if isinstance(v, datetime):
                     data[k] = v.isoformat()
-            await supabase.table("runtime_state").upsert(
+            supabase.table("runtime_state").upsert(
                 {"key": "current", "value": data, "updated_at": datetime.utcnow().isoformat()}
             ).execute()
         except Exception as exc:

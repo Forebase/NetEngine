@@ -135,7 +135,7 @@ class Orchestrator:
                 # Mark complete
                 self._mark_phase_complete(phase_num, handler)
                 self.runtime_state.save()
-                await self.runtime_state.sync_to_supabase()
+                self.runtime_state.sync_to_supabase()
                 logger.info(f"Phase {phase_num} completed successfully")
 
             except Exception as e:
