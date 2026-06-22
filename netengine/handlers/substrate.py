@@ -207,7 +207,6 @@ class SubstrateHandler(BasePhaseHandler):
                 }
 
             # Real: check if already in swarm; init if not
-            import docker as docker_lib
             client = context.docker_client.client  # type: ignore[union-attr]
 
             info = await asyncio.to_thread(client.info)
@@ -254,8 +253,6 @@ class SubstrateHandler(BasePhaseHandler):
         Raises:
             RuntimeError: If network creation fails
         """
-        import asyncio
-
         logger = context.logger
         networks_output = {}
 
@@ -287,6 +284,7 @@ class SubstrateHandler(BasePhaseHandler):
     ) -> str:
         """Idempotently create a Docker network, returning its ID."""
         import asyncio
+
         import docker as docker_lib
 
         client = context.docker_client.client  # type: ignore[union-attr]

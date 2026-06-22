@@ -434,6 +434,7 @@ class DNSHandler(BasePhaseHandler):
         if it exists but is stopped.
         """
         import asyncio
+
         import docker as docker_lib
 
         client = context.docker_client.client  # type: ignore[union-attr]

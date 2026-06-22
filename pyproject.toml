@@ -15,7 +15,7 @@ python-dotenv = "^1.0"
 loguru = "^0.7"
 docker = "^7.0"
 aiohttp = "^3.9"
-asyncpg = "^0.29"
+asyncpg = "^0.30"
 supabase = "^2.0"
 fastapi = "^0.100"
 omegaconf = "^2.3"
@@ -42,6 +42,8 @@ exclude = [
     "netengine/core/pgmq_client\\.py",
     "netengine/core/supabase_client\\.py",
     "netengine/utils/",
+    "netengine/handlers/substrate\\.py",
+    "netengine/handlers/dns\\.py",
     "netengine/handlers/pki_handler\\.py",
     "netengine/handlers/phase_pki\\.py",
     "netengine/handlers/oidc_handler\\.py",
@@ -91,6 +93,8 @@ exclude = [
     "netengine/core/orchestrator.py",
     "netengine/core/pgmq_client.py",
     "netengine/core/supabase_client.py",
+    "netengine/handlers/substrate.py",
+    "netengine/handlers/dns.py",
     "netengine/handlers/pki_handler.py",
     "netengine/handlers/phase_pki.py",
     "netengine/handlers/oidc_handler.py",

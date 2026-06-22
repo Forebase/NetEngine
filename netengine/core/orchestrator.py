@@ -64,6 +64,7 @@ class Orchestrator:
         if not effective_mock:
             try:
                 from netengine.handlers.docker_handler import DockerHandler
+
                 docker_client = DockerHandler()
             except Exception as exc:
                 logger.warning(f"Docker unavailable, falling back to mock mode: {exc}")
