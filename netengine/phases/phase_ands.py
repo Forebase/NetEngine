@@ -316,16 +316,16 @@ class ANDsPhaseHandler(BasePhaseHandler):
         profile_name_for_alloc = (
             and_instance.profile
             if isinstance(and_instance.profile, str)
-            else next(
-                (k for k, v in ands_spec.profiles.items() if v == and_instance.profile),
-                "business",
+            else (
+                next(
+                    (k for k, v in ands_spec.profiles.items() if v == and_instance.profile),
+                    "business",
+                )
+                if isinstance(ands_spec.profiles, dict)
+                else getattr(and_instance.profile, "name", "business")
             )
-            if isinstance(ands_spec.profiles, dict)
-            else getattr(and_instance.profile, "name", "business")
         )
-        cidr = await self._allocate_address(
-            and_instance.name, profile_name_for_alloc, ands_spec
-        )
+        cidr = await self._allocate_address(and_instance.name, profile_name_for_alloc, ands_spec)
         logger.info(f"Allocated CIDR for {and_instance.name}: {cidr}")
 
         # 2. Create isolated Docker bridge network
