@@ -1,0 +1,97 @@
+version: "3.8"
+
+# Full NetEngine local bootstrap stack.
+# Services here start BEFORE `netengine up` runs.
+# CoreDNS and step-ca are deployed by phase handlers at runtime.
+#
+# Usage:
+#   docker compose up -d
+#   netengine up examples/minimal.yaml
+#
+# To run in mock mode (no real infra calls):
+#   NETENGINE_MOCK=true netengine up examples/minimal.yaml --mock
+
+services:
+  # ────────────────────────────────────────────
+  # Persistence layer
+  # ────────────────────────────────────────────
+  postgres:
+    image: postgres:15
+    container_name: netengine_postgres
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      POSTGRES_DB: netengine
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # pgmq extension install script — runs at first startup
+      - ./scripts/install_pgmq.sh:/docker-entrypoint-initdb.d/install_pgmq.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine -d netengine"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ────────────────────────────────────────────
+  # Platform identity (Keycloak)
+  # Deployed here so it starts independently of NetEngine phases.
+  # Phase 4 bootstraps realms and admin users via the admin API.
+  # ────────────────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: netengine_keycloak
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/netengine
+      KC_DB_USERNAME: netengine
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      KC_DB_SCHEMA: keycloak
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin_dev_password}
+      KC_HTTP_PORT: 8180
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8180:8180"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8180/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  # ────────────────────────────────────────────
+  # NetEngine operator API
+  # Starts after postgres; mounts state file and zone dir.
+  # ────────────────────────────────────────────
+  netengine_api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: netengine_api
+    environment:
+      NETENGINE_DB_URL: postgresql://netengine:${POSTGRES_PASSWORD:-dev_password}@postgres:5432/netengine
+      NETENGINE_STATE_FILE: /data/netengines_state.json
+      NETENGINE_ZONE_DIR: /data/coredns
+      NETENGINE_MOCK: ${NETENGINE_MOCK:-false}
+    ports:
+      - "8080:8080"
+    volumes:
+      - netengine_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      # Only start the API container when explicitly requested.
+      # For local dev, run `netengine up` directly from the CLI.
+      - api
+
+volumes:
+  postgres_data:
+  netengine_data:

@@ -13,15 +13,19 @@ from netengine.handlers.docker_handler import DockerHandler
 
 
 class PKIHandler:
-    def __init__(self, docker: DockerHandler, state: RuntimeState, spec: dict):
+    def __init__(self, docker: DockerHandler, state: RuntimeState, spec):
         self.docker = docker
         self.state = state
         self.spec = spec
-        # Read values from spec, with fallbacks
-        pki_spec = spec.get("pki", {})
-        acme = pki_spec.get("acme", {})
-        self.ca_ip = acme.get("listen_ip", "10.0.0.6")
-        self.ca_dns = acme.get("canonical_name", "ca.platform.internal")
+        # Support both Pydantic model (NetEngineSpec) and plain dict
+        if hasattr(spec, "pki"):
+            self.ca_ip = spec.pki.acme.listen_ip
+            self.ca_dns = spec.pki.acme.canonical_name
+        else:
+            pki_spec = spec.get("pki", {}) if isinstance(spec, dict) else {}
+            acme = pki_spec.get("acme", {})
+            self.ca_ip = acme.get("listen_ip", "10.0.0.6")
+            self.ca_dns = acme.get("canonical_name", "ca.platform.internal")
         self.volume_name = "netengines_pki_data"
         self.container_name = "netengines_step_ca"
         self.image = "smallstep/step-ca:latest"
