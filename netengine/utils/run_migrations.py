@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 
-async def apply_migrations():
+async def apply_migrations() -> None:
     """Apply SQL migrations using psql command-line tool.
 
     Requires environment variables:
