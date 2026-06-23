@@ -78,12 +78,10 @@ class RegistriesPhaseHandler(BasePhaseHandler):
     async def healthcheck(self, context: PhaseContext) -> bool:
         """Check if registries are healthy."""
         try:
-            from netengine.core.supabase_client import get_supabase
+            from netengine.core.supabase_client import get_db
 
-            supabase = get_supabase()
-            result = supabase.table("world_registry").select("*").limit(1).execute()
-            # postgrest-py returns a APIResponse with a .data list; presence of
-            # the attribute (not an exception) indicates connectivity.
+            db = await get_db()
+            result = await db.table("world_registry").select("*").limit(1).execute()
             return hasattr(result, "data")
         except Exception:
             return False

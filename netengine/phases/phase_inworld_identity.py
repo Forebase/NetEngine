@@ -10,6 +10,7 @@ Responsibilities:
 
 import asyncio
 import json
+import logging
 import secrets
 import ssl
 from datetime import datetime
@@ -17,7 +18,8 @@ from typing import Any, Optional
 
 import aiohttp
 
-from netengine.core.supabase_client import get_supabase
+logger = logging.getLogger(__name__)
+
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -356,8 +358,8 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
                     async with session.get(url) as resp:
                         if resp.status == 200:
                             return
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Keycloak not ready yet ({url}): {exc}")
             await asyncio.sleep(2)
 
         raise RuntimeError(f"Keycloak did not become ready at {url} within {timeout}s")
@@ -410,10 +412,12 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
         # For now, we'll generate and store it separately
         client_secret = secrets.token_urlsafe(32)
 
-        # Store in Supabase for durability
+        # Store in DB for durability
         try:
-            supabase = get_supabase()
-            supabase.table("oidc_credentials").insert(
+            from netengine.core.supabase_client import get_db
+
+            db = await get_db()
+            await db.table("oidc_credentials").insert(
                 {
                     "org_name": org_name,
                     "client_id": client_id,
@@ -422,9 +426,9 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
                     "created_at": datetime.utcnow().isoformat(),
                 }
             ).execute()
-            logger.info(f"Stored OIDC credentials in Supabase for {org_name}")
+            logger.info(f"Stored OIDC credentials for {org_name}")
         except Exception as e:
-            logger.warning(f"Failed to store credentials in Supabase: {e}")
+            logger.warning(f"Failed to store OIDC credentials: {e}")
             # Don't fail the phase if Supabase isn't available (M1-M3 testing)
 
         return client_secret

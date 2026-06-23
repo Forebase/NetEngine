@@ -399,9 +399,9 @@ class ANDsPhaseHandler(BasePhaseHandler):
     # ─────────────────────────────────────────────
 
     async def _get_supabase(self):
-        from netengine.core.supabase_client import get_supabase
+        from netengine.core.supabase_client import get_db
 
-        return get_supabase()
+        return await get_db()
 
     async def _emit_event(
         self,
