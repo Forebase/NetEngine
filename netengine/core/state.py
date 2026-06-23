@@ -111,17 +111,28 @@ class RuntimeState:
         tmp_file.replace(state_file)
 
     def sync_to_supabase(self) -> None:
-        """Write current state snapshot to Supabase runtime_state table (audit log)."""
+        """Write current state snapshot to the runtime_state table (best-effort audit log)."""
         try:
-            from netengine.core.supabase_client import get_supabase
+            import asyncio
 
-            supabase = get_supabase()
+            from netengine.core.supabase_client import get_db
+
             data = asdict(self)
             for k, v in data.items():
                 if isinstance(v, datetime):
                     data[k] = v.isoformat()
-            supabase.table("runtime_state").upsert(
-                {"key": "current", "value": data, "updated_at": datetime.utcnow().isoformat()}
-            ).execute()
+
+            async def _sync():
+                db = await get_db()
+                await db.table("runtime_state").upsert(
+                    {"key": "current", "value": json.dumps(data)}
+                ).execute()
+
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Inside an async context — schedule as a fire-and-forget task.
+                asyncio.ensure_future(_sync())
+            else:
+                loop.run_until_complete(_sync())
         except Exception as exc:
-            logger.debug(f"Supabase state sync skipped: {exc}")
+            logger.debug(f"State DB sync skipped: {exc}")

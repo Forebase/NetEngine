@@ -4,7 +4,6 @@ from datetime import datetime
 from typing import Any, Dict
 
 from netengine.core.pgmq_client import PGMQClient
-from netengine.core.supabase_client import get_supabase
 from netengine.errors import ServicesError
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
@@ -33,8 +32,15 @@ class AppHandler:
         self.pki = pki
         self.oidc = oidc
         self.state = state
-        self.supabase = get_supabase()
+        self._db = None
         self.pgmq = PGMQClient()
+
+    async def _get_db(self):
+        if self._db is None:
+            from netengine.core.supabase_client import get_db
+
+            self._db = await get_db()
+        return self._db
 
     async def deploy_app(
         self, org: str, app_name: str, subdomain: str, config: Dict[str, Any] = None
@@ -82,8 +88,8 @@ class AppHandler:
             "client_id": client_id,
             "deployed_at": datetime.utcnow().isoformat(),
         }
-        # Store in Supabase (optional table: app_deployments)
-        await self.supabase.table("app_deployments").upsert(deployment).execute()
+        db = await self._get_db()
+        await db.table("app_deployments").upsert(deployment).execute()
 
         return deployment
 
@@ -107,11 +113,12 @@ class AppHandler:
         return container_id
 
     async def _get_gateway_ip(self, and_name: str) -> str:
-        """Query Supabase for the CIDR of this AND and derive gateway IP."""
+        """Query DB for the CIDR of this AND and derive gateway IP."""
         import ipaddress
 
+        db = await self._get_db()
         result = (
-            await self.supabase.table("address_leases")
+            await db.table("address_leases")
             .select("cidr")
             .eq("and_name", and_name)
             .execute()

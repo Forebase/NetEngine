@@ -1,7 +1,6 @@
 import json
 from typing import Any, Dict, Optional
 
-from netengine.core.supabase_client import get_supabase
 from netengine.events.schema import EventEnvelope
 
 MAX_RETRIES = 3
@@ -9,21 +8,30 @@ MAX_RETRIES = 3
 
 class PGMQClient:
     def __init__(self) -> None:
-        self.supabase = get_supabase()
+        self._db = None
+
+    async def _get_db(self):
+        if self._db is None:
+            from netengine.core.supabase_client import get_db
+
+            self._db = await get_db()
+        return self._db
 
     async def send(self, queue_name: str, event: EventEnvelope) -> int:
         """Enqueue an event; returns message ID."""
+        db = await self._get_db()
         payload = event.to_dict()
-        result = await self.supabase.rpc(
+        result = await db.rpc(
             "pgmq_send", {"queue_name": queue_name, "message": json.dumps(payload)}
         ).execute()
         if not result.data:
             raise RuntimeError(f"pgmq_send returned no data for queue '{queue_name}'")
-        return result.data[0]  # msg_id
+        return result.data[0]
 
     async def receive(self, queue_name: str, timeout: int = 5) -> Optional[Dict[str, Any]]:
         """Pop a message from the queue."""
-        result = await self.supabase.rpc(
+        db = await self._get_db()
+        result = await db.rpc(
             "pgmq_pop", {"queue_name": queue_name, "timeout": timeout}
         ).execute()
         if result.data:
@@ -32,13 +40,13 @@ class PGMQClient:
 
     async def delete(self, queue_name: str, msg_id: int) -> None:
         """Acknowledge and delete a processed message."""
-        await self.supabase.rpc(
-            "pgmq_delete", {"queue_name": queue_name, "msg_id": msg_id}
-        ).execute()
+        db = await self._get_db()
+        await db.rpc("pgmq_delete", {"queue_name": queue_name, "msg_id": msg_id}).execute()
 
     async def read_by_id(self, queue_name: str, msg_id: int) -> Optional[Dict[str, Any]]:
         """Read a specific message by ID without consuming it."""
-        result = await self.supabase.rpc(
+        db = await self._get_db()
+        result = await db.rpc(
             "pgmq_read_by_id", {"queue_name": queue_name, "msg_id": msg_id}
         ).execute()
         if result.data:

@@ -262,10 +262,10 @@ async def deploy_app(
     org: str, body: AppDeployRequest, user: dict = Depends(require_auth)
 ) -> dict[str, Any]:
     """Deploy a catalog app into an org's AND (container → DNS → cert → OIDC)."""
-    from netengine.core.supabase_client import get_supabase
+    from netengine.core.supabase_client import get_db
 
-    supabase = get_supabase()
-    result = await supabase.table("world_registry").select("org_name").eq("org_name", org).execute()
+    db = await get_db()
+    result = await db.table("world_registry").select("org_name").eq("org_name", org).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail=f"Org {org} not found in world registry")
 
@@ -297,19 +297,19 @@ async def deploy_app(
 
 @router.get("/registry/domains")
 async def list_domains(user: dict = Depends(require_auth)) -> Any:
-    from netengine.core.supabase_client import get_supabase
+    from netengine.core.supabase_client import get_db
 
-    supabase = get_supabase()
-    result = await supabase.table("domain_records").select("*").execute()
+    db = await get_db()
+    result = await db.table("domain_records").select("*").execute()
     return result.data
 
 
 @router.get("/registry/addresses")
 async def list_addresses(user: dict = Depends(require_auth)) -> Any:
-    from netengine.core.supabase_client import get_supabase
+    from netengine.core.supabase_client import get_db
 
-    supabase = get_supabase()
-    result = await supabase.table("address_leases").select("*").execute()
+    db = await get_db()
+    result = await db.table("address_leases").select("*").execute()
     return result.data
 
 
@@ -414,21 +414,20 @@ KNOWN_QUEUES = [
 @router.get("/queues")
 async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
     """Return pgmq queue depths and DLQ state for all handler boundaries."""
-    from netengine.core.supabase_client import get_supabase
+    from netengine.core.supabase_client import get_db
 
     try:
-        supabase = get_supabase()
+        db = await get_db()
         queue_stats: list[dict[str, Any]] = []
         for q in KNOWN_QUEUES:
-            # pgmq.metrics returns {queue_name, queue_length, newest_msg_age_sec, oldest_msg_age_sec, ...}
             try:
-                result = await supabase.rpc("pgmq_metrics", {"queue_name": q}).execute()
+                result = await db.rpc("pgmq_metrics", {"queue_name": q}).execute()
                 metrics = result.data[0] if result.data else {}
             except Exception:
                 metrics = {}
 
             try:
-                dlq_result = await supabase.rpc(
+                dlq_result = await db.rpc(
                     "pgmq_metrics", {"queue_name": f"{q}_dlq"}
                 ).execute()
                 dlq_metrics = dlq_result.data[0] if dlq_result.data else {}
@@ -485,18 +484,13 @@ async def get_event_chain(
     correlation_id: str, user: dict = Depends(require_auth)
 ) -> dict[str, Any]:
     """Return full causal event chain for a correlation ID from pgmq archive."""
-    from netengine.core.supabase_client import get_supabase
+    from netengine.core.supabase_client import get_db
 
     try:
-        supabase = get_supabase()
-        # pgmq_archive stores processed messages; query by correlation_id in the payload
-        result = (
-            await supabase.table("pgmq_archive")
-            .select("*")
-            .filter("message->>correlation_id", "eq", correlation_id)
-            .order("enqueued_at")
-            .execute()
-        )
+        db = await get_db()
+        result = await db.table("pgmq_archive").select("*").eq(
+            "correlation_id", correlation_id
+        ).execute()
         events = result.data or []
         return {"correlation_id": correlation_id, "events": events, "count": len(events)}
     except Exception as exc:

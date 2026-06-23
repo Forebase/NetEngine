@@ -2,7 +2,6 @@ import os
 import secrets
 from datetime import datetime
 
-from netengine.core.supabase_client import get_supabase
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
