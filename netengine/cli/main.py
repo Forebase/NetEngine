@@ -260,5 +260,6 @@ def _print_status(state: RuntimeState) -> None:
     if state.step_ca_container_id:
         click.echo(f"step-ca container: {state.step_ca_container_id}")
 
+
 if __name__ == "__main__":
     cli()
