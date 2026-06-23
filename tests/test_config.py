@@ -293,3 +293,84 @@ class TestSpecLoaderIntegration:
 
         with pytest.raises(SpecLoadError, match="Failed to parse YAML"):
             load_spec(spec_file)
+
+
+class TestSpecCrossValidation:
+    """Tests for cross-field spec validation (CIDR overlap, name uniqueness, etc.)."""
+
+    def _write_spec(self, tmp_dir: Path, spec: dict) -> Path:
+        path = tmp_dir / "spec.yaml"
+        with open(path, "w") as f:
+            yaml.dump(spec, f)
+        return path
+
+    def test_valid_spec_passes(self, temp_spec_dir: Path) -> None:
+        path = self._write_spec(temp_spec_dir, _minimal_spec())
+        spec = load_spec(path)
+        assert spec.metadata.name == "test-network"
+
+    def test_overlapping_subnets_rejected(self, temp_spec_dir: Path) -> None:
+        data = _minimal_spec()
+        # Both networks overlap: 10.0.0.0/8 contains 10.1.0.0/16
+        data["substrate"]["networks"] = {
+            "core": {"type": "bridge", "subnet": "10.0.0.0/8"},
+            "extra": {"type": "bridge", "subnet": "10.1.0.0/16"},
+        }
+        path = self._write_spec(temp_spec_dir, data)
+        with pytest.raises(SpecLoadError, match="subnet overlap"):
+            load_spec(path)
+
+    def test_non_overlapping_subnets_accepted(self, temp_spec_dir: Path) -> None:
+        data = _minimal_spec()
+        data["substrate"]["networks"] = {
+            "platform": {"type": "bridge", "subnet": "172.20.0.0/16"},
+            "core": {"type": "bridge", "subnet": "10.0.0.0/24"},
+        }
+        path = self._write_spec(temp_spec_dir, data)
+        load_spec(path)  # should not raise
+
+    def test_invalid_cidr_rejected(self, temp_spec_dir: Path) -> None:
+        data = _minimal_spec()
+        data["substrate"]["networks"]["bad"] = {"type": "bridge", "subnet": "not-a-cidr"}
+        path = self._write_spec(temp_spec_dir, data)
+        with pytest.raises(SpecLoadError, match="invalid CIDR"):
+            load_spec(path)
+
+    def test_duplicate_and_instance_names_rejected(self, temp_spec_dir: Path) -> None:
+        data = _minimal_spec()
+        data["ands"]["instances"] = [
+            {"name": "office", "org": "acme", "profile": "business", "dns_suffix": "office.acme"},
+            {"name": "office", "org": "acme", "profile": "residential", "dns_suffix": "home.acme"},
+        ]
+        path = self._write_spec(temp_spec_dir, data)
+        with pytest.raises(SpecLoadError, match="Duplicate AND instance name"):
+            load_spec(path)
+
+    def test_unique_and_instance_names_accepted(self, temp_spec_dir: Path) -> None:
+        data = _minimal_spec()
+        data["ands"]["instances"] = [
+            {"name": "office", "org": "acme", "profile": "business", "dns_suffix": "office.acme"},
+            {"name": "home", "org": "acme", "profile": "residential", "dns_suffix": "home.acme"},
+        ]
+        path = self._write_spec(temp_spec_dir, data)
+        load_spec(path)  # should not raise
+
+    def test_unknown_org_in_and_instance_rejected(self, temp_spec_dir: Path) -> None:
+        data = _minimal_spec()
+        data["world_registry"]["organizations"] = [{"name": "acme"}]
+        data["ands"]["instances"] = [
+            {"name": "office", "org": "unknown-org", "profile": "business", "dns_suffix": "o.u"},
+        ]
+        path = self._write_spec(temp_spec_dir, data)
+        with pytest.raises(SpecLoadError, match="unknown org"):
+            load_spec(path)
+
+    def test_unknown_profile_in_and_instance_rejected(self, temp_spec_dir: Path) -> None:
+        data = _minimal_spec()
+        data["ands"]["profiles"] = {"business": {"type": "business", "description": "biz"}}
+        data["ands"]["instances"] = [
+            {"name": "office", "org": "acme", "profile": "nonexistent", "dns_suffix": "o.a"},
+        ]
+        path = self._write_spec(temp_spec_dir, data)
+        with pytest.raises(SpecLoadError, match="unknown profile"):
+            load_spec(path)
