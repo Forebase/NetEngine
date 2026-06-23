@@ -76,9 +76,7 @@ class TestApplyRules:
         assert args[0] == "netengine_gateway"
         assert args[2] == "/etc/nftables/rules/home1.nft"
 
-    async def test_calls_nft_exec(
-        self, handler: GatewayHandler, mock_docker: MagicMock
-    ) -> None:
+    async def test_calls_nft_exec(self, handler: GatewayHandler, mock_docker: MagicMock) -> None:
         await handler.apply_rules("home1", "table ip netengine_home1 {}")
         mock_docker.exec_command.assert_called_once_with(
             "netengine_gateway", ["nft", "-f", "/etc/nftables/rules/home1.nft"]
@@ -130,9 +128,7 @@ class TestReload:
             "netengine_gateway", ["nft", "-f", "/etc/nftables/rules/main.nft"]
         )
 
-    async def test_raises_on_failure(
-        self, handler: GatewayHandler, mock_docker: MagicMock
-    ) -> None:
+    async def test_raises_on_failure(self, handler: GatewayHandler, mock_docker: MagicMock) -> None:
         mock_docker.exec_command.return_value = (1, "reload failed")
         with pytest.raises(Exception, match="reload"):
             await handler.reload()

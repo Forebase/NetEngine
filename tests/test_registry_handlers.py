@@ -129,16 +129,12 @@ class TestDomainRegistryHandler:
         with pytest.raises(RegistryError, match="No address pool"):
             await handler.allocate_address("office1", "residential")
 
-    async def test_allocate_address_returns_cidr(
-        self, handler: MagicMock, sb: MagicMock
-    ) -> None:
+    async def test_allocate_address_returns_cidr(self, handler: MagicMock, sb: MagicMock) -> None:
         sb._result.data = [{"cidr": "10.1.0.0/24"}]
         cidr = await handler.allocate_address("office1", "residential")
         assert cidr == "10.1.0.0/24"
 
-    async def test_allocate_address_upserts_lease(
-        self, handler: MagicMock, sb: MagicMock
-    ) -> None:
+    async def test_allocate_address_upserts_lease(self, handler: MagicMock, sb: MagicMock) -> None:
         sb._result.data = [{"cidr": "10.1.0.0/24"}]
         await handler.allocate_address("office1", "residential")
         upsert_calls = sb._query.upsert.call_args_list
@@ -148,18 +144,14 @@ class TestDomainRegistryHandler:
         assert lease_call is not None
         assert lease_call.args[0]["and_name"] == "office1"
 
-    async def test_register_domain_upserts_record(
-        self, handler: MagicMock, sb: MagicMock
-    ) -> None:
+    async def test_register_domain_upserts_record(self, handler: MagicMock, sb: MagicMock) -> None:
         await handler.register_domain("acme.internal", "acme", ["ns1.internal"])
         sb.table.assert_called_with("domain_records")
         sb._query.upsert.assert_called_with(
             {"domain": "acme.internal", "org_name": "acme", "ns_records": ["ns1.internal"]}
         )
 
-    async def test_register_domain_sends_dns_update_event(
-        self, handler: MagicMock
-    ) -> None:
+    async def test_register_domain_sends_dns_update_event(self, handler: MagicMock) -> None:
         await handler.register_domain("acme.internal", "acme", [])
         handler.pgmq.send.assert_called_once()
         assert handler.pgmq.send.call_args.args[0] == "dns_updates"
