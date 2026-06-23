@@ -390,5 +390,11 @@ class SubstrateHandler(BasePhaseHandler):
             f"Event emitted: {event_type} "
             f"(event_id={event.event_id}, correlation_id={event.correlation_id})"
         )
-        # M4+: Queue to pgmq
-        # await context.pgmq_client.send(event)
+        if context.pgmq_client is not None:
+            try:
+                await context.pgmq_client.send(event)
+                context.logger.debug(f"Event queued to pgmq: {event_type}")
+            except Exception as e:
+                context.logger.warning(f"Failed to queue event to pgmq: {e}")
+        else:
+            context.logger.debug("pgmq_client not available; event logged only")

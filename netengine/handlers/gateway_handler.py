@@ -97,7 +97,7 @@ table ip netengine_{and_name} {{
         cmd = ["nft", "-f", dest_path]
         exit_code, output = await self.docker.exec_command(self.gateway_container, cmd)
         if exit_code != 0:
-            raise RuntimeError(f"Failed to apply nftables rules for {and_name}: {output}")
+            raise GatewayError(f"Failed to apply nftables rules for {and_name}: {output}")
 
     async def remove_rules(self, and_name: str) -> None:
         """Delete the nftables table for this AND."""
@@ -105,7 +105,7 @@ table ip netengine_{and_name} {{
         exit_code, output = await self.docker.exec_command(self.gateway_container, cmd)
         # Table-not-found is acceptable on teardown
         if exit_code != 0 and "No such table" not in output:
-            raise RuntimeError(f"Failed to remove nftables table for {and_name}: {output}")
+            raise GatewayError(f"Failed to remove nftables table for {and_name}: {output}")
         cmd = ["rm", "-f", f"/etc/nftables/rules/{and_name}.nft"]
         await self.docker.exec_command(self.gateway_container, cmd)
 
@@ -114,4 +114,4 @@ table ip netengine_{and_name} {{
         cmd = ["nft", "-f", "/etc/nftables/rules/main.nft"]
         exit_code, output = await self.docker.exec_command(self.gateway_container, cmd)
         if exit_code != 0:
-            raise RuntimeError(f"Gateway nftables reload failed: {output}")
+            raise GatewayError(f"Gateway nftables reload failed: {output}")
