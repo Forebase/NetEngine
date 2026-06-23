@@ -1,40 +1,41 @@
 import asyncio
 import os
-import subprocess
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 async def apply_migrations():
-    """Apply SQL migrations using psql command-line tool.
+    """Apply SQL migrations to the local Postgres instance.
 
-    Requires environment variables:
-    - SUPABASE_DB_HOST: PostgreSQL host
-    - SUPABASE_DB_PORT: PostgreSQL port (default 5432)
-    - SUPABASE_DB_USER: PostgreSQL user (default postgres)
-    - SUPABASE_DB_PASSWORD: PostgreSQL password
-    - SUPABASE_DB_NAME: Database name (default postgres)
+    Reads NETENGINE_DB_URL (e.g. postgresql://user:pass@host:5432/db).
+    Falls back to SUPABASE_DB_* variables for backward compat with cloud setups.
     """
-    # Get connection parameters from environment
-    db_host = os.environ.get("SUPABASE_DB_HOST", "localhost")
-    db_port = os.environ.get("SUPABASE_DB_PORT", "5432")
-    db_user = os.environ.get("SUPABASE_DB_USER", "postgres")
-    db_password = os.environ.get("SUPABASE_DB_PASSWORD", "")
-    db_name = os.environ.get("SUPABASE_DB_NAME", "postgres")
+    db_url = os.environ.get("NETENGINE_DB_URL")
 
-    sql_path = Path(__file__).parent.parent / "migrations" / "001_initial.sql"
+    if db_url:
+        parsed = urlparse(db_url)
+        db_host = parsed.hostname or "localhost"
+        db_port = str(parsed.port or 5432)
+        db_user = parsed.username or "netengine"
+        db_password = parsed.password or ""
+        db_name = (parsed.path or "/netengine").lstrip("/")
+    else:
+        # Backward compat: Supabase cloud connection details
+        db_host = os.environ.get("SUPABASE_DB_HOST", "localhost")
+        db_port = os.environ.get("SUPABASE_DB_PORT", "5432")
+        db_user = os.environ.get("SUPABASE_DB_USER", "postgres")
+        db_password = os.environ.get("SUPABASE_DB_PASSWORD", "")
+        db_name = os.environ.get("SUPABASE_DB_NAME", "postgres")
+
+    sql_path = Path(__file__).parent.parent.parent / "migrations" / "001_initial.sql"
     if not sql_path.exists():
         raise FileNotFoundError(f"Migration file not found: {sql_path}")
 
-    # Read SQL file
-    sql = sql_path.read_text()
-
-    # Run psql via subprocess
     env = os.environ.copy()
     if db_password:
         env["PGPASSWORD"] = db_password
 
     try:
-        # Run psql in async mode using subprocess
         process = await asyncio.create_subprocess_exec(
             "psql",
             "-h",

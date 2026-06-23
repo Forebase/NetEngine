@@ -1,5 +1,6 @@
 # netengine/handlers/pki_handler.py
 import asyncio
+import logging
 import os
 import ssl
 import tempfile
@@ -11,6 +12,8 @@ import aiohttp
 from netengine.core.state import RuntimeState
 from netengine.errors import PKIError
 from netengine.handlers.docker_handler import DockerHandler
+
+logger = logging.getLogger(__name__)
 
 
 class PKIHandler:
@@ -160,7 +163,8 @@ class PKIHandler:
         # For now, implement the read.
         try:
             return await self._read_file_from_volume("/home/step/password.txt")
-        except Exception:
+        except Exception as exc:
+            logger.debug(f"CA password not readable from volume: {exc}")
             return None
 
     # ─────────────────────────────────────────────
@@ -176,7 +180,8 @@ class PKIHandler:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, ssl=ssl_context, timeout=5) as resp:
                     return resp.status == 200
-        except Exception:
+        except Exception as exc:
+            logger.debug(f"PKI healthcheck failed ({url}): {exc}")
             return False
 
     # ─────────────────────────────────────────────
