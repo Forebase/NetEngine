@@ -94,23 +94,35 @@ class RegistriesPhaseHandler(BasePhaseHandler):
 
     async def _consume_dns_updates(self, context: PhaseContext) -> None:
         """pgmq consumer: domain.registered -> DNSHandler.add_zone_record."""
+        logger = context.logger
         pgmq = PGMQClient()
         dns = DNSHandler()
         while True:
-            msg = await pgmq.receive("dns_updates")
-            if not msg:
-                await asyncio.sleep(1)
-                continue
             try:
-                envelope = EventEnvelope(**json.loads(msg["message"]))
-                payload = envelope.payload
-                await dns.add_zone_record(
-                    context=context,
-                    zone=payload["domain"],
-                    record_type="A",
-                    name="@",
-                    value="10.0.0.1",
-                )
-                await pgmq.delete("dns_updates", msg["msg_id"])
+                msg = await pgmq.receive("dns_updates")
+                if not msg:
+                    await asyncio.sleep(1)
+                    continue
+
+                try:
+                    envelope = EventEnvelope(**json.loads(msg["message"]))
+                    payload = envelope.payload
+                    logger.info(f"Processing DNS update for domain: {payload.get('domain')}")
+
+                    await dns.add_zone_record(
+                        context=context,
+                        zone=payload["domain"],
+                        record_type="A",
+                        name="@",
+                        value="10.0.0.1",
+                    )
+                    await pgmq.delete("dns_updates", msg["msg_id"])
+                    logger.info(
+                        f"Successfully processed DNS update for domain: {payload.get('domain')}"
+                    )
+                except Exception as e:
+                    logger.error(f"Error processing DNS update: {e}")
+                    await pgmq.archive_to_dlq("dns_updates", msg["msg_id"], str(e))
             except Exception as e:
-                await pgmq.archive_to_dlq("dns_updates", msg["msg_id"], str(e))
+                logger.error(f"Error in DNS update consumer loop: {e}")
+                await asyncio.sleep(5)

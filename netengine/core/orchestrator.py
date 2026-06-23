@@ -1,11 +1,13 @@
 import logging
-from typing import Any, List, Type
+import os
+from typing import Any, List, Optional, Type
 
 from pydantic import ValidationError
 
 from netengine.core.consumer_supervisor import ConsumerSupervisor
 from netengine.core.state import RuntimeState
 from netengine.handlers._base import BasePhaseHandler
+from netengine.handlers.app_handler import OrgAppsPhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.phase_pki import PKIPhaseHandler
@@ -34,7 +36,7 @@ _PHASE_PREREQUISITES: dict[int, list[str]] = {
 class Orchestrator:
     """Phase orchestration for NetEngine bootstrap.
 
-    Executes phases 0-8 in sequence with proper dependency tracking,
+    Executes phases 0-9 in sequence with proper dependency tracking,
     error handling, and state persistence.
     """
 
@@ -50,27 +52,51 @@ class Orchestrator:
         (6, InWorldIdentityPhaseHandler),
         (7, ANDsPhaseHandler),
         (8, ServicesPhaseHandler),
+        (9, OrgAppsPhaseHandler),
     ]
 
-    def __init__(self, spec: NetEngineSpec | dict[str, Any], mock_mode: bool = False):
+    def __init__(self, spec: NetEngineSpec | dict[str, Any], mock_mode: Optional[bool] = None):
         """Initialize orchestrator with a validated NetEngine spec.
 
         Args:
             spec: Validated NetEngineSpec or raw YAML specification dictionary
-            mock_mode: When True, no real Docker/DNS/PKI calls are made
+            mock_mode: Override for mock mode. When None, reads NETENGINE_MOCK env var.
         """
         self.spec = self._normalize_spec(spec)
-        self.mock_mode = mock_mode
         self.runtime_state = RuntimeState.load()
+
+        # Resolve mock_mode: explicit arg wins, then env var
+        effective_mock = (
+            mock_mode
+            if mock_mode is not None
+            else os.environ.get("NETENGINE_MOCK", "").lower() in ("1", "true", "yes")
+        )
+        self.mock_mode = effective_mock
+
+        # Initialise Docker client only when running for real
+        docker_client = None
+        if not effective_mock:
+            try:
+                from netengine.handlers.docker_handler import DockerHandler
+
+                docker_client = DockerHandler()
+            except Exception as exc:
+                logger.warning(f"Docker unavailable, falling back to mock mode: {exc}")
+                effective_mock = True
+
+        # Initialize consumer supervisor for background tasks
         self.consumer_supervisor = ConsumerSupervisor()
+
         self.context = PhaseContext(
             spec=self.spec,
             runtime_state=self.runtime_state,
             logger=logger,
+            docker_client=docker_client,
+            mock_mode=effective_mock,
             consumer_supervisor=self.consumer_supervisor,
         )
 
-        if mock_mode:
+        if effective_mock:
             logger.warning(
                 "WARNING: running in mock mode — no real infrastructure will be created. "
                 "All phase outputs are simulated."
@@ -93,18 +119,18 @@ class Orchestrator:
     def _check_prerequisites(self, phase_num: int) -> None:
         """Raise RuntimeError if required prior-phase outputs are absent."""
         required = _PHASE_PREREQUISITES.get(phase_num, [])
-        missing = [field for field in required if not getattr(self.runtime_state, field, None)]
+        missing = [f for f in required if not getattr(self.runtime_state, f, None)]
         if missing:
             raise RuntimeError(
                 f"Phase {phase_num} prerequisite(s) not satisfied: {', '.join(missing)}. "
                 "Run earlier phases first."
             )
 
-    async def execute_phases(self, up_to_phase: int = 8) -> None:
+    async def execute_phases(self, up_to_phase: int = 9) -> None:
         """Execute phases 0 through up_to_phase.
 
         Args:
-            up_to_phase: Highest phase number to execute (default 8, all phases)
+            up_to_phase: Highest phase number to execute (default 9, all phases)
 
         Raises:
             RuntimeError: If any phase fails or dependency validation fails
@@ -133,6 +159,7 @@ class Orchestrator:
 
                 self._mark_phase_complete(phase_num, handler)
                 self.runtime_state.save()
+                self.runtime_state.sync_to_supabase()
                 logger.info(f"Phase {phase_num} completed successfully")
 
             except Exception as e:
@@ -142,7 +169,7 @@ class Orchestrator:
                 raise
 
     async def start_consumers(self) -> None:
-        """Start all registered background consumers."""
+        """Start all registered background consumer tasks."""
         await self.consumer_supervisor.start_all()
 
     def _mark_phase_complete(self, phase_num: int, handler: BasePhaseHandler) -> None:

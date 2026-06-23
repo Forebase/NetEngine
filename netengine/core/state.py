@@ -1,16 +1,19 @@
 import json
+import logging
 import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_STATE_FILE = "netengines_state.json"
 
 
 def get_state_file() -> Path:
     """Return the runtime state file path for the current environment."""
-    return Path(os.environ.get("NETENGINES_STATE_FILE", DEFAULT_STATE_FILE))
+    return Path(os.environ.get("NETENGINE_STATE_FILE", DEFAULT_STATE_FILE))
 
 
 @dataclass
@@ -53,6 +56,7 @@ class RuntimeState:
     inworld_admin_password: Optional[str] = None
     world_spec: Optional[Dict[str, Any]] = None
     bootstrap_admin_password: Optional[str] = None
+    platform_client_id: Optional[str] = None
 
     @classmethod
     def load(cls) -> "RuntimeState":
@@ -98,5 +102,26 @@ class RuntimeState:
                 data[k] = v.isoformat()
         state_file = get_state_file()
         state_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(state_file, "w") as f:
+        # Atomic write: write to .tmp then rename to avoid corruption on concurrent access.
+        # 0o600 permissions protect plaintext secrets stored in the state file.
+        tmp_file = state_file.with_suffix(".tmp")
+        with open(tmp_file, "w") as f:
             json.dump(data, f, indent=2)
+        tmp_file.chmod(0o600)
+        tmp_file.replace(state_file)
+
+    def sync_to_supabase(self) -> None:
+        """Write current state snapshot to Supabase runtime_state table (audit log)."""
+        try:
+            from netengine.core.supabase_client import get_supabase
+
+            supabase = get_supabase()
+            data = asdict(self)
+            for k, v in data.items():
+                if isinstance(v, datetime):
+                    data[k] = v.isoformat()
+            supabase.table("runtime_state").upsert(
+                {"key": "current", "value": data, "updated_at": datetime.utcnow().isoformat()}
+            ).execute()
+        except Exception as exc:
+            logger.debug(f"Supabase state sync skipped: {exc}")

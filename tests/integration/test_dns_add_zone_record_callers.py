@@ -1,7 +1,7 @@
 """Regression tests for Phase 3+ DNS record insertion callers."""
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 
@@ -54,18 +54,7 @@ async def test_storage_handler_inserts_minio_dns_record(context_with_zone_files,
     )
     handler._create_bucket = AsyncMock()
 
-    with (
-        patch("os.makedirs"),
-        patch(
-            "builtins.open",
-            MagicMock(
-                return_value=MagicMock(
-                    __enter__=MagicMock(return_value=MagicMock()),
-                    __exit__=MagicMock(return_value=False),
-                )
-            ),
-        ),
-    ):
+    with patch("os.makedirs"), patch("builtins.open", mock_open()):
         await handler.deploy_minio()
 
     platform_zone = context_with_zone_files.runtime_state.dns_output["zone_files"][

@@ -1,33 +1,53 @@
 """NetEngine exception hierarchy."""
 
-
-class NetEngineError(Exception):
-    """Base class for all NetEngine exceptions."""
+from typing import Any
 
 
-class SubstrateError(NetEngineError):
-    """Phase 0: Docker/substrate provisioning failure."""
+class BaseNetEngineException(Exception):
+    def __init__(
+        self,
+        message: str = "An unknown NetEngine exception occurred.",
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        self._msg = message
+        self._code: int | str | None = None
+        self._log_rules: dict[str, Any] = {
+            "log_on_init": True,
+            "at_lvl": "TRACE",
+            "with_msg": message,
+        }
+        self._log_xt: dict[str, Any] = dict(kwargs)
+        super().__init__(message)
 
 
-class DNSError(NetEngineError):
-    """Phase 1-2: DNS zone or record failure."""
+# Alias for backward compatibility
+NetEngineError = BaseNetEngineException
 
 
-class PKIError(NetEngineError):
-    """Phase 3: PKI / step-ca failure."""
+class SubstrateError(BaseNetEngineException):
+    """Phase 0: container orchestrator / network setup failure."""
 
 
-class IdentityError(NetEngineError):
-    """Phase 4 / 6: Identity provider failure."""
+class DNSError(BaseNetEngineException):
+    """Phases 1-2: DNS zone or record operation failure."""
 
 
-class RegistryError(NetEngineError):
-    """Phase 5: World or domain registry failure."""
+class PKIError(BaseNetEngineException):
+    """Phase 3: certificate authority or cert issuance failure."""
 
 
-class GatewayError(NetEngineError):
-    """Phase 7: Gateway / nftables rule failure."""
+class IdentityError(BaseNetEngineException):
+    """Phase 4/6: Keycloak realm or user management failure."""
 
 
-class ServicesError(NetEngineError):
-    """Phase 8: World services failure."""
+class RegistryError(BaseNetEngineException):
+    """Phase 5: world or domain registry operation failure."""
+
+
+class GatewayError(BaseNetEngineException):
+    """Phase 7: nftables / gateway rule failure."""
+
+
+class ServicesError(BaseNetEngineException):
+    """Phase 8: world services (mail, storage, apps) failure."""

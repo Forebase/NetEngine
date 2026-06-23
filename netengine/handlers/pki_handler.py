@@ -9,19 +9,24 @@ from typing import Optional
 import aiohttp
 
 from netengine.core.state import RuntimeState
+from netengine.errors import PKIError
 from netengine.handlers.docker_handler import DockerHandler
 
 
 class PKIHandler:
-    def __init__(self, docker: DockerHandler, state: RuntimeState, spec: dict):
+    def __init__(self, docker: DockerHandler, state: RuntimeState, spec):
         self.docker = docker
         self.state = state
         self.spec = spec
-        # Read values from spec, with fallbacks
-        pki_spec = spec.get("pki", {})
-        acme = pki_spec.get("acme", {})
-        self.ca_ip = acme.get("listen_ip", "10.0.0.6")
-        self.ca_dns = acme.get("canonical_name", "ca.platform.internal")
+        # Support both Pydantic model (NetEngineSpec) and plain dict
+        if hasattr(spec, "pki"):
+            self.ca_ip = spec.pki.acme.listen_ip
+            self.ca_dns = spec.pki.acme.canonical_name
+        else:
+            pki_spec = spec.get("pki", {}) if isinstance(spec, dict) else {}
+            acme = pki_spec.get("acme", {})
+            self.ca_ip = acme.get("listen_ip", "10.0.0.6")
+            self.ca_dns = acme.get("canonical_name", "ca.platform.internal")
         self.volume_name = "netengines_pki_data"
         self.container_name = "netengines_step_ca"
         self.image = "smallstep/step-ca:latest"
@@ -44,7 +49,7 @@ class PKIHandler:
 
         # 4. Healthcheck
         if not await self.healthcheck():
-            raise RuntimeError("step‑ca is not responding after bootstrap")
+            raise PKIError("step‑ca is not responding after bootstrap")
 
     # ─────────────────────────────────────────────
     # CA generation (one‑off)
@@ -83,7 +88,19 @@ class PKIHandler:
                 image=self.image, command=cmd, volumes=volumes, environment={}
             )
             if result["exit_code"] != 0:
-                raise RuntimeError(f"step ca init failed: {result['logs']}")
+                raise PKIError(f"step ca init failed: {result['logs']}")
+
+            # Persist password to volume so _start_server can retrieve it
+            persist_result = await self.docker.run_container_one_off(
+                image=self.image,
+                command=["cp", "/tmp/pass/password.txt", "/home/step/password.txt"],
+                volumes=volumes,
+                environment={},
+            )
+            if persist_result["exit_code"] != 0:
+                raise RuntimeError(
+                    f"Failed to persist CA password to volume: {persist_result['logs']}"
+                )
 
         # Read the CA certificate from the volume
         ca_cert = await self._read_file_from_volume("/home/step/certs/ca.crt")
@@ -100,7 +117,7 @@ class PKIHandler:
             image=self.image, command=cmd, volumes=volumes, environment={}
         )
         if result["exit_code"] != 0:
-            raise RuntimeError(f"Failed to read {path}: {result['logs']}")
+            raise PKIError(f"Failed to read {path}: {result['logs']}")
         return result["logs"]
 
     # ─────────────────────────────────────────────
@@ -121,7 +138,7 @@ class PKIHandler:
         password = await self._get_password()
         if password is None:
             # If no password found, we need to re-generate? Not for now.
-            raise RuntimeError("CA password not found; cannot start step-ca")
+            raise PKIError("CA password not found; cannot start step-ca")
 
         volumes = {self.volume_name: {"bind": "/home/step", "mode": "rw"}}
         container_id = await self.docker.start_container(
@@ -172,8 +189,9 @@ class PKIHandler:
         # This is simpler than REST API for MVP.
         # We'll run: step ca certificate --provisioner acme <cn> <cert> <key> --ca-config /home/step/config/ca.json
         volumes = {self.volume_name: {"bind": "/home/step", "mode": "rw"}}
-        cert_file = f"/tmp/{common_name}.crt"
-        key_file = f"/tmp/{common_name}.key"
+        # Write certs to volume path so _read_file_from_volume can retrieve them
+        cert_file = f"/home/step/{common_name}.crt"
+        key_file = f"/home/step/{common_name}.key"
         cmd = [
             "step",
             "ca",
@@ -195,7 +213,7 @@ class PKIHandler:
             image=self.image, command=cmd, volumes=volumes, environment={}
         )
         if result["exit_code"] != 0:
-            raise RuntimeError(f"Certificate issuance failed: {result['logs']}")
+            raise PKIError(f"Certificate issuance failed: {result['logs']}")
         # Now read the cert and key from the container? We mounted /tmp, but we need to read from volume.
         # Actually we can mount a temporary directory to extract the certs.
         # Simpler: use a shared volume or write to the CA volume and read.

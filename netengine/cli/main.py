@@ -100,6 +100,7 @@ async def _up(spec_file: str, up_to: int, mock: bool, skip_migrations: bool) -> 
     click.echo("World bootstrapped.")
     _print_status(orchestrator.runtime_state)
 
+    # Start background consumers if any were registered
     if orchestrator.consumer_supervisor.consumers:
         logger.info("Starting background consumers (Ctrl+C to stop).")
         await orchestrator.start_consumers()
@@ -258,7 +259,6 @@ def _print_status(state: RuntimeState) -> None:
         click.echo("CA certificate: present")
     if state.step_ca_container_id:
         click.echo(f"step-ca container: {state.step_ca_container_id}")
-
 
 if __name__ == "__main__":
     cli()

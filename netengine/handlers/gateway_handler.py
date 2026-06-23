@@ -3,6 +3,8 @@ import tempfile
 
 from netengine.gateways.base import BaseGatewayHandler
 
+from netengine.errors import GatewayError
+
 
 class GatewayHandler(BaseGatewayHandler):
     def __init__(self, docker):
@@ -20,7 +22,7 @@ class GatewayHandler(BaseGatewayHandler):
         elif profile == "airgapped":
             return self._airgapped_rules(and_name, cidr)
         else:
-            raise ValueError(f"Unknown AND profile: {profile}")
+            raise GatewayError(f"Unknown AND profile: {profile}")
 
     def _residential_rules(self, and_name: str, cidr: str) -> str:
         return f"""

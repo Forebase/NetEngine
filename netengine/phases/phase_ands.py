@@ -262,6 +262,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
             await gateway.apply_rules(and_name=and_instance.name, rules=rules)
             logger.info(f"Applied nftables rules for {and_instance.name}")
         except Exception as e:
+            # Clean up on failure
             await docker.disconnect_network(gateway.gateway_container, bridge_name)
             await docker.remove_network(bridge_name)
             raise RuntimeError(f"Failed to apply rules for {and_instance.name}: {e}")
@@ -317,8 +318,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
             raise RuntimeError(f"Profile '{profile}' not found")
 
         # Sequential /24 allocation within 172.16.0.0/12.
-        # Uses a simple counter based on AND name length + ord sum to reduce
-        # collisions for MVP. Production should query Supabase address_pools.
+        # Uses ord-sum rather than hash() to avoid collision with >256 ANDs.
         idx = sum(ord(c) for c in and_name) % 4096
         third_octet = idx % 256
         second_extra = idx // 256

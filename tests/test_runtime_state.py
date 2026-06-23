@@ -4,19 +4,19 @@ from netengine.core.state import RuntimeState
 
 
 def test_runtime_state_uses_env_path(tmp_path, monkeypatch):
-    state_path = tmp_path / "state" / "netengines_state.json"
-    monkeypatch.setenv("NETENGINES_STATE_FILE", str(state_path))
+    state_path = tmp_path / "state" / "netengine_state.json"
+    monkeypatch.setenv("NETENGINE_STATE_FILE", str(state_path))
 
     state = RuntimeState()
     state.save()
 
     assert state_path.exists()
-    assert not (tmp_path / "netengines_state.json").exists()
+    assert not (tmp_path / "netengine_state.json").exists()
 
 
 def test_load_discards_completed_phase_without_matching_output(tmp_path, monkeypatch):
-    state_path = tmp_path / "netengines_state.json"
-    monkeypatch.setenv("NETENGINES_STATE_FILE", str(state_path))
+    state_path = tmp_path / "netengine_state.json"
+    monkeypatch.setenv("NETENGINE_STATE_FILE", str(state_path))
     state_path.write_text(
         json.dumps(
             {

@@ -1,4 +1,5 @@
 import secrets
+import tempfile
 
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
@@ -13,18 +14,15 @@ class StorageHandler:
         self.pki = pki
         self.state = state
         self.container_name = "netengines_minio"
-        self.storage_ip = "10.0.0.14"
-        self.storage_dns = "storage.platform.internal"
+        self.storage_ip = context.spec.world_services.storage.listen_ip
+        self.storage_dns = context.spec.world_services.storage.canonical_name
 
-    async def deploy_minio(self) -> None:
+    async def deploy_minio(self) -> dict:
         """Start MinIO container with TLS and create platform bucket."""
         # 1. Issue cert for storage.platform.internal
         cert, key = await self.pki.issue_cert(self.storage_dns, [])
-        # Write cert and key to a volume or host directory
-        cert_dir = "/var/lib/netengines/certs_minio"
-        import os
-
-        os.makedirs(cert_dir, exist_ok=True)
+        # Write cert and key to a temporary directory (cleaned up by OS)
+        cert_dir = tempfile.mkdtemp(prefix="netengines_minio_certs_")
         with open(f"{cert_dir}/public.crt", "w") as f:
             f.write(cert)
         with open(f"{cert_dir}/private.key", "w") as f:
@@ -61,6 +59,14 @@ class StorageHandler:
         self.state.minio_secret_key = secret_key
         self.state.storage_deployed = True
         self.state.save()
+
+        return {
+            "container_name": self.container_name,
+            "ip": self.storage_ip,
+            "dns": self.storage_dns,
+            "access_key": access_key,
+            "bucket": "platform",
+        }
 
     async def _create_bucket(self, bucket_name: str, access_key: str, secret_key: str) -> None:
         """Use `mc` to create a bucket."""

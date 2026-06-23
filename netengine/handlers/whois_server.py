@@ -5,6 +5,7 @@ from netengine.core.supabase_client import get_supabase
 
 class WHOISServer:
     def __init__(self, host: str = "10.0.0.9", port: int = 43):
+        """Defaults match WHOISConfig spec defaults; callers should pass spec values."""
         self.host = host
         self.port = port
         self.supabase = get_supabase()

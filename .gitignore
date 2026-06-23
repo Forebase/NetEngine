@@ -224,3 +224,4 @@ __marimo__/
 
 # NetEngine local runtime state
 netengines_state.json
+data/

@@ -18,24 +18,38 @@ class PKIPhaseHandler(BasePhaseHandler):
 
         logger.info("Starting Phase 3: PKI + ACME")
 
-        # Instantiate PKIHandler with docker and state
-        docker = DockerHandler()  # or get from context if already available
+        if context.mock_mode:
+            # Stub output — no real container operations
+            context.runtime_state.pki_output = {
+                "ca_ip": spec.pki.acme.listen_ip,
+                "ca_dns": spec.pki.acme.canonical_name,
+                "bootstrapped": True,
+                "mock": True,
+                "deployed_at": datetime.utcnow().isoformat(),
+            }
+            context.runtime_state.pki_bootstrapped = True
+            context.runtime_state.phase_completed["3"] = True
+            context.runtime_state.completed_at = datetime.utcnow()
+            context.runtime_state.save()
+            logger.info("Phase 3: PKI + ACME complete (mock mode)")
+            await self._emit_event(
+                context,
+                event_type="pki.ready",
+                payload={"ca_ip": spec.pki.acme.listen_ip, "ca_dns": spec.pki.acme.canonical_name},
+            )
+            return
+
+        # Use docker_client from context, falling back to a new DockerHandler
+        docker = context.docker_client if context.docker_client is not None else DockerHandler()
         pki = PKIHandler(docker, context.runtime_state, spec)
 
         # 1. Bootstrap CA (generate + start server)
         await pki.bootstrap()
 
         # 2. Register DNS record for ca.platform.internal
-        #    We need to use the DNSHandler to add the record.
-        #    Since DNSHandler is a phase handler, we can either call its method directly
-        #    or instantiate a new DNS handler.
-        #    Assuming we have a reference to the DNS handler in context or we can create one.
-        #    For simplicity, we'll use the same pattern as DNSHandler.
-        from netengine.handlers.dns import DNSHandler  # import your existing DNS handler
+        from netengine.handlers.dns import DNSHandler
 
-        dns_handler = DNSHandler()  # or get from context
-        # But we need to call the add_zone_record method (which is a stub currently).
-        # We'll implement it below.
+        dns_handler = DNSHandler()
         await dns_handler.add_zone_record(
             context=context,
             zone="platform.internal",
@@ -45,22 +59,31 @@ class PKIPhaseHandler(BasePhaseHandler):
             ttl=300,
         )
 
-        # 3. Update state
+        # 3. Persist outputs
+        context.runtime_state.pki_output = {
+            "ca_ip": pki.ca_ip,
+            "ca_dns": pki.ca_dns,
+            "container_id": context.runtime_state.step_ca_container_id,
+            "bootstrapped": True,
+            "deployed_at": datetime.utcnow().isoformat(),
+        }
         context.runtime_state.pki_bootstrapped = True
+        context.runtime_state.phase_completed["3"] = True
         context.runtime_state.completed_at = datetime.utcnow()
         context.runtime_state.save()
 
         logger.info("Phase 3: PKI + ACME complete")
 
-        # Emit event
         await self._emit_event(
             context, event_type="pki.ready", payload={"ca_ip": pki.ca_ip, "ca_dns": pki.ca_dns}
         )
 
     async def healthcheck(self, context: PhaseContext) -> bool:
         """Check PKI health."""
+        if context.mock_mode:
+            return context.runtime_state.pki_output is not None
         try:
-            docker = DockerHandler()
+            docker = context.docker_client if context.docker_client is not None else DockerHandler()
             pki = PKIHandler(docker, context.runtime_state, context.spec)
             return await pki.healthcheck()
         except Exception:
@@ -79,4 +102,8 @@ class PKIPhaseHandler(BasePhaseHandler):
             parent_event_id=getattr(context.runtime_state, "parent_event_id", None),
         )
         context.logger.info(f"Event emitted: {event_type}")
-        # In M4+ you would queue to pgmq
+        if context.pgmq_client is not None:
+            try:
+                await context.pgmq_client.send(event)
+            except Exception as exc:
+                context.logger.warning(f"Failed to queue pki event: {exc}")

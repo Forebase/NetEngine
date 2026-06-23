@@ -11,6 +11,7 @@ Responsibilities:
 from datetime import datetime
 from typing import Any
 
+from netengine.errors import SubstrateError
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -190,16 +191,38 @@ class SubstrateHandler(BasePhaseHandler):
         Raises:
             RuntimeError: If orchestrator initialization fails
         """
+        import asyncio
+
         logger = context.logger
 
         if orchestrator_type == "swarm":
             logger.info("Initializing Docker Swarm orchestrator")
-            # In M1, we stub this. Real implementation would call Docker daemon
+
+            if context.mock_mode or context.docker_client is None:
+                return {
+                    "type": "docker_swarm",
+                    "status": "ready",
+                    "healthy": True,
+                    "version": "24.0+ (mock)",
+                    "initialized_at": datetime.utcnow().isoformat(),
+                }
+
+            # Real: check if already in swarm; init if not
+            client = context.docker_client.client  # type: ignore[union-attr]
+
+            info = await asyncio.to_thread(client.info)
+            swarm_state = info.get("Swarm", {}).get("LocalNodeState", "inactive")
+            if swarm_state != "active":
+                logger.info("Not in swarm — running docker swarm init")
+                await asyncio.to_thread(client.swarm.init)
+                info = await asyncio.to_thread(client.info)
+
+            version = info.get("ServerVersion", "unknown")
             return {
                 "type": "docker_swarm",
                 "status": "ready",
                 "healthy": True,
-                "version": "24.0+",
+                "version": version,
                 "initialized_at": datetime.utcnow().isoformat(),
             }
 
@@ -214,7 +237,7 @@ class SubstrateHandler(BasePhaseHandler):
             }
 
         else:
-            raise RuntimeError(f"Unsupported orchestrator type: {orchestrator_type}")
+            raise SubstrateError(f"Unsupported orchestrator type: {orchestrator_type}")
 
     async def _create_networks(
         self, context: PhaseContext, networks_config: dict[str, Any]
@@ -237,19 +260,51 @@ class SubstrateHandler(BasePhaseHandler):
         for net_name, net_config in networks_config.items():
             logger.debug(f"Creating network '{net_name}' with subnet {net_config.subnet}")
 
-            # M1 stub: Real implementation would call Docker API
+            if context.mock_mode or context.docker_client is None:
+                net_id = f"mock-net-{net_name}"
+            else:
+                net_id = await self._ensure_docker_network(
+                    context, net_name, net_config.subnet, net_config.type
+                )
+
             networks_output[net_name] = {
                 "name": net_name,
-                "id": f"mock-net-{net_name}",
+                "id": net_id,
                 "type": net_config.type,
                 "subnet": net_config.subnet,
                 "description": net_config.description,
                 "created_at": datetime.utcnow().isoformat(),
             }
 
-            logger.info(f"Network created: {net_name} ({net_config.subnet})")
+            logger.info(f"Network ready: {net_name} ({net_config.subnet}) id={net_id}")
 
         return networks_output
+
+    async def _ensure_docker_network(
+        self, context: PhaseContext, name: str, subnet: str, driver: str
+    ) -> str:
+        """Idempotently create a Docker network, returning its ID."""
+        import asyncio
+
+        import docker as docker_lib
+
+        client = context.docker_client.client  # type: ignore[union-attr]
+
+        def _sync() -> str:
+            try:
+                net = client.networks.get(name)
+                return net.id
+            except docker_lib.errors.NotFound:
+                net = client.networks.create(
+                    name=name,
+                    driver=driver if driver != "overlay" else "overlay",
+                    ipam=docker_lib.types.IPAMConfig(
+                        pool_configs=[docker_lib.types.IPAMPool(subnet=subnet)]
+                    ),
+                )
+                return net.id
+
+        return await asyncio.to_thread(_sync)
 
     async def _configure_ntp(self, context: PhaseContext, servers: list[str]) -> dict[str, Any]:
         """Configure NTP time synchronization.

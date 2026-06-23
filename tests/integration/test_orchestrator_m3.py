@@ -1,5 +1,6 @@
 """Tests for Orchestrator with M3 phases."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -7,6 +8,9 @@ import pytest
 from netengine.core.orchestrator import Orchestrator
 from netengine.handlers.phase_pki import PKIPhaseHandler
 from netengine.phases.phase_platform_identity import PlatformIdentityPhaseHandler
+from netengine.spec.loader import load_spec
+
+_EXAMPLES = Path(__file__).parent.parent.parent / "examples"
 
 
 async def _set_substrate_output(context):
@@ -22,9 +26,9 @@ async def _set_pki_output(context):
 
 
 @pytest.fixture
-def m3_spec(single_org_spec):
-    """Full spec used for orchestrator M3 integration tests."""
-    return single_org_spec
+def m3_spec():
+    """Full valid spec for M3 orchestrator tests."""
+    return load_spec(_EXAMPLES / "minimal.yaml")
 
 
 class TestOrchestratorPhaseExecution:
@@ -251,7 +255,7 @@ class TestOrchestratorPhaseOrdering:
         orchestrator = Orchestrator(m3_spec)
 
         phases = [phase_num for phase_num, _ in orchestrator.PHASE_HANDLERS]
-        assert phases == [0, 1, 3, 4, 5, 6, 7, 8], f"Unexpected phase handler registry: {phases}"
+        assert phases == [0, 1, 3, 4, 5, 6, 7, 8, 9], f"Unexpected phase handler registry: {phases}"
 
     def test_phase_handlers_are_distinct(self, m3_spec):
         """Each phase should have a handler registered."""
@@ -260,9 +264,9 @@ class TestOrchestratorPhaseOrdering:
         handlers = {
             phase_num: handler_class for phase_num, handler_class in orchestrator.PHASE_HANDLERS
         }
-        assert len(handlers) == 8, f"Expected 8 handler milestones, got {len(handlers)}"
+        assert len(handlers) == 9, f"Expected 9 handler milestones, got {len(handlers)}"
         assert min(handlers.keys()) == 0, "Lowest phase should be 0"
-        assert max(handlers.keys()) == 8, "Highest phase should be 8"
+        assert max(handlers.keys()) == 9, "Highest phase should be 9"
 
     def test_phase_3_before_phase_4(self, m3_spec):
         """Phase 3 should execute before Phase 4."""
