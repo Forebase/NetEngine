@@ -11,7 +11,7 @@ Usage:
 """
 
 import os
-from typing import Union
+from typing import Any
 
 from netengine.core.db_client import AsyncDBClient, get_local_db
 
@@ -34,7 +34,7 @@ def _get_cloud_client():
     return _cloud_client
 
 
-async def get_db() -> Union[AsyncDBClient, object]:
+async def get_db() -> Any:
     """Return the active database client (local asyncpg or Supabase cloud)."""
     if _use_cloud():
         return _get_cloud_client()

@@ -117,12 +117,7 @@ class AppHandler:
         import ipaddress
 
         db = await self._get_db()
-        result = (
-            await db.table("address_leases")
-            .select("cidr")
-            .eq("and_name", and_name)
-            .execute()
-        )
+        result = await db.table("address_leases").select("cidr").eq("and_name", and_name).execute()
         if not result.data:
             raise ServicesError(f"AND {and_name} not found")
         cidr = result.data[0]["cidr"]

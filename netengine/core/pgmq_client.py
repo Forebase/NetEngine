@@ -31,9 +31,7 @@ class PGMQClient:
     async def receive(self, queue_name: str, timeout: int = 5) -> Optional[Dict[str, Any]]:
         """Pop a message from the queue."""
         db = await self._get_db()
-        result = await db.rpc(
-            "pgmq_pop", {"queue_name": queue_name, "timeout": timeout}
-        ).execute()
+        result = await db.rpc("pgmq_pop", {"queue_name": queue_name, "timeout": timeout}).execute()
         if result.data:
             return result.data[0]
         return None

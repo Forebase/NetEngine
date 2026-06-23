@@ -15,7 +15,7 @@ import json
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-import asyncpg
+import asyncpg  # type: ignore[import-untyped]
 
 _pool: Optional[asyncpg.Pool] = None
 

@@ -427,9 +427,7 @@ async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
                 metrics = {}
 
             try:
-                dlq_result = await db.rpc(
-                    "pgmq_metrics", {"queue_name": f"{q}_dlq"}
-                ).execute()
+                dlq_result = await db.rpc("pgmq_metrics", {"queue_name": f"{q}_dlq"}).execute()
                 dlq_metrics = dlq_result.data[0] if dlq_result.data else {}
             except Exception:
                 dlq_metrics = {}
@@ -488,9 +486,12 @@ async def get_event_chain(
 
     try:
         db = await get_db()
-        result = await db.table("pgmq_archive").select("*").eq(
-            "correlation_id", correlation_id
-        ).execute()
+        result = (
+            await db.table("pgmq_archive")
+            .select("*")
+            .eq("correlation_id", correlation_id)
+            .execute()
+        )
         events = result.data or []
         return {"correlation_id": correlation_id, "events": events, "count": len(events)}
     except Exception as exc:

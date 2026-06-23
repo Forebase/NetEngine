@@ -122,7 +122,7 @@ class RuntimeState:
                 if isinstance(v, datetime):
                     data[k] = v.isoformat()
 
-            async def _sync():
+            async def _sync() -> None:
                 db = await get_db()
                 await db.table("runtime_state").upsert(
                     {"key": "current", "value": json.dumps(data)}

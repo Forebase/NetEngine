@@ -23,7 +23,9 @@ class DomainRegistryHandler:
         db = await self._get_db()
         pools = spec.domain_registry.address_space if spec.domain_registry else []
         for pool in pools:
-            await db.table("address_pools").upsert({"profile": pool.label, "cidr": pool.cidr}).execute()
+            await db.table("address_pools").upsert(
+                {"profile": pool.label, "cidr": pool.cidr}
+            ).execute()
 
     async def allocate_address(self, and_name: str, profile: str) -> str:
         """Allocate a CIDR from the pool; row-level lock prevents conflicts."""
