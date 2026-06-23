@@ -1,4 +1,5 @@
 # netengine/handlers/pki_phase.py (or phases/phase_pki.py)
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -7,6 +8,8 @@ from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.pki_handler import PKIHandler
+
+logger = logging.getLogger(__name__)
 
 
 class PKIPhaseHandler(BasePhaseHandler):
@@ -86,7 +89,8 @@ class PKIPhaseHandler(BasePhaseHandler):
             docker = context.docker_client if context.docker_client is not None else DockerHandler()
             pki = PKIHandler(docker, context.runtime_state, context.spec)
             return await pki.healthcheck()
-        except Exception:
+        except Exception as exc:
+            logger.warning(f"PKI phase healthcheck error: {exc}")
             return False
 
     async def should_skip(self, context: PhaseContext) -> bool:

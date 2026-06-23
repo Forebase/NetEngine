@@ -1,6 +1,9 @@
+import logging
 import os
 import secrets
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -144,7 +147,8 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
                 container = docker.client.containers.get(container_id)
                 if container.status != "running":
                     return False
-            except Exception:
+            except Exception as exc:
+                logger.debug(f"Could not inspect Keycloak platform container {container_id}: {exc}")
                 return False
 
             # Check OIDC discovery endpoint
@@ -164,7 +168,8 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
                     return False
                 except aiohttp.ClientError:
                     return False
-        except Exception:
+        except Exception as exc:
+            logger.warning(f"Platform identity healthcheck error: {exc}")
             return False
 
     async def should_skip(self, context: PhaseContext) -> bool:
@@ -183,7 +188,7 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
                     async with session.get(url, ssl=False) as resp:
                         if resp.status == 200:
                             return
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Keycloak not ready yet ({url}): {exc}")
             await asyncio.sleep(2)
         raise RuntimeError("Keycloak did not become ready in time")

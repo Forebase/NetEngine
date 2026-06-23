@@ -10,12 +10,15 @@ Responsibilities:
 
 import asyncio
 import json
+import logging
 import secrets
 import ssl
 from datetime import datetime
 from typing import Any, Optional
 
 import aiohttp
+
+logger = logging.getLogger(__name__)
 
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
@@ -355,8 +358,8 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
                     async with session.get(url) as resp:
                         if resp.status == 200:
                             return
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Keycloak not ready yet ({url}): {exc}")
             await asyncio.sleep(2)
 
         raise RuntimeError(f"Keycloak did not become ready at {url} within {timeout}s")
