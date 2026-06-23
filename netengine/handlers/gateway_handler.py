@@ -1,12 +1,13 @@
 import os
 import tempfile
+from typing import Any
 
 from netengine.errors import GatewayError
 from netengine.gateways.base import BaseGatewayHandler
 
 
 class GatewayHandler(BaseGatewayHandler):
-    def __init__(self, docker):
+    def __init__(self, docker: Any) -> None:
         self.docker = docker
         self.gateway_container = "netengine_gateway"
 

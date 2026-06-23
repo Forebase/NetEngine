@@ -23,7 +23,7 @@ def _use_cloud() -> bool:
     return bool(os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_SERVICE_KEY"))
 
 
-def _get_cloud_client():
+def _get_cloud_client() -> Any:
     global _cloud_client
     if _cloud_client is None:
         from supabase import create_client

@@ -40,14 +40,11 @@ exclude = [
     "netengine/phases/",
     "netengine/core/orchestrator\\.py",
     "netengine/core/pgmq_client\\.py",
-    "netengine/core/supabase_client\\.py",
-    "netengine/utils/",
     "netengine/handlers/substrate\\.py",
     "netengine/handlers/dns\\.py",
     "netengine/handlers/pki_handler\\.py",
     "netengine/handlers/phase_pki\\.py",
     "netengine/handlers/oidc_handler\\.py",
-    "netengine/handlers/gateway_handler\\.py",
     "netengine/handlers/docker_handler\\.py",
     "netengine/handlers/and_handler\\.py",
     "netengine/handlers/domain_registry_handler\\.py",
@@ -59,6 +56,10 @@ exclude = [
     "netengine/logging/middleware\\.py",
     "netengine/logging/sinks\\.py",
 ]
+
+[[tool.mypy.overrides]]
+module = "docker.*"
+ignore_missing_imports = true
 
 [tool.black]
 line-length = 100
