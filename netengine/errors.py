@@ -1,3 +1,5 @@
+"""NetEngine exception hierarchy."""
+
 from typing import Any
 
 
@@ -16,11 +18,11 @@ class BaseNetEngineException(Exception):
             "with_msg": message,
         }
         self._log_xt: dict[str, Any] = dict(kwargs)
-        super().__init__(self.message)
+        super().__init__(message)
 
-    @property
-    def message(self) -> str:
-        return self._msg or "An unknown NetEngine exception occurred."
+
+# Alias for backward compatibility
+NetEngineError = BaseNetEngineException
 
 
 class SubstrateError(BaseNetEngineException):

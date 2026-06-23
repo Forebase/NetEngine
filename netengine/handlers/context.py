@@ -38,6 +38,9 @@ class PhaseContext:
     kubernetes_client: Any = None
     supabase_client: Optional["SupabaseClient"] = None
     pgmq_client: Optional["PGMQClient"] = None
+
+    # Background task supervisor — always present; handlers register long-running
+    # consumers here rather than calling asyncio.create_task() directly.
     consumer_supervisor: Optional["ConsumerSupervisor"] = None
 
     # Phase-specific config

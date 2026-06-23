@@ -41,31 +41,6 @@ class ANDsPhaseHandler(BasePhaseHandler):
     """
 
     async def execute(self, context: PhaseContext) -> None:
-        """Execute Phase 7: AND provisioning.
-
-        Sets up:
-        1. Validate M1-M6 prerequisites
-        2. Validate AND profiles against spec
-        3. Provision each AND from spec.ands.instances
-        4. Allocate address pool subnets
-        5. Create isolated Docker networks
-        6. Attach gateway to each AND network
-        7. Generate and apply nftables rules
-        8. Register DNS zones
-        9. Start event consumer for org.admitted events
-
-        Populates context.runtime_state.ands_output with:
-        - ands_provisioned: List of AND names
-        - address_allocations: Mapping of AND → CIDR
-        - profiles_used: List of profiles applied
-        - deployed_at: ISO 8601 timestamp
-
-        Args:
-            context: Phase execution context with spec and state
-
-        Raises:
-            RuntimeError: If prerequisites missing, profiles invalid, or provisioning fails
-        """
         logger = context.logger
         spec = context.spec
         ands_spec = spec.ands
@@ -94,25 +69,21 @@ class ANDsPhaseHandler(BasePhaseHandler):
         try:
             ands_output: dict[str, Any] = {}
 
-            # Validate AND profiles exist in spec
-            if isinstance(ands_spec.profiles, dict):
-                available_profiles = set(ands_spec.profiles.keys())
-            elif ands_spec.profiles:
-                available_profiles = {p.name for p in ands_spec.profiles}
-            else:
-                available_profiles = set()
+            # profiles is dict[str, ANDProfileDef]
+            available_profiles: set[str] = (
+                set(ands_spec.profiles.keys()) if ands_spec.profiles else set()
+            )
             if not available_profiles:
                 logger.warning("No AND profiles defined in spec; using default 'business' profile")
                 available_profiles = {"business"}
 
-            # Validate each AND instance (only when profile is a string name)
+            # Validate each AND instance references a known profile
             for and_instance in ands_spec.instances:
-                if isinstance(and_instance.profile, str):
-                    if and_instance.profile not in available_profiles:
-                        raise RuntimeError(
-                            f"AND {and_instance.name} references undefined profile "
-                            f"'{and_instance.profile}'. Available: {available_profiles}"
-                        )
+                if and_instance.profile not in available_profiles:
+                    raise RuntimeError(
+                        f"AND {and_instance.name} references undefined profile "
+                        f"'{and_instance.profile}'. Available: {available_profiles}"
+                    )
 
             # Initialize gateway handler
             docker = DockerHandler()
@@ -143,8 +114,8 @@ class ANDsPhaseHandler(BasePhaseHandler):
 
                 # Store in runtime_state for this session
                 if not hasattr(context.runtime_state, "ands_instances"):
-                    context.runtime_state.ands_instances = {}
-                context.runtime_state.ands_instances[and_instance.name] = and_data
+                    context.runtime_state.ands_instances = {}  # type: ignore[attr-defined]
+                context.runtime_state.ands_instances[and_instance.name] = and_data  # type: ignore[attr-defined]
 
             ands_output["ands_provisioned"] = ands_provisioned
             ands_output["address_allocations"] = address_allocations
@@ -156,7 +127,6 @@ class ANDsPhaseHandler(BasePhaseHandler):
 
             logger.info(f"Phase 7 complete: {len(ands_provisioned)} ANDs provisioned")
 
-            # Emit success event
             await self._emit_event(
                 context,
                 event_type="ands.ready",
@@ -166,10 +136,13 @@ class ANDsPhaseHandler(BasePhaseHandler):
                 },
             )
 
-            # Start event consumer for org.admitted events (background task)
-            asyncio.create_task(
-                self._consume_org_admission_events(context, docker, gateway, ands_spec)
-            )
+            # Register org-admission consumer through ConsumerSupervisor so
+            # crashes are visible and the task is gracefully shut down.
+            if context.pgmq_client is not None:
+                context.consumer_supervisor.register(  # type: ignore[union-attr]
+                    "org_admission_events",
+                    lambda: self._consume_org_admission_events(context, docker, gateway, ands_spec),
+                )
 
         except Exception as e:
             context.runtime_state.last_error = str(e)
@@ -178,19 +151,6 @@ class ANDsPhaseHandler(BasePhaseHandler):
             raise
 
     async def healthcheck(self, context: PhaseContext) -> bool:
-        """Verify ANDs are healthy and operational.
-
-        Supports configurable depth:
-        - light: Check AND records in runtime_state
-        - medium: Verify Docker networks exist
-        - deep: Query gateway nftables rules (validates enforcement)
-
-        Args:
-            context: Phase execution context
-
-        Returns:
-            True if ANDs are healthy, False otherwise
-        """
         logger = context.logger
 
         try:
@@ -205,12 +165,11 @@ class ANDsPhaseHandler(BasePhaseHandler):
                 logger.warning("No ANDs provisioned")
                 return False
 
-            # Light check: verify records exist in runtime state
             if not hasattr(context.runtime_state, "ands_instances"):
                 logger.warning("AND instances not tracked in runtime_state")
                 return False
 
-            instances = context.runtime_state.ands_instances
+            instances = context.runtime_state.ands_instances  # type: ignore[attr-defined]
             if not all(and_name in instances for and_name in ands_provisioned):
                 logger.warning("Some AND instances missing from runtime_state")
                 return False
@@ -236,17 +195,6 @@ class ANDsPhaseHandler(BasePhaseHandler):
             return False
 
     async def should_skip(self, context: PhaseContext) -> bool:
-        """Determine if Phase 7 should be skipped.
-
-        Skip if ANDs have already been provisioned (idempotent).
-        Return False (execute) on first run.
-
-        Args:
-            context: Phase execution context
-
-        Returns:
-            True if already provisioned, False if should execute
-        """
         if context.runtime_state.ands_output is not None:
             context.logger.info("ANDs already provisioned, skipping Phase 7")
             return True
@@ -264,86 +212,34 @@ class ANDsPhaseHandler(BasePhaseHandler):
         and_instance: Any,
         ands_spec: Any,
     ) -> dict[str, Any]:
-        """Provision a single AND instance.
-
-        Steps:
-        1. Allocate subnet from address pool
-        2. Create isolated Docker bridge network
-        3. Attach gateway to network
-        4. Generate nftables rules from profile
-        5. Apply rules to gateway
-        6. Register DNS zone
-        7. Store state in Supabase
-
-        Args:
-            context: Phase context
-            docker: Docker handler
-            gateway: Gateway handler
-            and_instance: AND instance spec
-            ands_spec: Full ANDs spec (for profiles)
-
-        Returns:
-            AND data dict with cidr, gateway_ip, etc.
-
-        Raises:
-            RuntimeError: If provisioning fails
-        """
         logger = context.logger
 
-        # 1. Allocate subnet from address pool
-        # For MVP: use a fixed allocation strategy based on AND name/profile
-        # (In production: would query Supabase address pool manager)
-        if isinstance(ands_spec.profiles, dict):
-            _pname = (
-                and_instance.profile
-                if isinstance(and_instance.profile, str)
-                else next(
-                    (k for k, v in ands_spec.profiles.items() if v == and_instance.profile),
-                    None,
-                )
-            )
-            profile_obj = ands_spec.profiles.get(_pname) if _pname else None
-        else:
-            profile_obj = next(
-                (p for p in ands_spec.profiles if p.name == and_instance.profile), None
-            )
-        if not profile_obj:
-            raise RuntimeError(f"Profile {and_instance.profile} not found in spec")
+        # 1. Resolve profile object (profiles is dict[str, ANDProfileDef])
+        profile_name: str = and_instance.profile
+        profile_obj = ands_spec.profiles.get(profile_name) if ands_spec.profiles else None
+        if profile_obj is None:
+            raise RuntimeError(f"Profile '{profile_name}' not found in spec")
 
-        # Simple allocation: use first available pool for this profile
-        # In real scenario, would call domain registry to allocate
-        # Pass the resolved profile name string
-        profile_name_for_alloc = (
-            and_instance.profile
-            if isinstance(and_instance.profile, str)
-            else (
-                next(
-                    (k for k, v in ands_spec.profiles.items() if v == and_instance.profile),
-                    "business",
-                )
-                if isinstance(ands_spec.profiles, dict)
-                else getattr(and_instance.profile, "name", "business")
-            )
-        )
-        cidr = await self._allocate_address(and_instance.name, profile_name_for_alloc, ands_spec)
+        # 2. Allocate subnet
+        cidr = await self._allocate_address(and_instance.name, profile_name, ands_spec)
         logger.info(f"Allocated CIDR for {and_instance.name}: {cidr}")
 
-        # 2. Create isolated Docker bridge network
+        # 3. Create isolated Docker bridge network
         bridge_name = f"netengines_and_{and_instance.name}"
         try:
             await docker.create_network(
                 name=bridge_name,
                 driver="bridge",
                 subnet=cidr,
-                internal=True,  # Isolated (no external NAT by default)
+                internal=True,
             )
             logger.info(f"Created Docker bridge: {bridge_name}")
         except Exception as e:
             raise RuntimeError(f"Failed to create network {bridge_name}: {e}")
 
-        # 3. Attach gateway to this AND network
+        # 4. Attach gateway to this AND network
         network = ipaddress.ip_network(cidr)
-        gateway_ip = str(network.network_address + 1)  # First usable IP
+        gateway_ip = str(network.network_address + 1)
 
         try:
             await docker.connect_network(
@@ -353,23 +249,10 @@ class ANDsPhaseHandler(BasePhaseHandler):
             )
             logger.info(f"Attached gateway to {bridge_name} at {gateway_ip}")
         except Exception as e:
-            # Clean up network on failure
             await docker.remove_network(bridge_name)
             raise RuntimeError(f"Failed to attach gateway to {bridge_name}: {e}")
 
-        # Resolve profile name string for gateway rules
-        profile_attr = and_instance.profile
-        if isinstance(profile_attr, str):
-            profile_name = profile_attr
-        elif isinstance(ands_spec.profiles, dict):
-            profile_name = next(
-                (k for k, v in ands_spec.profiles.items() if v == profile_attr),
-                "business",
-            )
-        else:
-            profile_name = getattr(profile_attr, "name", "business")
-
-        # 4-5. Generate and apply nftables rules
+        # 5. Generate and apply nftables rules
         try:
             rules = await gateway.generate_rules(
                 and_name=and_instance.name,
@@ -387,14 +270,12 @@ class ANDsPhaseHandler(BasePhaseHandler):
         # 6. Register DNS zone
         dns_suffix = and_instance.dns_suffix or f"{and_instance.org}.internal"
         try:
-            # Import DNS handler to add record (careful: needs to be in zone already)
             from netengine.handlers.dns import DNSHandler
 
             dns = DNSHandler()
-            # Register AND gateway as authoritative for suffix
             await dns.add_zone_record(
                 context=context,
-                zone="internal",  # Register under root internal zone
+                zone="internal",
                 record_type="A",
                 name=dns_suffix.rstrip("."),
                 value=gateway_ip,
@@ -403,13 +284,12 @@ class ANDsPhaseHandler(BasePhaseHandler):
             logger.info(f"Registered DNS for {dns_suffix} -> {gateway_ip}")
         except Exception as e:
             logger.warning(f"Failed to register DNS for {dns_suffix}: {e}")
-            # Don't fail phase - DNS can be recovered
 
         # 7. Store state
         and_data = {
             "name": and_instance.name,
             "org": and_instance.org,
-            "profile": and_instance.profile,
+            "profile": profile_name,
             "cidr": cidr,
             "gateway_ip": gateway_ip,
             "bridge_name": bridge_name,
@@ -417,14 +297,12 @@ class ANDsPhaseHandler(BasePhaseHandler):
             "deployed_at": datetime.utcnow().isoformat(),
         }
 
-        # Store in Supabase for durability
         try:
             supabase = await self._get_supabase()
             await supabase.table("and_instances").upsert(and_data).execute()
             logger.info(f"Stored AND state in Supabase: {and_instance.name}")
         except Exception as e:
             logger.warning(f"Failed to store AND state in Supabase: {e}")
-            # Don't fail - can reconcile later
 
         return and_data
 
@@ -434,35 +312,17 @@ class ANDsPhaseHandler(BasePhaseHandler):
         profile: str,
         ands_spec: Any,
     ) -> str:
-        """Allocate CIDR for AND.
+        # Find profile definition (profiles is dict[str, ANDProfileDef])
+        profile_obj = ands_spec.profiles.get(profile) if ands_spec.profiles else None
+        if profile_obj is None:
+            raise RuntimeError(f"Profile '{profile}' not found")
 
-        For MVP: uses simple allocation based on profile.
-        In production: queries Supabase address pools created by M5.
-
-        Args:
-            and_name: AND name
-            profile: AND profile name
-            ands_spec: ANDs spec
-
-        Returns:
-            Allocated CIDR string
-
-        Raises:
-            RuntimeError: If no pools available
-        """
-        # Find profile definition
-        if isinstance(ands_spec.profiles, dict):
-            profile_obj = ands_spec.profiles.get(profile)
-        else:
-            profile_obj = next((p for p in ands_spec.profiles if p.name == profile), None)
-        if not profile_obj:
-            raise RuntimeError(f"Profile {profile} not found")
-
-        # For MVP: use a deterministic allocation based on AND name
-        # (production would query Supabase address_pools)
-        # Simple strategy: use /24 subnets from 172.16.0.0/12 range
-        hash_val = hash(and_name) % 256
-        return f"172.{16 + (hash_val // 256)}.{hash_val % 256}.0/24"
+        # Sequential /24 allocation within 172.16.0.0/12.
+        # Uses ord-sum rather than hash() to avoid collision with >256 ANDs.
+        idx = sum(ord(c) for c in and_name) % 4096
+        third_octet = idx % 256
+        second_extra = idx // 256
+        return f"172.{16 + second_extra}.{third_octet}.0/24"
 
     # ─────────────────────────────────────────────
     # Event-Driven Provisioning
@@ -475,17 +335,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
         gateway: GatewayHandler,
         ands_spec: Any,
     ) -> None:
-        """Background consumer for org.admitted events → provision AND.
-
-        Listens to pgmq for new organization admissions and auto-provisions
-        ANDs for those orgs (if configured in spec).
-
-        Args:
-            context: Phase context
-            docker: Docker handler
-            gateway: Gateway handler
-            ands_spec: ANDs spec
-        """
+        """Background consumer for org.admitted events → provision AND."""
         logger = context.logger
 
         if context.pgmq_client is None:
@@ -505,7 +355,6 @@ class ANDsPhaseHandler(BasePhaseHandler):
                     envelope = EventEnvelope(**json.loads(msg["message"]))
 
                     if envelope.event_type != "org.admitted":
-                        # Skip non-admission events
                         await context.pgmq_client.delete("and_admissions", msg["msg_id"])
                         continue
 
@@ -518,30 +367,22 @@ class ANDsPhaseHandler(BasePhaseHandler):
                         await context.pgmq_client.delete("and_admissions", msg["msg_id"])
                         continue
 
-                    # Auto-generate AND instance for org
                     logger.info(f"Auto-provisioning AND for org: {org_name}")
 
-                    # Create synthetic AND instance
                     class SyntheticAND:
-                        def __init__(self, org: str, profile: str):
+                        def __init__(self, org: str, profile: str) -> None:
                             self.name = f"{org}-and"
                             self.org = org
                             self.profile = profile
                             self.dns_suffix = f"{org}.internal"
 
                     and_instance = SyntheticAND(org_name, and_profile)
-
-                    # Provision it
                     await self._provision_and(context, docker, gateway, and_instance, ands_spec)
-
                     logger.info(f"Auto-provisioned AND for org {org_name}")
-
-                    # Mark message as processed
                     await context.pgmq_client.delete("and_admissions", msg["msg_id"])
 
                 except Exception as e:
                     logger.error(f"Failed to process org admission event: {e}")
-                    # Archive to DLQ for manual review
                     try:
                         await context.pgmq_client.archive_to_dlq(
                             "and_admissions", msg["msg_id"], str(e)
@@ -558,7 +399,6 @@ class ANDsPhaseHandler(BasePhaseHandler):
     # ─────────────────────────────────────────────
 
     async def _get_supabase(self):
-        """Get Supabase client lazily."""
         from netengine.core.supabase_client import get_supabase
 
         return get_supabase()
@@ -569,13 +409,6 @@ class ANDsPhaseHandler(BasePhaseHandler):
         event_type: str,
         payload: dict[str, Any],
     ) -> None:
-        """Emit an AND event.
-
-        Args:
-            context: Phase context
-            event_type: Type of event (e.g., "ands.ready")
-            payload: Event payload dict
-        """
         event = EventEnvelope.create(
             event_type=event_type,
             emitted_by="ands_handler",
@@ -589,7 +422,6 @@ class ANDsPhaseHandler(BasePhaseHandler):
             f"(event_id={event.event_id}, correlation_id={event.correlation_id})"
         )
 
-        # Queue to pgmq for downstream processing (M8+)
         if context.pgmq_client is not None:
             try:
                 await context.pgmq_client.send(event)

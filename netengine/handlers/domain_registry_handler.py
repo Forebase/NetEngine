@@ -13,11 +13,11 @@ class DomainRegistryHandler:
         self.supabase = get_supabase()
         self.pgmq = PGMQClient()
 
-    async def seed_address_pools(self, spec: Dict[str, Any]) -> None:
+    async def seed_address_pools(self, spec: Any) -> None:
         """Seed address pools from domain_registry.address_space."""
-        pools = spec.get("domain_registry", {}).get("address_space", [])
+        pools = spec.domain_registry.address_space if spec.domain_registry else []
         for pool in pools:
-            data = {"profile": pool["profile"], "cidr": pool["cidr"]}
+            data = {"profile": pool.label, "cidr": pool.cidr}
             await self.supabase.table("address_pools").upsert(data).execute()
 
     async def allocate_address(self, and_name: str, profile: str) -> str:

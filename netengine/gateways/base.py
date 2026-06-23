@@ -7,19 +7,6 @@ Enables swapping implementations without changing call sites.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any
-
-from netengine.handlers.context import PhaseContext
-
-
-@dataclass
-class Rule:
-    """Generic rule representation (implementation-specific serialization in handlers)."""
-
-    rule_id: str
-    priority: int
-    content: dict[str, Any]
 
 
 class BaseGatewayHandler(ABC):
@@ -30,57 +17,48 @@ class BaseGatewayHandler(ABC):
     """
 
     @abstractmethod
-    async def generate_rules(self, context: PhaseContext) -> list[Rule]:
-        """Generate network/firewall rules from AND profiles or service definitions.
+    async def generate_rules(self, and_name: str, profile: str, cidr: str) -> str:
+        """Generate network/firewall rules for an AND.
 
         Args:
-            context: PhaseContext with spec and state
+            and_name: AND identifier (used in rule table names)
+            profile: AND profile name (residential | business | datacenter | airgapped)
+            cidr: Allocated subnet CIDR for this AND
 
         Returns:
-            List of rules to be applied
+            Ruleset string (nftables syntax for nftables impl; vendor-specific for others)
 
         Raises:
-            Exception: If rule generation fails
+            ValueError: If profile is unknown
         """
-        pass
 
     @abstractmethod
-    async def apply_rules(self, context: PhaseContext, rules: list[Rule]) -> None:
-        """Apply rules to the gateway atomically.
+    async def apply_rules(self, and_name: str, rules: str) -> None:
+        """Write and activate rules on the gateway for a single AND.
 
         Args:
-            context: PhaseContext with spec and state
-            rules: Rules to apply
+            and_name: AND identifier
+            rules: Ruleset string produced by generate_rules
 
         Raises:
-            Exception: If apply fails; gateway state is undefined
+            RuntimeError: If writing or activating fails
         """
-        pass
 
     @abstractmethod
-    async def remove_rules(self, context: PhaseContext, rule_ids: list[str]) -> None:
-        """Remove specific rules by ID.
+    async def remove_rules(self, and_name: str) -> None:
+        """Remove all rules for an AND (called on AND teardown).
 
         Args:
-            context: PhaseContext with spec and state
-            rule_ids: Rule IDs to remove
+            and_name: AND identifier
 
         Raises:
-            Exception: If removal fails
+            RuntimeError: If removal fails (table-not-found is silently ignored)
         """
-        pass
 
     @abstractmethod
-    async def reload(self, context: PhaseContext) -> None:
-        """Reload full gateway configuration (rolling restart, etc.).
-
-        Used when gateway implementation (not rules) changes, or after
-        gateway container restart.
-
-        Args:
-            context: PhaseContext with spec and state
+    async def reload(self) -> None:
+        """Reload full gateway configuration after a container restart.
 
         Raises:
-            Exception: If reload fails
+            RuntimeError: If reload fails
         """
-        pass

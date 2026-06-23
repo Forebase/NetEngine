@@ -10,14 +10,14 @@ class WorldRegistryHandler:
         self.supabase = get_supabase()
         self.pgmq = PGMQClient()
 
-    async def seed_from_spec(self, spec: Dict[str, Any]) -> None:
+    async def seed_from_spec(self, spec: Any) -> None:
         """Idempotent seed: create orgs from world_registry.organizations."""
-        orgs = spec.get("world_registry", {}).get("organizations", [])
+        orgs = spec.world_registry.organizations if spec.world_registry else []
         for org in orgs:
             await self.admit_org(
-                name=org["name"],
-                capabilities=org.get("capabilities", []),
-                and_profile=org.get("and_profile", "business"),
+                name=org.name,
+                capabilities=[c.value for c in org.capabilities],
+                and_profile=org.and_profile.value,
             )
 
     async def admit_org(self, name: str, capabilities: List[str], and_profile: str) -> None:

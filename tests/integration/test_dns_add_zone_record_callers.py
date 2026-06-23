@@ -1,6 +1,5 @@
 """Regression tests for Phase 3+ DNS record insertion callers."""
 
-import unittest.mock
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 

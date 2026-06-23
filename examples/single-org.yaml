@@ -128,16 +128,17 @@ identity_inworld:
           email: bob@acme.internal
 
 ands:
-  profiles: {}
+  profiles:
+    business:
+      dhcp: true
+      nat: false
+      dynamic_ip: false
+      inbound: allowed
+      reverse_dns: true
   instances:
     - name: acme-corp-net
       org: acme-corp
-      profile:
-        dhcp: true
-        nat: false
-        dynamic_ip: false
-        inbound: allowed
-        reverse_dns: true
+      profile: business
       dns_suffix: acme.internal
 
 world_services:

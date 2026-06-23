@@ -129,7 +129,7 @@ class TestM7ProfileValidation:
 
         # Mock ands_spec with profiles that have .name attributes
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]  # List of objects with .name
+        ands_spec.profiles = {"business": profile_biz}  # List of objects with .name
         ands_spec.instances = [and_instance]
 
         spec = MagicMock()
@@ -187,7 +187,7 @@ class TestM7ANDProvisioning:
         and_instance.dns_suffix = "acme.internal"
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
         ands_spec.instances = [and_instance]
 
         spec = MagicMock()
@@ -250,7 +250,7 @@ class TestM7ANDProvisioning:
         and_instance2.dns_suffix = "widgets.internal"
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
         ands_spec.instances = [and_instance1, and_instance2]
 
         spec = MagicMock()
@@ -311,7 +311,7 @@ class TestM7AddressAllocation:
         and_instance.dns_suffix = "acme.internal"
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
         ands_spec.instances = [and_instance]
 
         spec = MagicMock()
@@ -372,7 +372,7 @@ class TestM7RuleApplication:
         and_instance.dns_suffix = "acme.internal"
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
         ands_spec.instances = [and_instance]
 
         spec = MagicMock()
@@ -427,7 +427,7 @@ class TestM7RuleApplication:
         and_instance.dns_suffix = "acme.internal"
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
         ands_spec.instances = [and_instance]
 
         spec = MagicMock()
@@ -595,7 +595,7 @@ class TestM7EventHandling:
         and_instance.dns_suffix = "acme.internal"
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
         ands_spec.instances = [and_instance]
 
         spec = MagicMock()
@@ -654,7 +654,7 @@ class TestM7OutputStructure:
         and_instance.dns_suffix = "acme.internal"
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
         ands_spec.instances = [and_instance]
 
         spec = MagicMock()
@@ -737,7 +737,7 @@ class TestM7OrgAdmissionEvents:
         profile_biz = MockProfile("business")
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
 
         # Mock Docker and gateway
         mock_docker = AsyncMock()

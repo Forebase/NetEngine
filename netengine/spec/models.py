@@ -320,7 +320,7 @@ class ANDInstance(SpecModel):
 
     name: str = Field(...)
     org: str = Field(...)
-    profile: ANDProfileDef = Field(...)
+    profile: str = Field(...)  # key into ANDsPhase.profiles dict
     dns_suffix: str = Field(...)
 
 
