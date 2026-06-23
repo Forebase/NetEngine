@@ -1,9 +1,8 @@
 import os
 import tempfile
 
-from netengine.gateways.base import BaseGatewayHandler
-
 from netengine.errors import GatewayError
+from netengine.gateways.base import BaseGatewayHandler
 
 
 class GatewayHandler(BaseGatewayHandler):
