@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
-async def apply_migrations():
+async def apply_migrations() -> None:
     """Apply SQL migrations to the local Postgres instance.
 
     Reads NETENGINE_DB_URL (e.g. postgresql://user:pass@host:5432/db).
