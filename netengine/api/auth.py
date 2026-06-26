@@ -118,3 +118,31 @@ async def require_auth(
         raise
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Auth service unavailable: {exc}")
+
+
+def _extract_roles(user: dict) -> set[str]:
+    """Return normalized role names from Keycloak introspection or bootstrap users."""
+    roles: set[str] = set()
+    raw_roles = user.get("roles", [])
+    if isinstance(raw_roles, list):
+        roles.update(str(role) for role in raw_roles)
+
+    realm_access = user.get("realm_access", {})
+    if isinstance(realm_access, dict) and isinstance(realm_access.get("roles"), list):
+        roles.update(str(role) for role in realm_access["roles"])
+
+    resource_access = user.get("resource_access", {})
+    if isinstance(resource_access, dict):
+        for access in resource_access.values():
+            if isinstance(access, dict) and isinstance(access.get("roles"), list):
+                roles.update(str(role) for role in access["roles"])
+
+    return roles
+
+
+async def require_admin(user: dict = Depends(require_auth)) -> dict:
+    """Require an authenticated operator with an administrative role."""
+    roles = _extract_roles(user)
+    if not ({"admin", "netengine-admin", "operator-admin"} & roles):
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return user
