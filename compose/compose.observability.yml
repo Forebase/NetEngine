@@ -1,0 +1,85 @@
+version: "3.8"
+
+# Observability overlay: Prometheus, Grafana, Loki, Jaeger
+# Compose with main docker-compose.yml:
+#   docker compose -f docker-compose.yml -f compose/compose.observability.yml up -d
+#
+# Access:
+#   - Prometheus: http://localhost:9090
+#   - Grafana: http://localhost:3000 (admin/admin)
+#   - Loki: http://localhost:3100
+#   - Jaeger: http://localhost:16686
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: netengine_prometheus
+    volumes:
+      - ./compose/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: netengine_grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: grafana-worldmap-panel
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./compose/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  loki:
+    image: grafana/loki:latest
+    container_name: netengine_loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./compose/loki-config.yml:/etc/loki/local-config.yml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yml
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: netengine_jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "6831:6831/udp"  # Jaeger agent (thrift compact)
+      - "16686:16686"    # Jaeger UI
+      - "4317:4317"      # OTLP gRPC receiver
+      - "4318:4318"      # OTLP HTTP receiver
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:14269/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  loki_data:

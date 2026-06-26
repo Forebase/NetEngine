@@ -1,0 +1,84 @@
+version: "3.8"
+
+# Security & audit logging
+# Enhanced Postgres with audit trail, pgAudit extension
+# Event log aggregation via Loki
+# Usage: docker compose -f docker-compose.yml -f compose/compose.audit.yml up -d
+
+services:
+  postgres:
+    # Override main postgres with audit-enabled variant
+    image: postgres:15
+    container_name: netengine_postgres_audit
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      POSTGRES_DB: netengine
+      POSTGRES_INITDB_ARGS: "-c log_statement=all -c log_duration=on -c shared_preload_libraries=pgaudit"
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./scripts/install_pgmq.sh:/docker-entrypoint-initdb.d/01-install_pgmq.sh:ro
+      - ./compose/postgres-audit-setup.sql:/docker-entrypoint-initdb.d/02-audit-setup.sql:ro
+      - postgres_audit_data:/var/lib/postgresql/data
+      - postgres_audit_logs:/var/log/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine -d netengine"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Event aggregation
+  audit-log-collector:
+    image: grafana/loki:latest
+    container_name: netengine_audit_collector
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./compose/loki-audit-config.yml:/etc/loki/local-config.yml:ro
+      - audit_logs:/loki
+    command: -config.file=/etc/loki/local-config.yml
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Audit dashboard (Grafana)
+  audit-dashboard:
+    image: grafana/grafana:latest
+    container_name: netengine_audit_dashboard
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    ports:
+      - "3001:3000"
+    volumes:
+      - audit_dashboard_data:/var/lib/grafana
+      - ./compose/grafana-audit-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    depends_on:
+      - audit-log-collector
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # PKI audit trail (step-ca logs)
+  pki-audit-sink:
+    image: grafana/loki:latest
+    container_name: netengine_pki_audit
+    ports:
+      - "3102:3100"
+    volumes:
+      - ./compose/loki-pki-audit-config.yml:/etc/loki/local-config.yml:ro
+      - pki_audit_logs:/loki
+    command: -config.file=/etc/loki/local-config.yml
+    profiles:
+      - pki-audit  # Start with: docker compose --profile pki-audit up
+
+volumes:
+  postgres_audit_data:
+  postgres_audit_logs:
+  audit_logs:
+  audit_dashboard_data:
+  pki_audit_logs:

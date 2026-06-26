@@ -1,0 +1,54 @@
+version: "3.8"
+
+# Mail testing with visual inbox (Mailhog)
+# Usage: docker compose -f docker-compose.yml -f compose/compose.mail-visual.yml up -d
+#
+# Configure Postfix to:
+#   relayhost = mailhog:1025
+#
+# View captured emails at: http://localhost:1025
+
+services:
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: netengine_mailhog
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    environment:
+      # Optional: configure storage
+      # MH_STORAGE: maildir
+      # MH_STORAGE_MAILDIR_PATH: /data/maildir
+      MH_OUTGOING_SMTP: ""  # Disable outgoing relay
+    volumes:
+      - mailhog_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8025/api/events"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Optional: Postfix configured to relay through mailhog
+  postfix:
+    image: boky/postfix:latest
+    container_name: netengine_postfix_test
+    environment:
+      HOSTNAME: mail.platform.internal
+      ALLOWED_SENDER_DOMAINS: "*.platform.internal"
+      RELAYHOST: "mailhog:1025"
+      RELAYHOST_USERNAME: ""
+      RELAYHOST_PASSWORD: ""
+      LOG_FORMAT: json
+    volumes:
+      - postfix_data:/var/spool/postfix
+    depends_on:
+      - mailhog
+    ports:
+      - "25:25"    # SMTP (open relay for internal only)
+      - "587:587"  # SMTP submission (TLS)
+    profiles:
+      - postfix  # Start with: docker compose --profile postfix up
+
+volumes:
+  mailhog_data:
+  postfix_data:
