@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Callable, Coroutine, Dict
+from typing import Any, Callable, Coroutine, Dict, Union
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +15,21 @@ class ConsumerSupervisor:
         self.tasks: Dict[str, asyncio.Task[Any]] = {}
         self.consumers: Dict[str, Callable[[], Coroutine[Any, Any, None]]] = {}
 
-    def register(self, name: str, consumer_coro: Callable[[], Coroutine[Any, Any, None]]) -> None:
-        """Register a consumer coroutine function."""
-        self.consumers[name] = consumer_coro
+    def register(
+        self, name: str, consumer: Union[Callable[[], Coroutine[Any, Any, None]], Any]
+    ) -> None:
+        """Register a consumer coroutine function or QueueWorker instance.
+
+        Accepts:
+        - Callable that returns a coroutine (original pattern)
+        - QueueWorker instance (new pattern)
+        """
+        from netengine.workers.base import QueueWorker
+
+        if isinstance(consumer, QueueWorker):
+            self.consumers[consumer.name] = consumer.run
+        else:
+            self.consumers[name] = consumer
 
     async def start_all(self) -> None:
         """Start all registered consumers."""

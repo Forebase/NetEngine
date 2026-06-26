@@ -12,6 +12,7 @@ from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.phase_pki import PKIPhaseHandler
 from netengine.handlers.substrate import SubstrateHandler
+from netengine.hooks import HookRegistry
 from netengine.phases.phase_ands import ANDsPhaseHandler
 from netengine.phases.phase_inworld_identity import InWorldIdentityPhaseHandler
 from netengine.phases.phase_platform_identity import PlatformIdentityPhaseHandler
@@ -87,6 +88,9 @@ class Orchestrator:
         # Initialize consumer supervisor for background tasks
         self.consumer_supervisor = ConsumerSupervisor()
 
+        # Initialize hook registry for phase lifecycle events
+        self.hook_registry = HookRegistry()
+
         self.context = PhaseContext(
             spec=self.spec,
             runtime_state=self.runtime_state,
@@ -135,6 +139,8 @@ class Orchestrator:
         Raises:
             RuntimeError: If any phase fails or dependency validation fails
         """
+        from netengine.hooks import HookPoint
+
         for phase_num, handler_class in self.PHASE_HANDLERS:
             if phase_num > up_to_phase:
                 break
@@ -142,15 +148,25 @@ class Orchestrator:
             handler = handler_class()
 
             if await handler.should_skip(self.context):
-                logger.info(
-                    f"Phase {phase_num}: {handler_class.__name__} already completed, skipping"
+                await self.hook_registry.execute_hooks(
+                    HookPoint.ON_PHASE_SKIP,
+                    phase_num=phase_num,
+                    handler=handler,
+                    context=self.context,
                 )
                 self._mark_phase_complete(phase_num, handler)
                 continue
 
             self._check_prerequisites(phase_num)
 
-            logger.info(f"Phase {phase_num}: {handler_class.__name__} starting")
+            # Before phase execution hook
+            await self.hook_registry.execute_hooks(
+                HookPoint.BEFORE_PHASE,
+                phase_num=phase_num,
+                handler=handler,
+                context=self.context,
+            )
+
             try:
                 await handler.execute(self.context)
 
@@ -160,12 +176,27 @@ class Orchestrator:
                 self._mark_phase_complete(phase_num, handler)
                 self.runtime_state.save()
                 self.runtime_state.sync_to_supabase()
-                logger.info(f"Phase {phase_num} completed successfully")
+
+                # After phase success hook
+                await self.hook_registry.execute_hooks(
+                    HookPoint.AFTER_PHASE_SUCCESS,
+                    phase_num=phase_num,
+                    handler=handler,
+                    context=self.context,
+                )
 
             except Exception as e:
-                logger.error(f"Phase {phase_num} failed: {e}")
                 self.runtime_state.last_error = str(e)
                 self.runtime_state.save()
+
+                # After phase failure hook
+                await self.hook_registry.execute_hooks(
+                    HookPoint.AFTER_PHASE_FAILURE,
+                    phase_num=phase_num,
+                    handler=handler,
+                    context=self.context,
+                    error=e,
+                )
                 raise
 
     async def start_consumers(self) -> None:
