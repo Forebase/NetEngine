@@ -1,5 +1,7 @@
+import asyncio
 import json
 import stat
+import types
 
 from netengine.core.state import RuntimeState
 
@@ -59,3 +61,24 @@ def test_repeated_saves_with_custom_state_file_are_atomic_and_private(tmp_path, 
     loaded = RuntimeState.load()
     assert loaded.correlation_id == "second"
     assert loaded.last_error == "saved twice"
+async def test_sync_to_supabase_returns_task_and_logs_async_failure(monkeypatch):
+    async def failing_get_db():
+        raise RuntimeError("boom")
+
+    debug_messages = []
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "netengine.core.supabase_client",
+        types.SimpleNamespace(get_db=failing_get_db),
+    )
+    monkeypatch.setattr(
+        "netengine.core.state.logger.debug", lambda message: debug_messages.append(message)
+    )
+
+    task = RuntimeState().sync_to_supabase()
+
+    assert task is not None
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert task.done()
+    assert debug_messages == ["State DB sync skipped: boom"]

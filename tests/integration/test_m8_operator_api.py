@@ -190,7 +190,19 @@ class TestHealthRoute:
         data = resp.json()
         assert "status" in data
         assert "phases" in data
-        assert set(data["phases"].keys()) == {"0", "1", "2", "3", "4", "5", "6", "7", "8"}
+        assert set(data["phases"].keys()) == {
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+        }
+        assert data["phases"]["9"] == {"label": "Org applications", "completed": False}
 
     def test_health_reports_degraded_when_phases_incomplete(self, tmp_path, monkeypatch):
         monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
@@ -200,6 +212,32 @@ class TestHealthRoute:
         client = TestClient(app)
         resp = client.get("/api/v1/health")
         assert resp.json()["status"] == "degraded"
+
+    def test_health_stays_degraded_when_phase_9_incomplete(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
+        state = RuntimeState(
+            phase_completed={str(phase): True for phase in range(9)},
+            substrate_output={"healthy": True},
+            dns_output={"healthy": True},
+            pki_bootstrapped=True,
+            identity_platform_output={"healthy": True},
+            world_registry_output={"healthy": True},
+            domain_registry_output={"healthy": True},
+            identity_inworld_output={"healthy": True},
+            ands_output={"healthy": True},
+            world_services_output={"healthy": True},
+        )
+        state.save()
+        from netengine.api.app import app
+
+        client = TestClient(app)
+        resp = client.get("/api/v1/health")
+        data = resp.json()
+
+        assert resp.status_code == 200
+        assert data["status"] == "degraded"
+        assert data["phases"]["9"] == {"label": "Org applications", "completed": False}
 
 
 class TestWorldRoute:
@@ -432,6 +470,85 @@ class TestExportImportRoutes:
         )
         assert resp.status_code == 200
         assert "0" in resp.json()["phases_restored"]
+
+    def test_export_sanitizes_secret_phase_output(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
+
+        state = RuntimeState()
+        state.world_spec = {"metadata": {"name": "x", "lifecycle": "ephemeral"}}
+        state.ca_cert_pem = "-----BEGIN CERTIFICATE-----\npublic-ca\n-----END CERTIFICATE-----"
+        state.pki_output = {
+            "ca_dns": "ca.platform.internal",
+            "private_key_pem": "-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----",
+            "nested": {"client_secret": "secret", "public": "ok"},
+        }
+        state.save()
+
+        from netengine.api.app import app
+
+        client = TestClient(app)
+        resp = client.get("/api/v1/export", headers={"X-Bootstrap-Secret": "test-secret"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ca_cert_pem"] == state.ca_cert_pem
+        assert data["pki_output"]["ca_dns"] == "ca.platform.internal"
+        assert "private_key_pem" not in data["pki_output"]
+        assert "client_secret" not in data["pki_output"]["nested"]
+        assert data["pki_output"]["nested"]["public"] == "ok"
+
+    def test_lower_privilege_user_cannot_export(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
+        state = RuntimeState()
+        state.phase_completed = {"4": True}
+        state.identity_platform_output = {"ready": True}
+        state.world_spec = {"metadata": {"name": "x", "lifecycle": "persistent"}}
+        state.save()
+
+        from netengine.api.app import app
+        from netengine.api.auth import require_auth
+
+        async def operator_user():
+            return {"sub": "operator", "realm_access": {"roles": ["operator"]}}
+
+        app.dependency_overrides[require_auth] = operator_user
+        try:
+            client = TestClient(app)
+            resp = client.get("/api/v1/export", headers={"Authorization": "Bearer user-token"})
+        finally:
+            app.dependency_overrides.clear()
+
+        assert resp.status_code == 403
+
+    def test_lower_privilege_user_cannot_import(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
+        state = RuntimeState()
+        state.phase_completed = {"4": True}
+        state.identity_platform_output = {"ready": True}
+        state.world_spec = {"metadata": {"name": "x", "lifecycle": "persistent"}}
+        state.save()
+
+        from netengine.api.app import app
+        from netengine.api.auth import require_auth
+
+        async def operator_user():
+            return {"sub": "operator", "realm_access": {"roles": ["operator"]}}
+
+        app.dependency_overrides[require_auth] = operator_user
+        try:
+            client = TestClient(app)
+            resp = client.post(
+                "/api/v1/import",
+                json={
+                    "spec": {"metadata": {"name": "restored", "lifecycle": "persistent"}},
+                    "phase_completed": {"0": True},
+                },
+                headers={"Authorization": "Bearer user-token"},
+            )
+        finally:
+            app.dependency_overrides.clear()
+
+        assert resp.status_code == 403
 
 
 class TestQueuesRoute:
