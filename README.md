@@ -24,7 +24,8 @@ That single command runs nine phases in sequence:
 | 5 — Registries | World registry, domain registry, WHOIS server |
 | 6 — In-world identity | Per-org Keycloak realms |
 | 7 — ANDs | Administrative Network Domains (nftables isolation) |
-| 8 — Services | Postfix, MinIO, org apps |
+| 8 — Services | Postfix, MinIO |
+| 9 — Org applications | Org app deployments |
 
 Each phase is idempotent — re-running `netengine up` skips already-completed phases.
 
@@ -198,7 +199,7 @@ The active development roadmap lives in the [GitHub project](https://github.com/
 
 - [ ] End-to-end integration test (real Docker, live DNS query, cert issuance, OIDC login)
 - [ ] Complete operator API (org CRUD, AND management, domain management)
-- [ ] Phase 9 / cross-world federation
+- [ ] Cross-world federation
 - [ ] `persistent` lifecycle mode
 - [ ] `netengine down --dry-run`
 
