@@ -60,9 +60,7 @@ async def probe(spec: NetEngineSpec) -> ProbeResult:
             return ProbeResult(
                 name=_PROBE_NAME,
                 status=ProbeStatus.OK,
-                detail=(
-                    f"{network_detail}, nftables active ({chain_count} chain(s))"
-                ),
+                detail=(f"{network_detail}, nftables active ({chain_count} chain(s))"),
             )
         else:
             return ProbeResult(

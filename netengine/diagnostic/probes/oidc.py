@@ -15,10 +15,7 @@ async def probe(spec: NetEngineSpec) -> ProbeResult:
     platform_realm = spec.identity_platform.realm_name
     base_url = f"http://{platform_ip}:{_KEYCLOAK_PORT}"
     health_url = f"{base_url}/health/ready"
-    oidc_url = (
-        f"{base_url}/realms/{platform_realm}/"
-        ".well-known/openid-configuration"
-    )
+    oidc_url = f"{base_url}/realms/{platform_realm}/" ".well-known/openid-configuration"
 
     try:
         connector = aiohttp.TCPConnector(ssl=False)
