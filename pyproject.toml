@@ -6,6 +6,9 @@ authors = ["NetEngine Team <team@netengine.io>"]
 readme = "README.md"
 license = "MIT"
 
+[tool.poetry.scripts]
+netengine = "netengine.cli.main:cli"
+
 [tool.poetry.dependencies]
 python = "^3.13"
 pydantic = "^2.13"
