@@ -3,7 +3,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.core.state import RuntimeState
@@ -20,7 +20,7 @@ class CertTypeRotationConfig:
     cert_type: str
     rotation_interval_hours: int = 24
     expiry_warning_days: int = 30
-    rotation_callback: Optional[Callable] = None
+    rotation_callback: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None
 
 
 class PKICertRotationWorker:

@@ -1,7 +1,7 @@
 """Pydantic v2 models for NetEngine declarative specifications (netengines-spec-v0.2)."""
 
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -162,7 +162,7 @@ class PKIRotationPolicy(SpecModel):
     enabled: bool = Field(default=True, description="Enable automatic certificate rotation")
     default_interval_hours: int = Field(default=24, description="Default check interval for all cert types")
     default_warning_days: int = Field(default=30, description="Default expiry warning threshold for all cert types")
-    cert_type_overrides: dict = Field(
+    cert_type_overrides: Dict[str, Any] = Field(
         default_factory=dict,
         description="Per-certificate-type config overrides (keys are cert_type, values are CertTypeRotationConfig dicts)",
     )
