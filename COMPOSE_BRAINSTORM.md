@@ -1,6 +1,23 @@
 # NetEngine Compose.yml Brainstorm
 
-A collection of specialized Docker Compose configurations for different workflows and testing scenarios.
+A collection of 20+ specialized Docker Compose configurations for different workflows and testing scenarios.
+
+**Status**: ✅ = implemented, — = planned/future
+
+## Quick Stats
+- **Total Variants**: 20+
+- **Implemented**: 17 compose files
+- **Config/Script Templates**: 10+
+- **Use Cases Covered**: 
+  - 🧪 Testing & CI
+  - 📊 Observability (metrics, logs, traces, exports)
+  - 💾 Data & persistence (backup, databases, state)
+  - ⚡ Caching & queues (Redis, RabbitMQ, Kafka)
+  - 🔒 Security & compliance (auditing, scanning, secrets)
+  - 🌐 Network & SSL/TLS (termination, mTLS, chaos injection)
+  - 📈 Load testing & performance (K6, resource constraints)
+  - 🛠️ Development (hot-reload, debugging, docs)
+  - 🌍 Multi-world & federation
 
 ## Compose File Catalog
 
@@ -14,35 +31,44 @@ A collection of specialized Docker Compose configurations for different workflow
 - **compose.test-network.yml** — Network testing: CoreDNS, nftables lab, network policies
 
 ### Observability & Debugging
-- **compose.observability.yml** — Stack: Prometheus, Grafana, Loki, Jaeger; add to main via `docker compose -f docker-compose.yml -f compose.observability.yml up`
-- **compose.debug.yml** — Debug tools: netcat, tcpdump, mitmproxy, curl debugging containers
-- **compose.profile-api.yml** — Profiling: Postgres with pgStatements, slow query logs, timing instrumentation
+- **compose.observability.yml** ✅ — Stack: Prometheus, Grafana, Loki, Jaeger
+- **compose.debug.yml** ✅ — Debug tools: tcpdump, mitmproxy, dig, netshoot, Postgres query analyzer
+- **compose.exporters.yml** ✅ — Metrics exporters: postgres-exporter, docker-exporter, node-exporter
+- **compose.tracing.yml** ✅ — Distributed tracing: Jaeger, Zipkin, Tempo, Elasticsearch
 
 ### Data & Persistence
-- **compose.backup-test.yml** — Postgres backup/restore scenarios: main db + backup container + S3-compatible (MinIO)
-- **compose.multidb.yml** — Multi-version Postgres (15, 16) for migration testing
+- **compose.backup-recovery.yml** ✅ — Backup/restore: MinIO S3-compatible, WAL archival, PITR testing, backup validation
+- **compose.database-variants.yml** ✅ — Multi-version: Postgres 15, 16, replicas, TimescaleDB, resource-constrained
 - **compose.state-replay.yml** — State file replay: Postgres + volume mount for `netengines_state.json` history
+
+### Caching & Message Queues
+- **compose.cache-redis.yml** ✅ — Redis: primary + replica + Sentinel HA, metrics exporter
+- **compose.message-queues.yml** ✅ — RabbitMQ, Kafka + Zookeeper, Kafka UI, Redis Streams
 
 ### Identity & OIDC
 - **compose.keycloak-multi-realm.yml** — Keycloak multi-realm testing (platform + multiple org realms)
 - **compose.oauth-provider-test.yml** — Multiple OIDC providers for federation testing
 
 ### Services & Mail
-- **compose.mail-visual.yml** — Postfix + Mailhog (visual inbox testing)
+- **compose.mail-visual.yml** ✅ — Postfix + Mailhog (visual inbox testing)
 - **compose.storage-multi.yml** — MinIO + S3-compatible endpoints for storage testing
 
-### Chaos & Resilience
-- **compose.chaos-network.yml** — Toxiproxy for latency/failure injection
-- **compose.chaos-db.yml** — Postgres with deliberate slowness, connection limits, failover testing
-- **compose.resource-constrained.yml** — Low-resource test: CPU/mem limits on all services
+### Network & SSL/TLS
+- **compose.ssl-testing.yml** ✅ — Nginx TLS termination, mTLS, Let's Encrypt, cert monitoring
+- **compose.chaos-network.yml** ✅ — Toxiproxy: latency, jitter, packet loss, connection resets, timeouts
+- **compose.chaos-db.yml** — Postgres slowness, connection limits, failover testing
 
-### Scaling & Load
-- **compose.load-test.yml** — K6 + Grafana + Postgres; orchestrate load generation
-- **compose.benchmarks.yml** — Performance baseline: pgbench, DNS query profiler, cert issuance timing
+### Scaling & Load Testing
+- **compose.load-test.yml** ✅ — K6 + Prometheus + Grafana for orchestrated load generation
+- **compose.resource-constrained.yml** ✅ — CPU/memory limits, Alpine minimal images, slow disk/network
+- **compose.benchmarks.yml** — Performance baseline: pgbench, DNS profiler, cert timing
 
 ### Security & Audit
-- **compose.audit.yml** — Postgres audit logging, PKI audit trail, event log collection
-- **compose.security-scan.yml** — Trivy, image scanning, vulnerability checks
+- **compose.audit.yml** ✅ — Postgres pgAudit, audit logs, Loki collection, Grafana dashboards
+- **compose.security.yml** ✅ — Trivy, OWASP Dependency Check, Snyk, SonarQube, Falco, OWASP ZAP, Vault, gitleaks
+
+### Development
+- **compose.dev-hotreload.yml** ✅ — Hot-reload on code changes, debugpy, test watcher, API docs server
 
 ### Federation & Multi-World
 - **compose.multi-world.yml** — Two separate NetEngine instances with DNS federation
