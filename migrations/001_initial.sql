@@ -59,6 +59,8 @@ SELECT pgmq.create('oidc_provisioning');
 SELECT pgmq.create('oidc_provisioning_dlq');
 SELECT pgmq.create('and_provisioning');
 SELECT pgmq.create('and_provisioning_dlq');
+SELECT pgmq.create('world_health');
+SELECT pgmq.create('world_health_dlq');
 
 -- pgmq_send(queue_name, message)
 CREATE OR REPLACE FUNCTION pgmq_send(queue_name text, message text)
