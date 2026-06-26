@@ -132,10 +132,11 @@ class RuntimeState:
 
         # Serialize nested datetime objects in pki_rotation_state
         if data.get("pki_rotation_state"):
-            if data["pki_rotation_state"].get("last_check_by_type"):
-                for cert_type, last_check in data["pki_rotation_state"]["last_check_by_type"].items():
+            last_check_by_type = data["pki_rotation_state"].get("last_check_by_type")
+            if last_check_by_type:
+                for cert_type, last_check in last_check_by_type.items():
                     if isinstance(last_check, datetime):
-                        data["pki_rotation_state"]["last_check_by_type"][cert_type] = last_check.isoformat()
+                        last_check_by_type[cert_type] = last_check.isoformat()
 
         state_file = get_state_file()
         state_file.parent.mkdir(parents=True, exist_ok=True)
