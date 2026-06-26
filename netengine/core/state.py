@@ -1,11 +1,15 @@
 import json
 import os
+import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from netengine.logging import get_logger
+
+if TYPE_CHECKING:
+    import asyncio
 
 logger = get_logger(__name__)
 
@@ -149,16 +153,37 @@ class RuntimeState:
 
         state_file = get_state_file()
         state_file.parent.mkdir(parents=True, exist_ok=True)
-        # Atomic write: write to .tmp then rename to avoid corruption on concurrent access.
+        # Atomic write: write to a unique temporary file in the same directory,
+        # flush it to disk, then replace the target in one filesystem operation.
         # 0o600 permissions protect plaintext secrets stored in the state file.
-        tmp_file = state_file.with_suffix(".tmp")
-        with open(tmp_file, "w") as f:
-            json.dump(data, f, indent=2)
-        tmp_file.chmod(0o600)
-        tmp_file.replace(state_file)
+        tmp_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                dir=state_file.parent,
+                prefix=f"{state_file.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as f:
+                tmp_path = Path(f.name)
+                os.chmod(tmp_path, 0o600)
+                json.dump(data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            tmp_path.replace(state_file)
+        finally:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
 
-    def sync_to_supabase(self) -> None:
-        """Write current state snapshot to the runtime_state table (best-effort audit log)."""
+    def sync_to_supabase(self) -> Optional["asyncio.Task[None]"]:
+        """Best-effort sync of the local JSON state snapshot to Supabase.
+
+        The local JSON state file remains the authoritative runtime state. The Supabase
+        ``runtime_state`` row is only an audit/convenience mirror, so sync failures are
+        logged at debug level and do not interrupt orchestration. When called from a
+        running event loop, the sync is scheduled in the background and the created task
+        is returned so async callers may optionally await or inspect it.
+        """
         try:
             import asyncio
 
@@ -175,11 +200,24 @@ class RuntimeState:
                     {"key": "current", "value": json.dumps(data)}
                 ).execute()
 
+            def _log_sync_task_exception(task: "asyncio.Task[None]") -> None:
+                try:
+                    task.result()
+                except asyncio.CancelledError:
+                    logger.debug("State DB sync cancelled")
+                except Exception as exc:
+                    logger.debug(f"State DB sync skipped: {exc}")
+
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                # Inside an async context — schedule as a fire-and-forget task.
-                asyncio.ensure_future(_sync())
-            else:
-                loop.run_until_complete(_sync())
+                # Inside an async context — schedule as best-effort background work,
+                # but still observe task failures so exceptions are not lost.
+                task = loop.create_task(_sync())
+                task.add_done_callback(_log_sync_task_exception)
+                return task
+
+            loop.run_until_complete(_sync())
+            return None
         except Exception as exc:
             logger.debug(f"State DB sync skipped: {exc}")
+            return None

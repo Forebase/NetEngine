@@ -12,22 +12,10 @@ import yaml
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
 from netengine.logging import get_logger
+from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import load_spec, load_spec_with_composition, load_spec_with_environment
 
 logger = get_logger(__name__)
-
-PHASE_LABELS = {
-    "0": "Substrate",
-    "1": "DNS root + platform zones",
-    "2": "DNS TLD hierarchy",
-    "3": "PKI + ACME",
-    "4": "Platform identity",
-    "5": "Registries",
-    "6": "In-world identity",
-    "7": "ANDs",
-    "8": "Services",
-    "9": "Org applications",
-}
 MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations"
 
 
