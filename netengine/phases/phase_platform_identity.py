@@ -37,6 +37,18 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
         # Get TLS cert from PKI (already available via PKIHandler)
         pki = PKIHandler(DockerHandler(), context.runtime_state, spec)  # import needed
         cert, key = await pki.issue_cert("auth.platform.internal", [])
+
+        # Track issued certificate in RuntimeState
+        expiry = pki.extract_cert_expiry(cert)
+        context.runtime_state.issued_certificates["auth.platform.internal"] = {
+            "cert_type": "platform_identity",
+            "issued_at": datetime.utcnow().isoformat(),
+            "expires_at": expiry.isoformat(),
+            "sans": [],
+            "rotated_at": None,
+            "version": 1,
+        }
+
         # Write cert/key to a temporary volume or directory.
         # For simplicity, we'll mount a host directory with the certs.
         cert_dir = "/var/lib/netengines/certs"

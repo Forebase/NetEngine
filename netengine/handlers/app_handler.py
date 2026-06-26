@@ -66,6 +66,19 @@ class AppHandler:
 
         # Step 4: Issue TLS certificate via PKI
         cert, key = await self.pki.issue_cert(domain, [f"*.{org}.internal"])
+
+        # Track issued certificate in RuntimeState
+        expiry = self.pki.extract_cert_expiry(cert)
+        self.context.runtime_state.issued_certificates[domain] = {
+            "cert_type": "app",
+            "issued_at": datetime.utcnow().isoformat(),
+            "expires_at": expiry.isoformat(),
+            "sans": [f"*.{org}.internal"],
+            "rotated_at": None,
+            "version": 1,
+        }
+        self.context.runtime_state.save()
+
         # Mount cert into container (via volume or exec write)
         await self._inject_cert(container_id, domain, cert, key)
 
