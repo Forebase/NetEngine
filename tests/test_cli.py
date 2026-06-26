@@ -60,7 +60,6 @@ def test_status_output_includes_phase_9():
 
     assert result.exit_code == 0, result.output
     assert "✓  Phase 9: Org applications" in result.output
-    mock_orchestrator.execute_phases.assert_awaited_once_with(up_to_phase=8)
 
 
 def test_up_supports_environment_loader_option():
@@ -84,7 +83,7 @@ def test_up_supports_environment_loader_option():
     mock_loader.assert_called_once_with(str(spec_file), environment="dev", overrides=None)
     spec_arg = mock_orchestrator_class.call_args.args[0]
     assert spec_arg.metadata.name == "minimal-example"
-    mock_orchestrator.execute_phases.assert_awaited_once_with(up_to_phase=8)
+    mock_orchestrator.execute_phases.assert_awaited_once_with(up_to_phase=9)
 
 
 def test_up_supports_repeatable_set_overrides():
@@ -122,4 +121,4 @@ def test_up_supports_repeatable_set_overrides():
     spec_arg = mock_orchestrator_class.call_args.args[0]
     assert spec_arg.metadata.name == "my-world"
     assert spec_arg.world_services.mail.enabled is True
-    mock_orchestrator.execute_phases.assert_awaited_once_with(up_to_phase=8)
+    mock_orchestrator.execute_phases.assert_awaited_once_with(up_to_phase=9)
