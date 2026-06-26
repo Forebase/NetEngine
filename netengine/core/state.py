@@ -1,12 +1,13 @@
 import json
-import logging
 import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
+from netengine.logging import get_logger
+
+logger = get_logger(__name__)
 
 DEFAULT_STATE_FILE = "netengines_state.json"
 

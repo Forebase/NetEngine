@@ -1,4 +1,3 @@
-import logging
 import os
 from typing import Any, List, Optional, Type
 
@@ -12,6 +11,7 @@ from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.phase_pki import PKIPhaseHandler
 from netengine.handlers.substrate import SubstrateHandler
+from netengine.logging import get_logger
 from netengine.phases.phase_ands import ANDsPhaseHandler
 from netengine.phases.phase_inworld_identity import InWorldIdentityPhaseHandler
 from netengine.phases.phase_platform_identity import PlatformIdentityPhaseHandler
@@ -20,7 +20,7 @@ from netengine.phases.phase_services import ServicesPhaseHandler
 from netengine.spec.loader import SpecLoadError
 from netengine.spec.models import NetEngineSpec
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Required runtime_state field(s) that must be truthy before a phase runs.
 _PHASE_PREREQUISITES: dict[int, list[str]] = {
