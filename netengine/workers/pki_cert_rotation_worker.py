@@ -1,6 +1,5 @@
 # netengine/workers/pki_cert_rotation_worker.py
 import asyncio
-import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -8,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.core.state import RuntimeState
+from netengine.events.schema import EventEnvelope
 from netengine.handlers.pki_handler import PKIHandler
 
 logger = logging.getLogger(__name__)
@@ -163,7 +163,7 @@ class PKICertRotationWorker:
         error: Optional[str] = None,
     ) -> None:
         """Emit event to PGMQ for monitoring/logging."""
-        event = {
+        payload = {
             "cn": cn,
             "cert_type": cert_type,
             "status": status,
@@ -173,7 +173,11 @@ class PKICertRotationWorker:
             "error": error,
         }
         try:
-            # Emit to PGMQ queue for observers
-            await self.pgmq.send("pki_cert_rotation_events", json.dumps(event))
+            event = EventEnvelope.create(
+                event_type="pki.certificate_rotation",
+                emitted_by="pki_cert_rotation_worker",
+                payload=payload,
+            )
+            await self.pgmq.send("pki_cert_rotation_events", event)
         except Exception as e:
             self.logger.debug(f"Failed to emit rotation event: {e}")
