@@ -15,7 +15,7 @@ import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from netengine.api.auth import require_auth
+from netengine.api.auth import require_admin, require_auth
 from netengine.core.reload import ReloadResult, apply_reload, check_immutability, compute_diff
 from netengine.core.state import RuntimeState
 from netengine.logging import get_logger
@@ -498,13 +498,52 @@ async def get_event_chain(
         return {"correlation_id": correlation_id, "events": [], "error": str(exc)}
 
 
+_SECRET_FIELD_NAMES = {
+    "password",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "private_key",
+    "private_key_pem",
+    "key_pem",
+    "tls_key",
+    "client_secret",
+}
+
+
+def _is_secret_field(name: str) -> bool:
+    normalized = name.lower().replace("-", "_")
+    return normalized in _SECRET_FIELD_NAMES or normalized.endswith(
+        ("_secret", "_password", "_token")
+    )
+
+
+def _contains_private_pem(value: str) -> bool:
+    return "-----BEGIN " in value and "PRIVATE KEY-----" in value
+
+
+def _sanitize_export_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _sanitize_export_value(child)
+            for key, child in value.items()
+            if not _is_secret_field(str(key))
+        }
+    if isinstance(value, list):
+        return [_sanitize_export_value(child) for child in value]
+    if isinstance(value, str) and _contains_private_pem(value):
+        return None
+    return value
+
+
 # ─────────────────────────────────────────────
 # Export / Import
 # ─────────────────────────────────────────────
 
 
 @router.get("/export")
-async def export_world(user: dict = Depends(require_auth)) -> dict[str, Any]:
+async def export_world(user: dict = Depends(require_admin)) -> dict[str, Any]:
     """Return exportable world state snapshot (spec + runtime state)."""
     state = RuntimeState.load()
     import datetime as _dt
@@ -514,10 +553,14 @@ async def export_world(user: dict = Depends(require_auth)) -> dict[str, Any]:
         "spec": state.world_spec,
         "phase_completed": state.phase_completed,
         "ca_cert_pem": state.ca_cert_pem,
-        "pki_output": state.pki_output,
-        "dns_output": state.dns_output,
-        "ands_output": state.ands_output,
-        "world_services_output": state.world_services_output,
+        # ca_cert_pem is the public CA certificate used by clients to validate trust;
+        # private CA material is not stored in this field. Sanitize mutable phase
+        # outputs defensively so private keys/secrets are never exported if a
+        # handler accidentally records them in runtime state.
+        "pki_output": _sanitize_export_value(state.pki_output),
+        "dns_output": _sanitize_export_value(state.dns_output),
+        "ands_output": _sanitize_export_value(state.ands_output),
+        "world_services_output": _sanitize_export_value(state.world_services_output),
     }
 
 
@@ -532,7 +575,7 @@ class ImportRequest(BaseModel):
 
 
 @router.post("/import")
-async def import_world(body: ImportRequest, user: dict = Depends(require_auth)) -> dict[str, Any]:
+async def import_world(body: ImportRequest, user: dict = Depends(require_admin)) -> dict[str, Any]:
     """Restore world state from an export snapshot (persistent mode only)."""
     state = RuntimeState.load()
     if state.world_spec:
@@ -548,12 +591,12 @@ async def import_world(body: ImportRequest, user: dict = Depends(require_auth)) 
     if body.ca_cert_pem:
         state.ca_cert_pem = body.ca_cert_pem
     if body.pki_output:
-        state.pki_output = body.pki_output
+        state.pki_output = _sanitize_export_value(body.pki_output)
     if body.dns_output:
-        state.dns_output = body.dns_output
+        state.dns_output = _sanitize_export_value(body.dns_output)
     if body.ands_output:
-        state.ands_output = body.ands_output
+        state.ands_output = _sanitize_export_value(body.ands_output)
     if body.world_services_output:
-        state.world_services_output = body.world_services_output
+        state.world_services_output = _sanitize_export_value(body.world_services_output)
     state.save()
     return {"status": "imported", "phases_restored": phases_restored}
