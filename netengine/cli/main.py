@@ -342,6 +342,74 @@ async def _down(yes: bool, dry_run: bool) -> None:
         click.echo("World destroyed.")
 
 
+@cli.command()
+@click.argument("spec_file", type=click.Path(exists=True))
+@click.option("--json", "as_json", is_flag=True, default=False, help="Output as JSON.")
+def diagnose(spec_file: str, as_json: bool) -> None:
+    """Probe all running world components and report health."""
+    asyncio.run(_diagnose(spec_file, as_json))
+
+
+async def _diagnose(spec_file: str, as_json: bool) -> None:
+    from netengine.diagnostic.runner import ProbeStatus, build_runner
+
+    spec = load_spec(spec_file)
+    runner = build_runner(spec)
+    results = await runner.run()
+
+    if as_json:
+        import json as _json
+
+        payload = [
+            {
+                "name": r.name,
+                "status": r.status.value,
+                "detail": r.detail,
+                "hint": r.hint,
+                "elapsed_ms": round(r.elapsed_ms, 1) if r.elapsed_ms is not None else None,
+            }
+            for r in results
+        ]
+        click.echo(_json.dumps(payload, indent=2))
+        issues = sum(1 for r in results if r.status in (ProbeStatus.FAIL, ProbeStatus.WARN))
+        if issues:
+            sys.exit(1)
+        return
+
+    world_name = spec.metadata.name
+    total = len(results)
+    click.echo(f"\nWorld: {world_name}  [{total} checks]\n")
+
+    _STATUS_SYMBOL = {
+        ProbeStatus.OK: click.style("  ✓", fg="green"),
+        ProbeStatus.WARN: click.style("  !", fg="yellow"),
+        ProbeStatus.FAIL: click.style("  ✗", fg="red", bold=True),
+        ProbeStatus.SKIP: click.style("  –", fg="bright_black"),
+    }
+
+    for r in results:
+        symbol = _STATUS_SYMBOL[r.status]
+        timing = f"  ({r.elapsed_ms:.0f}ms)" if r.elapsed_ms is not None else ""
+        click.echo(f"{symbol}  {r.name:<10} {r.detail}{timing}")
+        if r.hint and r.status != ProbeStatus.OK:
+            click.echo(f"{'':14}  {click.style('→', fg='cyan')} {r.hint}")
+
+    issues = [r for r in results if r.status in (ProbeStatus.FAIL, ProbeStatus.WARN)]
+    skipped = [r for r in results if r.status == ProbeStatus.SKIP]
+
+    click.echo("")
+    if not issues:
+        click.echo(click.style("All checks passed.", fg="green"))
+    else:
+        issue_word = "issue" if len(issues) == 1 else "issues"
+        click.echo(click.style(f"{len(issues)} {issue_word} found.", fg="red"))
+    if skipped:
+        click.echo(f"{len(skipped)} check(s) skipped (disabled in spec).")
+
+    if issues:
+        sys.exit(1)
+
+
 def _print_status(state: RuntimeState) -> None:
     world_name = None
     if state.world_spec and isinstance(state.world_spec, dict):
