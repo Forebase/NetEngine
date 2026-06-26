@@ -16,9 +16,14 @@ if TYPE_CHECKING:
     from netengine.core.consumer_supervisor import ConsumerSupervisor
     from netengine.core.pgmq_client import PGMQClient
 
-# Default directory for CoreDNS Corefile and zone files.
-# Overridden by NETENGINE_ZONE_DIR env var.
-DEFAULT_ZONE_DIR = str(Path.cwd() / "data" / "coredns")
+def default_zone_dir() -> str:
+    """Return the default directory for CoreDNS Corefile and zone files.
+
+    NETENGINE_ZONE_DIR takes precedence when set. Otherwise, derive the
+    repository-local default from the current working directory at context
+    construction time.
+    """
+    return os.environ.get("NETENGINE_ZONE_DIR", str(Path.cwd() / "data" / "coredns"))
 
 
 @dataclass
@@ -55,6 +60,4 @@ class PhaseContext:
 
     # Directory where the DNS handler writes Corefile + zone files.
     # CoreDNS container bind-mounts this directory to /etc/coredns.
-    zone_dir: str = field(
-        default_factory=lambda: os.environ.get("NETENGINE_ZONE_DIR", DEFAULT_ZONE_DIR)
-    )
+    zone_dir: str = field(default_factory=default_zone_dir)
