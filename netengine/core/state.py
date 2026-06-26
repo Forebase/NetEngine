@@ -67,11 +67,12 @@ class RuntimeState:
         state_file = get_state_file()
         if state_file.exists():
             with open(state_file, "r") as f:
-                data = json.load(f)
+                data: Dict[str, Any] = json.load(f)
             # datetime fields are stored as ISO strings
             for dt_field in ("started_at", "completed_at", "last_error_at"):
-                if data.get(dt_field):
-                    data[dt_field] = datetime.fromisoformat(data[dt_field])
+                dt_value = data.get(dt_field)
+                if dt_value and isinstance(dt_value, str):
+                    data[dt_field] = datetime.fromisoformat(dt_value)
 
             # Deserialize datetime strings in certificate metadata
             if data.get("issued_certificates"):
