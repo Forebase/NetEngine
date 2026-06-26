@@ -106,19 +106,20 @@ class ServicesPhaseHandler(BasePhaseHandler):
             )
 
             # Register background consumers
-            context.consumer_supervisor.register(
-                "org_admission_events",
-                lambda: self._consume_org_admission_events(context, docker, dns),
-            )
+            if context.consumer_supervisor is not None:
+                context.consumer_supervisor.register(
+                    "org_admission_events",
+                    lambda: self._consume_org_admission_events(context, docker, dns),
+                )
 
-            # Register monitoring service (always-running health checks)
-            from netengine.monitoring import MonitoringService
+                # Register monitoring service (always-running health checks)
+                from netengine.monitoring import MonitoringService
 
-            monitoring_service = MonitoringService(spec, interval_seconds=60.0)
-            context.consumer_supervisor.register(
-                "monitoring_service",
-                monitoring_service.start,
-            )
+                monitoring_service = MonitoringService(spec, interval_seconds=60.0)
+                context.consumer_supervisor.register(
+                    "monitoring_service",
+                    monitoring_service.start,
+                )
 
         except Exception as e:
             runtime_state.last_error = str(e)

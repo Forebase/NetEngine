@@ -2,9 +2,10 @@
 
 import asyncio
 import logging
+from typing import Any
 
 from netengine.core.pgmq_client import PGMQClient
-from netengine.diagnostic import DiagnosticRunner, ProbeResult, ProbeStatus, build_runner
+from netengine.diagnostic import ProbeResult, ProbeStatus, build_runner
 from netengine.events.schema import EventEnvelope
 from netengine.spec.models import NetEngineSpec
 
@@ -91,7 +92,7 @@ class MonitoringService:
         except Exception as e:
             logger.error(f"Failed to publish world_health event: {e}", exc_info=True)
 
-    def _summarize_results(self, results: list[ProbeResult]) -> dict:
+    def _summarize_results(self, results: list[ProbeResult]) -> dict[str, Any]:
         """Summarize probe results into status and message."""
         passed = sum(1 for r in results if r.status == ProbeStatus.OK)
         warned = sum(1 for r in results if r.status == ProbeStatus.WARN)
@@ -119,7 +120,7 @@ class MonitoringService:
         }
 
     @staticmethod
-    def _probe_result_to_dict(result: ProbeResult) -> dict:
+    def _probe_result_to_dict(result: ProbeResult) -> dict[str, Any]:
         """Convert ProbeResult to dict for event payload."""
         return {
             "name": result.name,
