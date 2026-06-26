@@ -190,7 +190,19 @@ class TestHealthRoute:
         data = resp.json()
         assert "status" in data
         assert "phases" in data
-        assert set(data["phases"].keys()) == {"0", "1", "2", "3", "4", "5", "6", "7", "8"}
+        assert set(data["phases"].keys()) == {
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+        }
+        assert data["phases"]["9"] == {"label": "Org applications", "completed": False}
 
     def test_health_reports_degraded_when_phases_incomplete(self, tmp_path, monkeypatch):
         monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
@@ -200,6 +212,32 @@ class TestHealthRoute:
         client = TestClient(app)
         resp = client.get("/api/v1/health")
         assert resp.json()["status"] == "degraded"
+
+    def test_health_stays_degraded_when_phase_9_incomplete(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
+        state = RuntimeState(
+            phase_completed={str(phase): True for phase in range(9)},
+            substrate_output={"healthy": True},
+            dns_output={"healthy": True},
+            pki_bootstrapped=True,
+            identity_platform_output={"healthy": True},
+            world_registry_output={"healthy": True},
+            domain_registry_output={"healthy": True},
+            identity_inworld_output={"healthy": True},
+            ands_output={"healthy": True},
+            world_services_output={"healthy": True},
+        )
+        state.save()
+        from netengine.api.app import app
+
+        client = TestClient(app)
+        resp = client.get("/api/v1/health")
+        data = resp.json()
+
+        assert resp.status_code == 200
+        assert data["status"] == "degraded"
+        assert data["phases"]["9"] == {"label": "Org applications", "completed": False}
 
 
 class TestWorldRoute:
