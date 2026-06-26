@@ -104,7 +104,7 @@ class PKIPhaseHandler(BasePhaseHandler):
         """Skip if already bootstrapped."""
         return context.runtime_state.phase_completed.get("3", False)
 
-    def _register_rotation_worker(self, context, pki, spec):
+    def _register_rotation_worker(self, context: PhaseContext, pki: PKIHandler, spec: Any) -> None:
         """Register certificate rotation worker with ConsumerSupervisor."""
         if not context.consumer_supervisor:
             return
@@ -120,10 +120,16 @@ class PKIPhaseHandler(BasePhaseHandler):
         # Platform identity cert
         platform_cfg_dict = policy.cert_type_overrides.get("platform_identity")
         if platform_cfg_dict and isinstance(platform_cfg_dict, dict):
+            platform_interval = platform_cfg_dict.get(
+                "rotation_interval_hours", policy.default_interval_hours
+            )
+            platform_warning = platform_cfg_dict.get(
+                "expiry_warning_days", policy.default_warning_days
+            )
             platform_cfg = CertTypeRotationConfig(
                 cert_type="platform_identity",
-                rotation_interval_hours=platform_cfg_dict.get("rotation_interval_hours", policy.default_interval_hours),
-                expiry_warning_days=platform_cfg_dict.get("expiry_warning_days", policy.default_warning_days),
+                rotation_interval_hours=platform_interval,
+                expiry_warning_days=platform_warning,
                 rotation_callback=self._prepare_app_cert_rotation,
             )
         else:
@@ -138,10 +144,16 @@ class PKIPhaseHandler(BasePhaseHandler):
         # Inworld identity cert
         inworld_cfg_dict = policy.cert_type_overrides.get("inworld_identity")
         if inworld_cfg_dict and isinstance(inworld_cfg_dict, dict):
+            inworld_interval = inworld_cfg_dict.get(
+                "rotation_interval_hours", policy.default_interval_hours
+            )
+            inworld_warning = inworld_cfg_dict.get(
+                "expiry_warning_days", policy.default_warning_days
+            )
             inworld_cfg = CertTypeRotationConfig(
                 cert_type="inworld_identity",
-                rotation_interval_hours=inworld_cfg_dict.get("rotation_interval_hours", policy.default_interval_hours),
-                expiry_warning_days=inworld_cfg_dict.get("expiry_warning_days", policy.default_warning_days),
+                rotation_interval_hours=inworld_interval,
+                expiry_warning_days=inworld_warning,
                 rotation_callback=self._prepare_app_cert_rotation,
             )
         else:
@@ -156,10 +168,16 @@ class PKIPhaseHandler(BasePhaseHandler):
         # App certs (with rotation callback for graceful transition)
         app_cfg_dict = policy.cert_type_overrides.get("app")
         if app_cfg_dict and isinstance(app_cfg_dict, dict):
+            app_interval = app_cfg_dict.get(
+                "rotation_interval_hours", policy.default_interval_hours
+            )
+            app_warning = app_cfg_dict.get(
+                "expiry_warning_days", policy.default_warning_days
+            )
             app_cfg = CertTypeRotationConfig(
                 cert_type="app",
-                rotation_interval_hours=app_cfg_dict.get("rotation_interval_hours", policy.default_interval_hours),
-                expiry_warning_days=app_cfg_dict.get("expiry_warning_days", policy.default_warning_days),
+                rotation_interval_hours=app_interval,
+                expiry_warning_days=app_warning,
                 rotation_callback=self._prepare_app_cert_rotation,
             )
         else:
@@ -174,10 +192,16 @@ class PKIPhaseHandler(BasePhaseHandler):
         # Storage/MinIO cert
         storage_cfg_dict = policy.cert_type_overrides.get("storage")
         if storage_cfg_dict and isinstance(storage_cfg_dict, dict):
+            storage_interval = storage_cfg_dict.get(
+                "rotation_interval_hours", policy.default_interval_hours
+            )
+            storage_warning = storage_cfg_dict.get(
+                "expiry_warning_days", policy.default_warning_days
+            )
             storage_cfg = CertTypeRotationConfig(
                 cert_type="storage",
-                rotation_interval_hours=storage_cfg_dict.get("rotation_interval_hours", policy.default_interval_hours),
-                expiry_warning_days=storage_cfg_dict.get("expiry_warning_days", policy.default_warning_days),
+                rotation_interval_hours=storage_interval,
+                expiry_warning_days=storage_warning,
             )
         else:
             storage_cfg = CertTypeRotationConfig(
@@ -193,7 +217,7 @@ class PKIPhaseHandler(BasePhaseHandler):
             context.consumer_supervisor.register("pki_cert_rotation", rotation_worker.run)
             context.logger.info("PKI certificate rotation worker registered")
 
-    async def _prepare_app_cert_rotation(self, cn: str, cert_metadata: dict):
+    async def _prepare_app_cert_rotation(self, cn: str, cert_metadata: dict) -> None:
         """Called before rotating app cert - prepare for transition.
 
         This is a hook point for future graceful transition logic.
