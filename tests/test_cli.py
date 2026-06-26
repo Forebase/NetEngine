@@ -32,6 +32,16 @@ def test_poetry_console_script_points_to_click_group():
     assert script_object.name == "cli"
 
 
+def test_cli_help_smoke_test():
+    """The packaged CLI entry point should render top-level help."""
+    result = CliRunner().invoke(cli_main.cli, ["--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "Usage: cli [OPTIONS] COMMAND [ARGS]..." in result.output
+    assert "NetEngine" in result.output
+    assert "up" in result.output
+
+
 def test_up_invokes_execute_phases_with_example_spec():
     """The up command should load an example spec and execute orchestrator phases."""
     spec_file = Path(__file__).parent.parent / "examples" / "minimal.yaml"
