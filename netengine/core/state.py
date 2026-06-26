@@ -59,6 +59,10 @@ class RuntimeState:
     bootstrap_admin_password: Optional[str] = None
     platform_client_id: Optional[str] = None
 
+    # Drift detection and self-healing
+    drift_history: list[Dict[str, Any]] = field(default_factory=list)
+    last_drift_check_at: Optional[datetime] = None
+    current_drift_phases: list[int] = field(default_factory=list)
     # PKI certificate rotation tracking
     issued_certificates: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     pki_rotation_state: Dict[str, Any] = field(default_factory=dict)
@@ -70,6 +74,9 @@ class RuntimeState:
             with open(state_file, "r") as f:
                 data: Dict[str, Any] = json.load(f)
             # datetime fields are stored as ISO strings
+            for dt_field in ("started_at", "completed_at", "last_error_at", "last_drift_check_at"):
+                if data.get(dt_field):
+                    data[dt_field] = datetime.fromisoformat(data[dt_field])
             for dt_field in ("started_at", "completed_at", "last_error_at"):
                 dt_value = data.get(dt_field)
                 if dt_value and isinstance(dt_value, str):
