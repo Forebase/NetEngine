@@ -130,7 +130,8 @@ class TestDriftDetectionController:
             payload={"phase": 0, "handler": "TestHandler"},
         )
 
-        mock_orchestrator.context.pgmq_client.send.assert_called_once()
+        assert mock_orchestrator.context.pgmq_client is not None
+        mock_orchestrator.context.pgmq_client.send.assert_called_once()  # type: ignore
 
     @pytest.mark.asyncio
     async def test_drift_event_emission_no_pgmq(self, mock_orchestrator: Orchestrator) -> None:

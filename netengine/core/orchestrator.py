@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Any, List, Optional, Type
+from typing import Any, List, Optional, Type, cast
 
 from pydantic import ValidationError
 
@@ -74,12 +74,12 @@ class Orchestrator:
         self.mock_mode = effective_mock
 
         # Initialise Docker client only when running for real
-        docker_client = None
+        docker_client: Optional[Any] = None
         if not effective_mock:
             try:
                 from netengine.handlers.docker_handler import DockerHandler
 
-                docker_client = DockerHandler()
+                docker_client = cast(Any, DockerHandler())
             except Exception as exc:
                 logger.warning(f"Docker unavailable, falling back to mock mode: {exc}")
                 effective_mock = True
