@@ -4,13 +4,15 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import click
+import yaml
 
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
 from netengine.logging import get_logger
-from netengine.spec.loader import load_spec
+from netengine.spec.loader import load_spec, load_spec_with_composition, load_spec_with_environment
 
 logger = get_logger(__name__)
 
@@ -27,6 +29,39 @@ PHASE_LABELS = {
     "9": "Org applications",
 }
 MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations"
+
+
+def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
+    """Convert repeatable dotted key=value CLI overrides into a nested dictionary."""
+    overrides: dict[str, Any] = {}
+
+    for item in set_values:
+        key, separator, raw_value = item.partition("=")
+        if not separator:
+            raise click.BadParameter("must be in key=value form", param_hint="--set")
+
+        parts = key.split(".")
+        if any(part == "" for part in parts):
+            raise click.BadParameter("keys must be non-empty dotted paths", param_hint="--set")
+
+        value = yaml.safe_load(raw_value)
+        cursor = overrides
+        for part in parts[:-1]:
+            existing = cursor.get(part)
+            if existing is None:
+                nested: dict[str, Any] = {}
+                cursor[part] = nested
+                cursor = nested
+            elif isinstance(existing, dict):
+                cursor = existing
+            else:
+                raise click.BadParameter(
+                    f"cannot set nested key under non-object path '{part}'",
+                    param_hint="--set",
+                )
+        cursor[parts[-1]] = value
+
+    return overrides
 
 
 async def _run_migrations(db_url: str) -> None:
@@ -70,13 +105,45 @@ def cli() -> None:
     default=False,
     help="Skip running database migrations on startup.",
 )
-def up(spec_file: str, up_to: int, mock: bool, skip_migrations: bool) -> None:
+@click.option(
+    "--env", "environment", help="Merge spec.{ENV}.yaml next to SPEC_FILE before booting."
+)
+@click.option(
+    "--set",
+    "set_values",
+    multiple=True,
+    metavar="KEY=VALUE",
+    help="Override a spec value; repeat for multiple dotted keys.",
+)
+def up(
+    spec_file: str,
+    up_to: int,
+    mock: bool,
+    skip_migrations: bool,
+    environment: str | None,
+    set_values: tuple[str, ...],
+) -> None:
     """Boot a world from SPEC_FILE."""
-    asyncio.run(_up(spec_file, up_to, mock, skip_migrations))
+    asyncio.run(_up(spec_file, up_to, mock, skip_migrations, environment, set_values))
 
 
-async def _up(spec_file: str, up_to: int, mock: bool, skip_migrations: bool) -> None:
-    spec = load_spec(spec_file)
+async def _up(
+    spec_file: str,
+    up_to: int,
+    mock: bool,
+    skip_migrations: bool,
+    environment: str | None = None,
+    set_values: tuple[str, ...] = (),
+) -> None:
+    overrides = _parse_set_overrides(set_values)
+    if environment:
+        spec = load_spec_with_environment(
+            spec_file, environment=environment, overrides=overrides or None
+        )
+    elif overrides:
+        spec = load_spec_with_composition(spec_file, overrides=overrides)
+    else:
+        spec = load_spec(spec_file)
 
     if mock:
         click.echo("WARNING: running in mock mode — no real infrastructure will be created.")
@@ -226,7 +293,9 @@ async def _down(yes: bool, dry_run: bool) -> None:
 
         for container in client.containers.list(all=True):
             by_id = container.id in state_container_ids
-            by_prefix = container.name and any(container.name.startswith(p) for p in _CONTAINER_PREFIXES)
+            by_prefix = container.name and any(
+                container.name.startswith(p) for p in _CONTAINER_PREFIXES
+            )
             if by_id or by_prefix:
                 label = f"container:{container.name}"
                 if dry_run:
@@ -464,15 +533,19 @@ def drift_status() -> None:
     click.echo("\nDrift Status\n")
 
     if state.last_drift_check_at:
-        check_time = state.last_drift_check_at.isoformat() if hasattr(
-            state.last_drift_check_at, 'isoformat'
-        ) else str(state.last_drift_check_at)
+        check_time = (
+            state.last_drift_check_at.isoformat()
+            if hasattr(state.last_drift_check_at, "isoformat")
+            else str(state.last_drift_check_at)
+        )
         click.echo(f"Last check: {check_time}")
     else:
         click.echo("Last check: (no checks yet)")
 
     if state.current_drift_phases:
-        click.echo(f"\nCurrently drifted phases: {', '.join(str(p) for p in state.current_drift_phases)}")
+        click.echo(
+            f"\nCurrently drifted phases: {', '.join(str(p) for p in state.current_drift_phases)}"
+        )
     else:
         click.echo("\nCurrently drifted phases: none")
 
