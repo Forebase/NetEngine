@@ -24,6 +24,7 @@ PHASE_LABELS = {
     "6": "In-world identity",
     "7": "ANDs",
     "8": "Services",
+    "9": "Org applications",
 }
 MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations"
 
@@ -55,7 +56,7 @@ def cli() -> None:
 
 @cli.command()
 @click.argument("spec_file", type=click.Path(exists=True))
-@click.option("--up-to", default=8, help="Stop after this phase number (0-8).")
+@click.option("--up-to", default=9, help="Stop after this phase number (0-9).")
 @click.option(
     "--mock",
     is_flag=True,

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 from click.testing import CliRunner
 
 from netengine.cli import main as cli_main
+from netengine.core.state import RuntimeState
 
 
 def test_cli_imports_orchestrator_from_netengine_package():
@@ -29,4 +30,15 @@ def test_up_invokes_execute_phases_with_example_spec():
     mock_orchestrator_class.assert_called_once()
     spec_arg = mock_orchestrator_class.call_args.args[0]
     assert spec_arg.metadata.name == "minimal-example"
-    mock_orchestrator.execute_phases.assert_awaited_once_with(up_to_phase=8)
+    mock_orchestrator.execute_phases.assert_awaited_once_with(up_to_phase=9)
+
+
+def test_status_output_includes_phase_9():
+    """The status command should show Phase 9 org applications."""
+    state = RuntimeState(phase_completed={"9": True})
+
+    with patch("netengine.cli.main.RuntimeState.load", return_value=state):
+        result = CliRunner().invoke(cli_main.cli, ["status"])
+
+    assert result.exit_code == 0, result.output
+    assert "✓  Phase 9: Org applications" in result.output

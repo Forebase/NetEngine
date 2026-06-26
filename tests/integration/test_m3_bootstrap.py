@@ -146,7 +146,7 @@ class TestM3OrchestratorIntegration:
 
     @pytest.mark.asyncio
     async def test_orchestrator_phase_execution_order(self, m3_spec):
-        """Orchestrator should execute phases in correct order (0-8)."""
+        """Orchestrator should execute phases in correct order (0-9)."""
         orchestrator = Orchestrator(m3_spec)
 
         phase_numbers = [phase_num for phase_num, _ in orchestrator.PHASE_HANDLERS]

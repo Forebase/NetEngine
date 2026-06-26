@@ -556,6 +556,6 @@ class NetEngineSpec(SpecModel):
     identity_inworld: IdentityInWorldPhase = Field(..., description="Phase 6")
     ands: ANDsPhase = Field(..., description="Phase 7")
     world_services: WorldServicesPhase = Field(..., description="Phase 8 — world services")
-    org_apps: OrgAppsPhase = Field(..., description="Phase 8 — org apps")
+    org_apps: OrgAppsPhase = Field(..., description="Phase 9 — org apps")
     gateway_portal: GatewayPortal = Field(..., description="Gateway boundary")
     operator: OperatorConfig = Field(..., description="Operator API")

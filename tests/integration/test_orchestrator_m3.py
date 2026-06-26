@@ -251,7 +251,7 @@ class TestOrchestratorPhaseOrdering:
     """Tests for correct phase ordering and sequencing."""
 
     def test_phase_ordering_is_sequential(self, m3_spec):
-        """Phases should be ordered sequentially 0-8."""
+        """Phases should be ordered sequentially 0-9."""
         orchestrator = Orchestrator(m3_spec)
 
         phases = [phase_num for phase_num, _ in orchestrator.PHASE_HANDLERS]
