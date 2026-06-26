@@ -7,8 +7,8 @@ from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.pki_handler import PKIHandler
-from netengine.workers.pki_cert_rotation_worker import CertTypeRotationConfig, PKICertRotationWorker
 from netengine.logging import get_logger
+from netengine.workers.pki_cert_rotation_worker import CertTypeRotationConfig, PKICertRotationWorker
 
 logger = get_logger(__name__)
 
