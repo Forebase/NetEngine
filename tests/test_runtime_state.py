@@ -1,4 +1,6 @@
+import asyncio
 import json
+import types
 
 from netengine.core.state import RuntimeState
 
@@ -39,3 +41,26 @@ def test_load_discards_completed_phase_without_matching_output(tmp_path, monkeyp
     state = RuntimeState.load()
 
     assert state.phase_completed == {"0": True, "1": True, "2": True}
+
+
+async def test_sync_to_supabase_returns_task_and_logs_async_failure(monkeypatch):
+    async def failing_get_db():
+        raise RuntimeError("boom")
+
+    debug_messages = []
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "netengine.core.supabase_client",
+        types.SimpleNamespace(get_db=failing_get_db),
+    )
+    monkeypatch.setattr(
+        "netengine.core.state.logger.debug", lambda message: debug_messages.append(message)
+    )
+
+    task = RuntimeState().sync_to_supabase()
+
+    assert task is not None
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert task.done()
+    assert debug_messages == ["State DB sync skipped: boom"]
