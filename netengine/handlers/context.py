@@ -1,6 +1,5 @@
 """Phase execution context and runtime state."""
 
-import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,6 +10,7 @@ from netengine.spec.models import NetEngineSpec
 
 if TYPE_CHECKING:
     import docker as docker_sdk
+    from loguru import Logger
     from supabase import AsyncClient as SupabaseClient
 
     from netengine.core.consumer_supervisor import ConsumerSupervisor
@@ -31,7 +31,7 @@ class PhaseContext:
 
     spec: NetEngineSpec
     runtime_state: RuntimeState
-    logger: logging.Logger
+    logger: "Logger"
 
     # Service clients (None until the relevant phase wires them up)
     docker_client: Optional["docker_sdk.DockerClient"] = None

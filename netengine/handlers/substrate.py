@@ -319,15 +319,61 @@ class SubstrateHandler(BasePhaseHandler):
         Raises:
             RuntimeError: If NTP configuration fails
         """
+        import asyncio
+        import subprocess
+
         logger = context.logger
         logger.info(f"Configuring NTP with servers: {', '.join(servers)}")
 
-        # M1 stub: Real implementation would configure system NTP
+        if context.mock_mode:
+            return {
+                "enabled": True,
+                "servers": servers,
+                "synchronized": True,
+                "stratum": 2,
+                "configured_at": datetime.utcnow().isoformat(),
+            }
+
+        def _sync_ntp() -> bool:
+            try:
+                # Try chrony first (modern systemd systems)
+                result = subprocess.run(
+                    ["chronyc", "waitsync"],
+                    timeout=30,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    logger.debug("NTP synced via chrony")
+                    return True
+
+                # Fall back to ntpstat (traditional NTP)
+                result = subprocess.run(
+                    ["ntpstat"],
+                    timeout=10,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    logger.debug("NTP synced via ntpstat")
+                    return True
+
+                logger.warning("NTP sync failed (chrony/ntpstat not available or not synced)")
+                return False
+
+            except Exception as e:
+                logger.warning(f"NTP sync check failed (non-fatal): {e}")
+                return False
+
+        synchronized = await asyncio.to_thread(_sync_ntp)
+
         return {
             "enabled": True,
             "servers": servers,
-            "synchronized": True,
-            "stratum": 2,
+            "synchronized": synchronized,
+            "stratum": 2 if synchronized else 16,
             "configured_at": datetime.utcnow().isoformat(),
         }
 
@@ -346,6 +392,9 @@ class SubstrateHandler(BasePhaseHandler):
         Returns:
             Dict with gateway network stub status
         """
+        import asyncio
+        import socket
+
         logger = context.logger
         gateway_config = substrate_config.gateway
 
@@ -354,11 +403,50 @@ class SubstrateHandler(BasePhaseHandler):
             f"{gateway_config.core_ip} (core)"
         )
 
+        # In mock mode or without docker, skip connectivity checks
+        if context.mock_mode or context.docker_client is None:
+            return {
+                "platform_ip": gateway_config.platform_ip,
+                "core_ip": gateway_config.core_ip,
+                "description": gateway_config.description,
+                "status": "ready",
+                "reachable": True,
+                "created_at": datetime.utcnow().isoformat(),
+            }
+
+        # Real mode: verify IPs are reachable via ping/socket
+        def _check_ip(ip: str) -> bool:
+            try:
+                # Try to resolve and connect to see if network is accessible
+                socket.create_connection((ip, 53), timeout=2)
+                return True
+            except (socket.timeout, OSError):
+                # Try simple socket creation as alternative check
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    sock.settimeout(1)
+                    sock.connect((ip, 53))
+                    sock.close()
+                    return True
+                except (OSError, socket.error):
+                    return False
+
+        platform_reachable = await asyncio.to_thread(_check_ip, gateway_config.platform_ip)
+        core_reachable = await asyncio.to_thread(_check_ip, gateway_config.core_ip)
+
+        if not (platform_reachable and core_reachable):
+            logger.warning(
+                f"Gateway connectivity check incomplete: "
+                f"platform={platform_reachable}, core={core_reachable}"
+            )
+
         return {
             "platform_ip": gateway_config.platform_ip,
             "core_ip": gateway_config.core_ip,
             "description": gateway_config.description,
             "status": "ready",
+            "platform_reachable": platform_reachable,
+            "core_reachable": core_reachable,
             "created_at": datetime.utcnow().isoformat(),
         }
 

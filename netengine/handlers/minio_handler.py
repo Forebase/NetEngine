@@ -1,5 +1,6 @@
 import secrets
 import tempfile
+from datetime import datetime
 
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
@@ -21,6 +22,19 @@ class StorageHandler:
         """Start MinIO container with TLS and create platform bucket."""
         # 1. Issue cert for storage.platform.internal
         cert, key = await self.pki.issue_cert(self.storage_dns, [])
+
+        # Track issued certificate in RuntimeState
+        expiry = self.pki.extract_cert_expiry(cert)
+        self.state.issued_certificates[self.storage_dns] = {
+            "cert_type": "storage",
+            "issued_at": datetime.utcnow().isoformat(),
+            "expires_at": expiry.isoformat(),
+            "sans": [],
+            "rotated_at": None,
+            "version": 1,
+        }
+        self.state.save()
+
         # Write cert and key to a temporary directory (cleaned up by OS)
         cert_dir = tempfile.mkdtemp(prefix="netengines_minio_certs_")
         with open(f"{cert_dir}/public.crt", "w") as f:

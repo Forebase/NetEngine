@@ -1,4 +1,3 @@
-import logging
 import secrets
 from datetime import datetime
 from typing import Any, Dict
@@ -12,6 +11,7 @@ from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.oidc_handler import OIDCHandler
 from netengine.handlers.pki_handler import PKIHandler
+from netengine.logging import get_logger
 
 
 class AppHandler:
@@ -25,7 +25,7 @@ class AppHandler:
         context: PhaseContext | None = None,
     ):
         self.context = context or PhaseContext(
-            spec={}, runtime_state=state, logger=logging.getLogger(__name__)
+            spec={}, runtime_state=state, logger=get_logger(__name__)
         )
         self.docker = docker
         self.dns = dns
@@ -66,6 +66,19 @@ class AppHandler:
 
         # Step 4: Issue TLS certificate via PKI
         cert, key = await self.pki.issue_cert(domain, [f"*.{org}.internal"])
+
+        # Track issued certificate in RuntimeState
+        expiry = self.pki.extract_cert_expiry(cert)
+        self.context.runtime_state.issued_certificates[domain] = {
+            "cert_type": "app",
+            "issued_at": datetime.utcnow().isoformat(),
+            "expires_at": expiry.isoformat(),
+            "sans": [f"*.{org}.internal"],
+            "rotated_at": None,
+            "version": 1,
+        }
+        self.context.runtime_state.save()
+
         # Mount cert into container (via volume or exec write)
         await self._inject_cert(container_id, domain, cert, key)
 

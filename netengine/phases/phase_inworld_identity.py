@@ -10,7 +10,6 @@ Responsibilities:
 
 import asyncio
 import json
-import logging
 import secrets
 import ssl
 from datetime import datetime
@@ -18,14 +17,15 @@ from typing import Any, Optional
 
 import aiohttp
 
-logger = logging.getLogger(__name__)
-
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.oidc_handler import OIDCHandler
 from netengine.handlers.pki_handler import PKIHandler
+from netengine.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class InWorldIdentityPhaseHandler(BasePhaseHandler):
@@ -290,6 +290,17 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
         docker = DockerHandler()
         pki = PKIHandler(docker, context.runtime_state, context.spec.__dict__)
         cert, key = await pki.issue_cert(canonical_name, sans=[canonical_name])
+
+        # Track issued certificate in RuntimeState
+        expiry = pki.extract_cert_expiry(cert)
+        context.runtime_state.issued_certificates[canonical_name] = {
+            "cert_type": "inworld_identity",
+            "issued_at": datetime.utcnow().isoformat(),
+            "expires_at": expiry.isoformat(),
+            "sans": [canonical_name],
+            "rotated_at": None,
+            "version": 1,
+        }
 
         cert_dir = "/var/lib/netengines/certs_inworld"
         import os

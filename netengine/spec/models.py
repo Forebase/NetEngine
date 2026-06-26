@@ -1,7 +1,7 @@
 """Pydantic v2 models for NetEngine declarative specifications (netengines-spec-v0.2)."""
 
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -148,6 +148,32 @@ class ACMEConfig(SpecModel):
     canonical_name: str = Field(default="ca.platform.internal")
 
 
+class CertTypeRotationConfig(SpecModel):
+    """Rotation policy for a specific certificate type."""
+
+    cert_type: str = Field(
+        ..., description="Certificate type (platform_identity, app, storage, etc.)"
+    )
+    rotation_interval_hours: int = Field(default=24, description="Check cert expiry every N hours")
+    expiry_warning_days: int = Field(default=30, description="Rotate certs expiring within N days")
+
+
+class PKIRotationPolicy(SpecModel):
+    """Overall PKI certificate rotation policy."""
+
+    enabled: bool = Field(default=True, description="Enable automatic certificate rotation")
+    default_interval_hours: int = Field(
+        default=24, description="Default check interval for all cert types"
+    )
+    default_warning_days: int = Field(
+        default=30, description="Default expiry warning threshold for all cert types"
+    )
+    cert_type_overrides: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Per-cert-type config overrides (keys are cert_type, values are dicts)",
+    )
+
+
 class PKIPhase(SpecModel):
     """Phase 3: PKI and ACME."""
 
@@ -159,6 +185,7 @@ class PKIPhase(SpecModel):
     dnssec_zsk_lifetime_days: int = Field(default=30)
     crl_enabled: bool = Field(default=False)
     ocsp_enabled: bool = Field(default=False)
+    rotation_policy: PKIRotationPolicy = Field(default_factory=PKIRotationPolicy)
 
 
 # ─────────────────────────────────────────────

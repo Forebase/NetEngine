@@ -1,9 +1,10 @@
 # netengine/handlers/pki_handler.py
 import asyncio
-import logging
 import os
 import ssl
+import subprocess
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -12,8 +13,9 @@ import aiohttp
 from netengine.core.state import RuntimeState
 from netengine.errors import PKIError
 from netengine.handlers.docker_handler import DockerHandler
+from netengine.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PKIHandler:
@@ -225,3 +227,36 @@ class PKIHandler:
         cert_content = await self._read_file_from_volume(f"/home/step/{common_name}.crt")
         key_content = await self._read_file_from_volume(f"/home/step/{common_name}.key")
         return cert_content, key_content
+
+    def extract_cert_expiry(self, cert_pem: str) -> datetime:
+        """Extract the notAfter date from a PEM certificate."""
+        try:
+            from cryptography import x509
+            from cryptography.hazmat.backends import default_backend
+
+            der = ssl.PEM_cert_to_DER_cert(cert_pem)
+            cert = x509.load_der_x509_certificate(der, default_backend())
+            return cert.not_valid_after_utc
+        except ImportError:
+            pass
+        except Exception as exc:
+            logger.debug(f"Failed to parse cert with cryptography: {exc}")
+
+        # Fallback: parse using openssl command
+        try:
+            result = subprocess.run(
+                ["openssl", "x509", "-noout", "-dates"],
+                input=cert_pem.encode(),
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    if line.startswith("notAfter="):
+                        date_str = line.split("=", 1)[1]
+                        return datetime.strptime(date_str, "%b %d %H:%M:%S %Y %Z")
+        except Exception as exc:
+            logger.debug(f"Failed to parse cert with openssl: {exc}")
+
+        raise PKIError(f"Unable to extract expiry date from certificate")
