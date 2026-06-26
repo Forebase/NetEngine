@@ -74,10 +74,84 @@ A collection of 20+ specialized Docker Compose configurations for different work
 - **compose.multi-world.yml** — Two separate NetEngine instances with DNS federation
 - **compose.world-bridge.yml** — Network bridging between worlds, cross-world lookup
 
+### In-World Platform Services (13 variants) ✨
+High-level services that run **within** a NetEngine world to provide platform infrastructure.
+
+**Core Platform:**
+- **compose.search-engine.yml** ✅ — Full-text search (Elasticsearch, Kibana, Meilisearch, indexer)
+- **compose.domain-registrar.yml** ✅ — Domain registry & management, WHOIS, DNS delegation
+- **compose.api-gateway.yml** ✅ — API routing & rate limiting (Kong, Envoy, Konga UI)
+- **compose.service-catalog.yml** ✅ — Service discovery & registry (Consul, Istio, OpenSearch)
+
+**Developer Experience:**
+- **compose.knowledge-base.yml** ✅ — Wiki & documentation (MediaWiki, Bookstack, Sphinx)
+- **compose.marketplace.yml** ✅ — App marketplace (npm, Helm, Docker registries, Verdaccio)
+- **compose.forms.yml** ✅ — Form builder & surveys (Formspree, response analytics)
+
+**Operations:**
+- **compose.analytics.yml** ✅ — BI & analytics (Metabase, Superset, Jupyter, TimescaleDB)
+- **compose.messaging.yml** ✅ — Chat & notifications (Mattermost, Rocket.Chat, SMTP)
+- **compose.media-hosting.yml** ✅ — Media CDN (MinIO, image/video processing, nginx cache)
+- **compose.billing.yml** ✅ — Billing, metering, invoicing, cost tracking
+- **compose.resource-manager.yml** ✅ — Quota & capacity management, alerting
+- **compose.federation.yml** ✅ — Cross-world federation, peer discovery, user sync
+
 ### Special Scenarios
 - **compose.offline.yml** — Air-gapped setup; no external image pulls, local registries
 - **compose.arm64.yml** — ARM64 variants (if not all services have ARM images)
 - **compose.gpu.yml** — GPU-accelerated services if applicable
+
+---
+
+## In-World Services: Building Complete Worlds
+
+The **in-world platform services** are designed to run *inside* a deployed NetEngine world and provide high-level infrastructure:
+
+```
+                    ┌─────────────────────────────────────┐
+                    │   NetEngine World (running)         │
+                    │                                     │
+    ┌───────────────┼─────────────────────────────────┼──┐
+    │               │   Core (Phase 0-8)              │  │
+    │  ┌──────────┐ │ DNS | PKI | Keycloak | nftables│  │
+    │  │ Platform │ │ Domain Registry | Mail | MinIO  │  │
+    │  │ Services │ │                                 │  │
+    │  │ (this    │ │  ┌──────────────────────────┐  │  │
+    │  │ section) │ │  │ Optional Platform Layer: │  │  │
+    │  │          │ │  │ • Search engine          │  │  │
+    │  │ • Search │ │  │ • API gateway            │  │  │
+    │  │ • Registrar  │  │ • Service catalog       │  │  │
+    │  │ • Billing    │  │ • Wiki/docs             │  │  │
+    │  │ • Analytics  │  │ • Marketplace           │  │  │
+    │  │ • Chat       │  │ • Chat/messaging        │  │  │
+    │  │ • Marketplace│  │ • Media hosting         │  │  │
+    │  │ • Media CDN  │  │ • Forms & surveys       │  │  │
+    │  └──────────────┼──────────────────────────┘  │  │
+    │                │                               │  │
+    └────────────────┼───────────────────────────────┴──┘
+                     │
+              [Docker Compose overlays]
+```
+
+Enable any combination of these with Docker Compose profiles:
+
+```bash
+# Minimal world (core phases only)
+netengine up examples/minimal.yaml
+
+# Platform + search
+docker compose -f docker-compose.yml -f compose/compose.search-engine.yml up -d
+
+# Full-featured world
+docker compose \
+  -f docker-compose.yml \
+  -f compose/compose.search-engine.yml \
+  -f compose/compose.api-gateway.yml \
+  -f compose/compose.marketplace.yml \
+  -f compose/compose.analytics.yml \
+  -f compose/compose.messaging.yml \
+  up -d
+```
 
 ---
 

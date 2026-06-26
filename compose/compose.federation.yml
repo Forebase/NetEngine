@@ -1,0 +1,129 @@
+version: "3.8"
+
+# Cross-world federation and inter-world communication
+# Enables NetEngine worlds to discover and interact with each other
+# Available at: federation.platform.internal
+
+services:
+  # Federation registry database
+  federation-db:
+    image: postgres:15
+    container_name: netengine_federation_db
+    environment:
+      POSTGRES_USER: federation
+      POSTGRES_PASSWORD: ${FEDERATION_DB_PASSWORD:-federation_dev}
+      POSTGRES_DB: federation
+    ports:
+      - "5447:5432"
+    volumes:
+      - ./compose/federation-schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+      - federation_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U federation"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Federation API - world discovery & peering
+  federation-api:
+    image: python:3.13-slim
+    container_name: netengine_federation_api
+    environment:
+      FEDERATION_DB_URL: postgresql://federation:${FEDERATION_DB_PASSWORD:-federation_dev}@federation-db:5432/federation
+      KEYCLOAK_URL: http://keycloak:8180
+      API_PORT: 8096
+      WORLD_NAME: ${WORLD_NAME:-default}
+      WORLD_ID: ${WORLD_ID:-world-000}
+      WORLD_PUBLIC_KEY: /etc/federation/keys/public.pem
+      WORLD_PRIVATE_KEY: /etc/federation/keys/private.pem
+    ports:
+      - "8096:8096"
+    volumes:
+      - ./compose/federation-api.py:/app/api.py:ro
+      - ./compose/federation-keys:/etc/federation/keys:ro
+      - federation_data:/app/data
+    working_dir: /app
+    entrypoint: python
+    command:
+      - api.py
+    depends_on:
+      - federation-db
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8096/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - federation
+
+  # Peer discovery service
+  peer-discovery:
+    image: python:3.13-slim
+    container_name: netengine_peer_discovery
+    environment:
+      FEDERATION_DB_URL: postgresql://federation:${FEDERATION_DB_PASSWORD:-federation_dev}@federation-db:5432/federation
+      FEDERATION_API_URL: http://federation-api:8096
+      DISCOVERY_INTERVAL: "3600"  # Discover peers hourly
+      DISCOVERY_SEEDS: ${DISCOVERY_SEEDS:-}  # Comma-separated peer URLs
+    volumes:
+      - ./compose/peer-discovery.py:/scripts/discovery.py:ro
+    working_dir: /scripts
+    entrypoint: python
+    command:
+      - discovery.py
+    depends_on:
+      - federation-db
+      - federation-api
+    profiles:
+      - peer-discovery
+
+  # DNS federation bridge (cross-world lookups)
+  dns-federation-bridge:
+    image: coredns/coredns:latest
+    container_name: netengine_dns_federation
+    volumes:
+      - ./compose/coredns-federation.conf:/etc/coredns/Corefile:ro
+    ports:
+      - "5357:53/udp"
+    depends_on:
+      - federation-api
+    profiles:
+      - dns-federation
+
+  # Cross-world user sync
+  user-sync:
+    image: python:3.13-slim
+    container_name: netengine_user_sync
+    environment:
+      FEDERATION_DB_URL: postgresql://federation:${FEDERATION_DB_PASSWORD:-federation_dev}@federation-db:5432/federation
+      LOCAL_KEYCLOAK_URL: http://keycloak:8180
+      SYNC_INTERVAL: "7200"  # Sync every 2 hours
+      SYNC_DIRECTION: ${SYNC_DIRECTION:-bidirectional}
+    volumes:
+      - ./compose/user-sync.py:/scripts/sync.py:ro
+    working_dir: /scripts
+    entrypoint: python
+    command:
+      - sync.py
+    depends_on:
+      - federation-db
+    profiles:
+      - user-sync
+
+  # Federation audit log
+  federation-audit:
+    image: postgres:15
+    container_name: netengine_federation_audit
+    environment:
+      POSTGRES_USER: audit
+      POSTGRES_PASSWORD: ${FEDERATION_AUDIT_PASSWORD:-audit_dev}
+      POSTGRES_DB: federation_audit
+    volumes:
+      - federation_audit_data:/var/lib/postgresql/data
+    profiles:
+      - federation-audit
+
+volumes:
+  federation_db_data:
+  federation_audit_data:
+  federation_data:
