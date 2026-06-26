@@ -27,7 +27,8 @@ class TestDriftDetectionIntegration:
     ) -> None:
         """Test drift detection in mock mode (no Docker required)."""
         # Setup isolated runtime state
-        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "netengine_state.json"))
+        state_file = str(tmp_path / "netengine_state.json")
+        monkeypatch.setenv("NETENGINE_STATE_FILE", state_file)
 
         # Create orchestrator in mock mode
         orchestrator = Orchestrator(minimal_spec, mock_mode=True)
@@ -53,8 +54,9 @@ class TestDriftDetectionIntegration:
                 original_handlers[phase_num] = handler_class
                 mock_handler = AsyncMock()
                 mock_handler.healthcheck = AsyncMock(return_value=False)
+                handlers = orchestrator.PHASE_HANDLERS
                 orchestrator.PHASE_HANDLERS = [
-                    (pn, (mock_handler if pn == 1 else h)) for pn, h in orchestrator.PHASE_HANDLERS
+                    (pn, (mock_handler if pn == 1 else h)) for pn, h in handlers
                 ]
 
         # Run one iteration
@@ -72,7 +74,8 @@ class TestDriftDetectionIntegration:
         monkeypatch,
     ) -> None:
         """Test drift detection across multiple iterations."""
-        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "netengine_state.json"))
+        state_file = str(tmp_path / "netengine_state.json")
+        monkeypatch.setenv("NETENGINE_STATE_FILE", state_file)
 
         orchestrator = Orchestrator(minimal_spec, mock_mode=True)
         orchestrator.runtime_state.phase_completed = {"0": True}
@@ -87,7 +90,8 @@ class TestDriftDetectionIntegration:
         healthy = True
         for phase_num, handler_class in orchestrator.PHASE_HANDLERS:
             if phase_num == 0:
-                controller._update_drift_state(phase_num, handler_class.__name__, healthy)
+                handler_name = handler_class.__name__
+                controller._update_drift_state(phase_num, handler_name, healthy)
 
         assert controller.drift_states[0].is_drifted is False
 
@@ -95,7 +99,8 @@ class TestDriftDetectionIntegration:
         healthy = False
         for phase_num, handler_class in orchestrator.PHASE_HANDLERS:
             if phase_num == 0:
-                controller._update_drift_state(phase_num, handler_class.__name__, healthy)
+                handler_name = handler_class.__name__
+                controller._update_drift_state(phase_num, handler_name, healthy)
 
         assert controller.drift_states[0].is_drifted is True
         assert controller.drift_states[0].consecutive_drift_count == 1
@@ -103,7 +108,8 @@ class TestDriftDetectionIntegration:
         # Iteration 3: phase still unhealthy
         for phase_num, handler_class in orchestrator.PHASE_HANDLERS:
             if phase_num == 0:
-                controller._update_drift_state(phase_num, handler_class.__name__, healthy)
+                handler_name = handler_class.__name__
+                controller._update_drift_state(phase_num, handler_name, healthy)
 
         assert controller.drift_states[0].consecutive_drift_count == 2
 
@@ -111,7 +117,8 @@ class TestDriftDetectionIntegration:
         healthy = True
         for phase_num, handler_class in orchestrator.PHASE_HANDLERS:
             if phase_num == 0:
-                controller._update_drift_state(phase_num, handler_class.__name__, healthy)
+                handler_name = handler_class.__name__
+                controller._update_drift_state(phase_num, handler_name, healthy)
 
         assert controller.drift_states[0].is_drifted is False
 
@@ -123,7 +130,8 @@ class TestDriftDetectionIntegration:
         monkeypatch,
     ) -> None:
         """Test that auto-healing is triggered when drift is detected."""
-        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "netengine_state.json"))
+        state_file = str(tmp_path / "netengine_state.json")
+        monkeypatch.setenv("NETENGINE_STATE_FILE", state_file)
 
         orchestrator = Orchestrator(minimal_spec, mock_mode=True)
         orchestrator.runtime_state.phase_completed = {"0": True}
@@ -165,7 +173,8 @@ class TestDriftDetectionIntegration:
         monkeypatch,
     ) -> None:
         """Test that drift history is persisted to RuntimeState."""
-        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "netengine_state.json"))
+        state_file = str(tmp_path / "netengine_state.json")
+        monkeypatch.setenv("NETENGINE_STATE_FILE", state_file)
 
         orchestrator = Orchestrator(minimal_spec, mock_mode=True)
 
@@ -196,7 +205,8 @@ class TestDriftDetectionIntegration:
         monkeypatch,
     ) -> None:
         """Test that drift controller gracefully handles cancellation."""
-        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "netengine_state.json"))
+        state_file = str(tmp_path / "netengine_state.json")
+        monkeypatch.setenv("NETENGINE_STATE_FILE", state_file)
 
         orchestrator = Orchestrator(minimal_spec, mock_mode=True)
 
@@ -224,7 +234,8 @@ class TestDriftDetectionIntegration:
         monkeypatch,
     ) -> None:
         """Test that drift events are emitted via pgmq."""
-        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "netengine_state.json"))
+        state_file = str(tmp_path / "netengine_state.json")
+        monkeypatch.setenv("NETENGINE_STATE_FILE", state_file)
 
         orchestrator = Orchestrator(minimal_spec, mock_mode=True)
         orchestrator.context.pgmq_client = AsyncMock()

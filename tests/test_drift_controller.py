@@ -33,7 +33,9 @@ class TestDriftDetectionController:
         return orch
 
     @pytest.mark.asyncio
-    async def test_drift_detection_initialization(self, mock_orchestrator: Orchestrator) -> None:
+    async def test_drift_detection_initialization(
+        self, mock_orchestrator: Orchestrator
+    ) -> None:
         """Test controller initialization."""
         controller = DriftDetectionController(
             orchestrator=mock_orchestrator,
@@ -49,7 +51,9 @@ class TestDriftDetectionController:
         assert controller.drift_states == {}
 
     @pytest.mark.asyncio
-    async def test_check_phase_health_success(self, mock_orchestrator: Orchestrator) -> None:
+    async def test_check_phase_health_success(
+        self, mock_orchestrator: Orchestrator
+    ) -> None:
         """Test healthcheck for a healthy phase."""
         controller = DriftDetectionController(orchestrator=mock_orchestrator)
 
@@ -63,7 +67,9 @@ class TestDriftDetectionController:
         mock_handler.healthcheck.assert_called_once_with(mock_orchestrator.context)
 
     @pytest.mark.asyncio
-    async def test_check_phase_health_failure(self, mock_orchestrator: Orchestrator) -> None:
+    async def test_check_phase_health_failure(
+        self, mock_orchestrator: Orchestrator
+    ) -> None:
         """Test healthcheck for a drifted phase."""
         controller = DriftDetectionController(orchestrator=mock_orchestrator)
 
@@ -78,13 +84,17 @@ class TestDriftDetectionController:
         assert controller.drift_states[0].is_drifted is True
 
     @pytest.mark.asyncio
-    async def test_check_phase_health_exception(self, mock_orchestrator: Orchestrator) -> None:
+    async def test_check_phase_health_exception(
+        self, mock_orchestrator: Orchestrator
+    ) -> None:
         """Test healthcheck that raises an exception."""
         controller = DriftDetectionController(orchestrator=mock_orchestrator)
 
         mock_handler = AsyncMock()
         mock_handler.__class__.__name__ = "TestHandler"
-        mock_handler.healthcheck = AsyncMock(side_effect=RuntimeError("health check error"))
+        mock_handler.healthcheck = AsyncMock(
+            side_effect=RuntimeError("health check error")
+        )
 
         result = await controller._check_phase_health(0, mock_handler)
 
@@ -134,7 +144,9 @@ class TestDriftDetectionController:
         mock_orchestrator.context.pgmq_client.send.assert_called_once()  # type: ignore
 
     @pytest.mark.asyncio
-    async def test_drift_event_emission_no_pgmq(self, mock_orchestrator: Orchestrator) -> None:
+    async def test_drift_event_emission_no_pgmq(
+        self, mock_orchestrator: Orchestrator
+    ) -> None:
         """Test that drift events are skipped when pgmq is unavailable."""
         mock_orchestrator.context.pgmq_client = None
         controller = DriftDetectionController(orchestrator=mock_orchestrator)
@@ -180,7 +192,9 @@ class TestDriftDetectionController:
         assert changed is False
 
     @pytest.mark.asyncio
-    async def test_heal_phase_healthcheck_still_fails(self, mock_orchestrator: Orchestrator) -> None:
+    async def test_heal_phase_healthcheck_still_fails(
+        self, mock_orchestrator: Orchestrator
+    ) -> None:
         """Test when healthcheck still fails after execute()."""
         controller = DriftDetectionController(orchestrator=mock_orchestrator)
 
@@ -195,7 +209,9 @@ class TestDriftDetectionController:
         assert changed is False
 
     @pytest.mark.asyncio
-    async def test_runtime_state_persistence(self, mock_orchestrator: Orchestrator) -> None:
+    async def test_runtime_state_persistence(
+        self, mock_orchestrator: Orchestrator
+    ) -> None:
         """Test that drift state is persisted to RuntimeState."""
         # Record a drift event
         mock_orchestrator.runtime_state.current_drift_phases = [0, 1]
@@ -215,7 +231,9 @@ class TestDriftDetectionController:
         assert mock_orchestrator.runtime_state.drift_history[0]["phase_num"] == 0
 
     @pytest.mark.asyncio
-    async def test_iteration_with_multiple_phases(self, mock_orchestrator: Orchestrator) -> None:
+    async def test_iteration_with_multiple_phases(
+        self, mock_orchestrator: Orchestrator
+    ) -> None:
         """Test a drift detection iteration with multiple phases."""
         # Create mock handlers that return different health states
         mock_handler_0 = AsyncMock()
@@ -239,10 +257,14 @@ class TestDriftDetectionController:
                 return mock_handler_3
             return AsyncMock()
 
-        controller = DriftDetectionController(orchestrator=mock_orchestrator, auto_heal=False)
+        controller = DriftDetectionController(
+            orchestrator=mock_orchestrator, auto_heal=False
+        )
 
         with patch.object(
-            mock_orchestrator.PHASE_HANDLERS[0][1], '__call__', side_effect=lambda: mock_handler_0
+            mock_orchestrator.PHASE_HANDLERS[0][1],
+            '__call__',
+            side_effect=lambda: mock_handler_0
         ):
             pass
 
