@@ -1,6 +1,5 @@
 import asyncio
 import ipaddress
-import logging
 from typing import Any, Dict
 
 from netengine.core.pgmq_client import PGMQClient
@@ -11,12 +10,13 @@ from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.domain_registry_handler import DomainRegistryHandler
 from netengine.handlers.gateway_handler import GatewayHandler
+from netengine.logging import get_logger
 
 
 class ANDHandler:
     def __init__(self, docker: DockerHandler, state, context: PhaseContext | None = None):
         self.context = context or PhaseContext(
-            spec={}, runtime_state=state, logger=logging.getLogger(__name__)
+            spec={}, runtime_state=state, logger=get_logger(__name__)
         )
         self.docker = docker
         self.state = state

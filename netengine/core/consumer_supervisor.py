@@ -1,8 +1,9 @@
 import asyncio
-import logging
 from typing import Any, Callable, Coroutine, Dict
 
-logger = logging.getLogger(__name__)
+from netengine.logging import get_logger
+
+logger = get_logger(__name__)
 
 _BACKOFF_BASE = 5
 _BACKOFF_MAX = 60

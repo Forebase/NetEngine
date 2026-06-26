@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import os
 from typing import Any
 
@@ -19,10 +18,11 @@ from pydantic import BaseModel
 from netengine.api.auth import require_auth
 from netengine.core.reload import ReloadResult, apply_reload, check_immutability, compute_diff
 from netengine.core.state import RuntimeState
+from netengine.logging import get_logger
 from netengine.spec.loader import SpecLoadError, load_spec
 from netengine.spec.models import NetEngineSpec
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1")
 
 

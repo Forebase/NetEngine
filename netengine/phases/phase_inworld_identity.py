@@ -10,7 +10,6 @@ Responsibilities:
 
 import asyncio
 import json
-import logging
 import secrets
 import ssl
 from datetime import datetime
@@ -18,14 +17,15 @@ from typing import Any, Optional
 
 import aiohttp
 
-logger = logging.getLogger(__name__)
-
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.oidc_handler import OIDCHandler
 from netengine.handlers.pki_handler import PKIHandler
+from netengine.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class InWorldIdentityPhaseHandler(BasePhaseHandler):
