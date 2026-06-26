@@ -75,12 +75,7 @@ def _parse_der_expiry(der: bytes) -> datetime:
     except ImportError:
         pass
 
-    # Fallback: use ssl to decode PEM expiry — roundtrip via PEM
-    import ssl as ssl_mod
-
-    pem = ssl_mod.DER_cert_to_PEM_cert(der)
-    info = ssl_mod.PEM_cert_to_DER_cert(pem)  # already DER, but we need the dict path
-    # Use subprocess openssl as last resort — this is always available
+    # Fallback: use subprocess openssl — this is always available
     import subprocess
     import tempfile
     import os

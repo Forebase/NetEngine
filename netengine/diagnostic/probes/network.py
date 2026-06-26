@@ -60,13 +60,18 @@ async def probe(spec: NetEngineSpec) -> ProbeResult:
             return ProbeResult(
                 name=_PROBE_NAME,
                 status=ProbeStatus.OK,
-                detail=f"{network_detail}, nftables active ({chain_count} chain(s))",
+                detail=(
+                    f"{network_detail}, nftables active ({chain_count} chain(s))"
+                ),
             )
         else:
             return ProbeResult(
                 name=_PROBE_NAME,
                 status=ProbeStatus.WARN,
-                detail=f"{network_detail}, nftables check failed (may require root): {result.stderr.strip()}",
+                detail=(
+                    f"{network_detail}, nftables check failed "
+                    f"(may require root): {result.stderr.strip()}"
+                ),
                 hint="Run `sudo nft list ruleset` to inspect manually.",
             )
     except FileNotFoundError:

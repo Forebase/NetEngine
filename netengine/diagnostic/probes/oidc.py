@@ -13,8 +13,12 @@ _KEYCLOAK_PORT = 8080
 async def probe(spec: NetEngineSpec) -> ProbeResult:
     platform_ip = spec.identity_platform.listen_ip
     platform_realm = spec.identity_platform.realm_name
-    health_url = f"http://{platform_ip}:{_KEYCLOAK_PORT}/health/ready"
-    oidc_url = f"http://{platform_ip}:{_KEYCLOAK_PORT}/realms/{platform_realm}/.well-known/openid-configuration"
+    base_url = f"http://{platform_ip}:{_KEYCLOAK_PORT}"
+    health_url = f"{base_url}/health/ready"
+    oidc_url = (
+        f"{base_url}/realms/{platform_realm}/"
+        ".well-known/openid-configuration"
+    )
 
     try:
         connector = aiohttp.TCPConnector(ssl=False)
@@ -26,8 +30,11 @@ async def probe(spec: NetEngineSpec) -> ProbeResult:
                         return ProbeResult(
                             name=_PROBE_NAME,
                             status=ProbeStatus.FAIL,
-                            detail=f"Keycloak /health/ready returned HTTP {resp.status} at {platform_ip}",
-                            hint=f"Run: docker logs netengines_keycloak",
+                            detail=(
+                                f"Keycloak /health/ready returned HTTP "
+                                f"{resp.status} at {platform_ip}"
+                            ),
+                            hint="Run: docker logs netengines_keycloak",
                         )
             except (aiohttp.ClientError, TimeoutError, OSError):
                 return ProbeResult(
@@ -49,7 +56,10 @@ async def probe(spec: NetEngineSpec) -> ProbeResult:
                     return ProbeResult(
                         name=_PROBE_NAME,
                         status=ProbeStatus.WARN,
-                        detail=f"Keycloak healthy but realm '{platform_realm}' OIDC discovery returned {resp.status}",
+                        detail=(
+                            f"Keycloak healthy but realm '{platform_realm}' "
+                            f"OIDC discovery returned {resp.status}"
+                        ),
                         hint=f"Realm '{platform_realm}' may not be provisioned yet.",
                     )
             except Exception as exc:

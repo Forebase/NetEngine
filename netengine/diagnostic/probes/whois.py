@@ -30,9 +30,9 @@ async def probe(spec: NetEngineSpec) -> ProbeResult:
         writer.write(b"help\r\n")
         await writer.drain()
         try:
-            response = await asyncio.wait_for(reader.read(256), timeout=_TIMEOUT)
+            await asyncio.wait_for(reader.read(256), timeout=_TIMEOUT)
         except asyncio.TimeoutError:
-            response = b""
+            pass
         writer.close()
         await writer.wait_closed()
 

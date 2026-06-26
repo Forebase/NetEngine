@@ -1,7 +1,6 @@
 """DNS probe — checks root and platform zone nameservers are responding."""
 
 import asyncio
-import socket
 
 import dns.resolver
 import dns.exception
@@ -26,7 +25,7 @@ async def probe(spec: NetEngineSpec) -> ProbeResult:
                 name=_PROBE_NAME,
                 status=ProbeStatus.FAIL,
                 detail=f"Root DNS at {root_ip}:53 did not return SOA for '.'",
-                hint=f"Run: netengine status — check phase 1 completed",
+                hint="Run: netengine status — check phase 1 completed",
             )
     except Exception as exc:
         return ProbeResult(
@@ -42,21 +41,30 @@ async def probe(spec: NetEngineSpec) -> ProbeResult:
             return ProbeResult(
                 name=_PROBE_NAME,
                 status=ProbeStatus.WARN,
-                detail=f"Root DNS OK, but platform zone {platform_zone!r} SOA not found at {platform_ip}",
+                detail=(
+                    f"Root DNS OK, but platform zone {platform_zone!r} "
+                    f"SOA not found at {platform_ip}"
+                ),
                 hint="Check phase 1 logs for platform zone registration.",
             )
     except Exception as exc:
         return ProbeResult(
             name=_PROBE_NAME,
             status=ProbeStatus.WARN,
-            detail=f"Root DNS OK, platform zone {platform_zone!r} at {platform_ip} unreachable: {exc}",
+            detail=(
+                f"Root DNS OK, platform zone {platform_zone!r} "
+                f"at {platform_ip} unreachable: {exc}"
+            ),
             hint="Check if platform zone container is running.",
         )
 
     return ProbeResult(
         name=_PROBE_NAME,
         status=ProbeStatus.OK,
-        detail=f"Root DNS ({root_ip}) and platform zone {platform_zone!r} ({platform_ip}) responding",
+        detail=(
+            f"Root DNS ({root_ip}) and platform zone {platform_zone!r} "
+            f"({platform_ip}) responding"
+        ),
     )
 
 
