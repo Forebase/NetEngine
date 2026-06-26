@@ -76,9 +76,9 @@ def _parse_der_expiry(der: bytes) -> datetime:
         pass
 
     # Fallback: use subprocess openssl — this is always available
+    import os
     import subprocess
     import tempfile
-    import os
 
     with tempfile.NamedTemporaryFile(suffix=".der", delete=False) as f:
         f.write(der)

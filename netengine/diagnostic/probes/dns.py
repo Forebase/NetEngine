@@ -2,8 +2,8 @@
 
 import asyncio
 
-import dns.resolver
 import dns.exception
+import dns.resolver
 
 from netengine.diagnostic.runner import ProbeResult, ProbeStatus
 from netengine.spec.models import NetEngineSpec

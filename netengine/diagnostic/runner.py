@@ -3,7 +3,7 @@
 import asyncio
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Coroutine, Any
+from typing import Any, Callable, Coroutine
 
 from netengine.spec.models import NetEngineSpec
 
@@ -60,7 +60,7 @@ class DiagnosticRunner:
 
 def build_runner(spec: NetEngineSpec) -> DiagnosticRunner:
     """Build a DiagnosticRunner with all standard probes registered."""
-    from netengine.diagnostic.probes import dns, pki, acme, oidc, network, mail, storage, whois
+    from netengine.diagnostic.probes import acme, dns, mail, network, oidc, pki, storage, whois
 
     runner = DiagnosticRunner(spec)
     for probe_fn in [
