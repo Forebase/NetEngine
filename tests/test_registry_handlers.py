@@ -1,6 +1,6 @@
 """Unit tests for WorldRegistryHandler and DomainRegistryHandler."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -47,16 +47,13 @@ class TestWorldRegistryHandler:
 
     @pytest.fixture
     def handler(self, sb: MagicMock) -> "WorldRegistryHandler":  # noqa: F821
-        pgmq = _make_pgmq_mock()
-        with (
-            patch("netengine.handlers.world_registry_handler.get_supabase", return_value=sb),
-            patch("netengine.handlers.world_registry_handler.PGMQClient", return_value=pgmq),
-        ):
-            from netengine.handlers.world_registry_handler import WorldRegistryHandler
+        from netengine.handlers.world_registry_handler import WorldRegistryHandler
 
-            h = WorldRegistryHandler()
-            h._pgmq = pgmq
-            return h
+        pgmq = _make_pgmq_mock()
+        h = WorldRegistryHandler()
+        h._db = sb  # pre-seed cached connection so _get_db() never hits the network
+        h.pgmq = pgmq  # replace real PGMQClient with mock (handler attribute is .pgmq)
+        return h
 
     async def test_admit_org_upserts_to_world_registry(
         self, handler: MagicMock, sb: MagicMock
@@ -110,16 +107,13 @@ class TestDomainRegistryHandler:
 
     @pytest.fixture
     def handler(self, sb: MagicMock) -> "DomainRegistryHandler":  # noqa: F821
-        pgmq = _make_pgmq_mock()
-        with (
-            patch("netengine.handlers.domain_registry_handler.get_supabase", return_value=sb),
-            patch("netengine.handlers.domain_registry_handler.PGMQClient", return_value=pgmq),
-        ):
-            from netengine.handlers.domain_registry_handler import DomainRegistryHandler
+        from netengine.handlers.domain_registry_handler import DomainRegistryHandler
 
-            h = DomainRegistryHandler()
-            h._pgmq = pgmq
-            return h
+        pgmq = _make_pgmq_mock()
+        h = DomainRegistryHandler()
+        h._db = sb  # pre-seed cached connection so _get_db() never hits the network
+        h.pgmq = pgmq  # replace real PGMQClient with mock
+        return h
 
     async def test_allocate_address_raises_when_no_pool(
         self, handler: MagicMock, sb: MagicMock

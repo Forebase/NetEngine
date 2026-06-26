@@ -165,12 +165,30 @@ def status() -> None:
     _print_status(state)
 
 
+_PGMQ_QUEUES = [
+    "dns_updates",
+    "dns_updates_dlq",
+    "oidc_provisioning",
+    "oidc_provisioning_dlq",
+    "and_provisioning",
+    "and_provisioning_dlq",
+]
+
+# Both prefixes are used by handlers: netengine_ (coredns, gateway) and netengines_ (all others)
+_CONTAINER_PREFIXES = ("netengine_", "netengines_")
+
+
 @cli.command()
 @click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
-def down(yes: bool) -> None:
+@click.option("--dry-run", is_flag=True, help="Show what would be removed without removing it.")
+def down(yes: bool, dry_run: bool) -> None:
     """Tear down the running world (containers, networks, volumes)."""
+    asyncio.run(_down(yes, dry_run))
+
+
+async def _down(yes: bool, dry_run: bool) -> None:
     state = RuntimeState.load()
-    if state.world_spec:
+    if state.world_spec and not dry_run:
         raw_lifecycle = (state.world_spec.get("metadata") or {}).get("lifecycle", "ephemeral")
         if raw_lifecycle == "persistent" and not yes:
             click.confirm(
@@ -178,48 +196,135 @@ def down(yes: bool) -> None:
                 abort=True,
             )
 
+    if dry_run:
+        click.echo("Dry run — nothing will be removed.\n")
+
     removed: list[str] = []
     errors: list[str] = []
 
+    # --- Docker: containers, networks, volumes ---
     try:
         import docker as docker_sdk
 
         client = docker_sdk.from_env()
 
+        # Collect container IDs from state for precise targeting (avoids prefix-only scan misses)
+        state_container_ids: set[str] = set(
+            filter(
+                None,
+                [
+                    state.dns_root_container_id,
+                    state.gateway_container_id,
+                    state.step_ca_container_id,
+                    state.keycloak_platform_container_id,
+                    state.inworld_keycloak_container_id,
+                ],
+            )
+        )
+
         for container in client.containers.list(all=True):
-            if container.name.startswith("netengines_"):
-                try:
-                    container.stop(timeout=5)
-                    container.remove(force=True)
-                    removed.append(container.name)
-                except Exception as exc:
-                    errors.append(f"container {container.name}: {exc}")
+            by_id = container.id in state_container_ids
+            by_prefix = any(container.name.startswith(p) for p in _CONTAINER_PREFIXES)
+            if by_id or by_prefix:
+                label = f"container:{container.name}"
+                if dry_run:
+                    click.echo(f"  would remove  {label}")
+                    removed.append(label)
+                else:
+                    try:
+                        container.stop(timeout=5)
+                        container.remove(force=True)
+                        removed.append(label)
+                    except Exception as exc:
+                        errors.append(f"{label}: {exc}")
 
         for network in client.networks.list():
-            if network.name.startswith("netengines_"):
-                try:
-                    network.remove()
-                    removed.append(f"network:{network.name}")
-                except Exception as exc:
-                    errors.append(f"network {network.name}: {exc}")
+            if any(network.name.startswith(p) for p in _CONTAINER_PREFIXES):
+                label = f"network:{network.name}"
+                if dry_run:
+                    click.echo(f"  would remove  {label}")
+                    removed.append(label)
+                else:
+                    try:
+                        network.remove()
+                        removed.append(label)
+                    except Exception as exc:
+                        errors.append(f"{label}: {exc}")
 
         for volume in client.volumes.list():
-            if volume.name.startswith("netengines_"):
-                try:
-                    volume.remove(force=True)
-                    removed.append(f"volume:{volume.name}")
-                except Exception as exc:
-                    errors.append(f"volume {volume.name}: {exc}")
+            if any(volume.name.startswith(p) for p in _CONTAINER_PREFIXES):
+                label = f"volume:{volume.name}"
+                if dry_run:
+                    click.echo(f"  would remove  {label}")
+                    removed.append(label)
+                else:
+                    try:
+                        volume.remove(force=True)
+                        removed.append(label)
+                    except Exception as exc:
+                        errors.append(f"{label}: {exc}")
 
     except Exception as exc:
         errors.append(f"Docker unavailable: {exc}")
 
+    # --- Zone files ---
+    import shutil
+
+    from netengine.handlers.context import DEFAULT_ZONE_DIR
+
+    zone_dir = Path(os.environ.get("NETENGINE_ZONE_DIR", DEFAULT_ZONE_DIR))
+    if zone_dir.exists():
+        label = f"zone-files:{zone_dir}"
+        if dry_run:
+            click.echo(f"  would remove  {label}")
+            removed.append(label)
+        else:
+            try:
+                shutil.rmtree(zone_dir)
+                removed.append(label)
+            except Exception as exc:
+                errors.append(f"{label}: {exc}")
+
+    # --- pgmq queues ---
+    db_url = os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+    if db_url:
+        for queue in _PGMQ_QUEUES:
+            label = f"queue:{queue}"
+            if dry_run:
+                click.echo(f"  would purge   {label}")
+                removed.append(label)
+            else:
+                try:
+                    import asyncpg  # type: ignore[import]
+
+                    conn = await asyncpg.connect(db_url)
+                    try:
+                        await conn.execute("SELECT pgmq.purge_queue($1)", queue)
+                        removed.append(label)
+                    except Exception:
+                        pass  # queue may not exist yet — non-fatal
+                    finally:
+                        await conn.close()
+                except Exception as exc:
+                    errors.append(f"{label}: {exc}")
+
+    # --- Runtime state file ---
     from netengine.core.state import get_state_file
 
     state_file = get_state_file()
     if state_file.exists():
-        state_file.unlink()
-        removed.append("state:netengines_state.json")
+        label = f"state:{state_file.name}"
+        if dry_run:
+            click.echo(f"  would remove  {label}")
+            removed.append(label)
+        else:
+            state_file.unlink()
+            removed.append(label)
+
+    # --- Summary ---
+    if dry_run:
+        click.echo(f"\n{len(removed)} resource(s) would be removed.")
+        return
 
     if removed:
         click.echo(f"Removed {len(removed)} resource(s):")
