@@ -9,11 +9,11 @@ from loguru import logger
 from netengine.connectors.base import Connector
 
 
-class PostgresConnector(Connector):
+class PostgresConnector(Connector[None]):
     """Manages asyncpg connection pool and provides query builder interface."""
 
     def __init__(self) -> None:
-        self._pool: Optional[asyncpg.Pool] = None
+        self._pool: Optional[asyncpg.Pool[asyncpg.Connection]] = None
         self._db_url = (
             os.getenv(
                 "NETENGINE_DB_URL",
@@ -53,7 +53,7 @@ class PostgresConnector(Connector):
             return False
 
     @property
-    def pool(self) -> asyncpg.Pool:
+    def pool(self) -> asyncpg.Pool[asyncpg.Connection]:
         """Get underlying connection pool."""
         if not self._pool:
             raise RuntimeError(

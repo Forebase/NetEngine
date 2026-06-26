@@ -10,7 +10,7 @@ from loguru import logger
 from netengine.connectors.base import Connector
 
 
-class DockerConnector(Connector):
+class DockerConnector(Connector[None]):
     """Manages Docker client connection and wraps sync calls for async context."""
 
     def __init__(self) -> None:

@@ -8,7 +8,7 @@ from loguru import logger
 from netengine.connectors.base import Connector
 
 
-class KeycloakConnector(Connector):
+class KeycloakConnector(Connector[None]):
     """Manages Keycloak admin API access with token caching."""
 
     def __init__(

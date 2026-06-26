@@ -10,7 +10,7 @@ from netengine.connectors.postgres_connector import PostgresConnector
 from netengine.events.schema import EventEnvelope
 
 
-class PGMQConnector(Connector):
+class PGMQConnector(Connector[None]):
     """Manages pgmq queue operations via PostgreSQL RPC."""
 
     def __init__(self, postgres: PostgresConnector) -> None:

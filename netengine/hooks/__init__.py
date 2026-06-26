@@ -1,6 +1,6 @@
 """Hook system for phase lifecycle events."""
 
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 from loguru import logger
 
@@ -46,7 +46,7 @@ class HookRegistry:
         phase_num: int,
         handler: "BasePhaseHandler",
         context: "PhaseContext",
-        error: Exception = None,
+        error: Optional[Exception] = None,
     ) -> None:
         """Execute all hooks registered for a lifecycle point.
 
