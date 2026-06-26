@@ -154,20 +154,14 @@ class CertTypeRotationConfig(SpecModel):
     cert_type: str = Field(
         ..., description="Certificate type (platform_identity, app, storage, etc.)"
     )
-    rotation_interval_hours: int = Field(
-        default=24, description="Check cert expiry every N hours"
-    )
-    expiry_warning_days: int = Field(
-        default=30, description="Rotate certs expiring within N days"
-    )
+    rotation_interval_hours: int = Field(default=24, description="Check cert expiry every N hours")
+    expiry_warning_days: int = Field(default=30, description="Rotate certs expiring within N days")
 
 
 class PKIRotationPolicy(SpecModel):
     """Overall PKI certificate rotation policy."""
 
-    enabled: bool = Field(
-        default=True, description="Enable automatic certificate rotation"
-    )
+    enabled: bool = Field(default=True, description="Enable automatic certificate rotation")
     default_interval_hours: int = Field(
         default=24, description="Default check interval for all cert types"
     )

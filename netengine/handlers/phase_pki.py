@@ -8,10 +8,7 @@ from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.pki_handler import PKIHandler
-from netengine.workers.pki_cert_rotation_worker import (
-    CertTypeRotationConfig,
-    PKICertRotationWorker,
-)
+from netengine.workers.pki_cert_rotation_worker import CertTypeRotationConfig, PKICertRotationWorker
 
 logger = logging.getLogger(__name__)
 
@@ -171,9 +168,7 @@ class PKIPhaseHandler(BasePhaseHandler):
             app_interval = app_cfg_dict.get(
                 "rotation_interval_hours", policy.default_interval_hours
             )
-            app_warning = app_cfg_dict.get(
-                "expiry_warning_days", policy.default_warning_days
-            )
+            app_warning = app_cfg_dict.get("expiry_warning_days", policy.default_warning_days)
             app_cfg = CertTypeRotationConfig(
                 cert_type="app",
                 rotation_interval_hours=app_interval,

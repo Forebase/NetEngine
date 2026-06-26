@@ -58,9 +58,7 @@ class PKICertRotationWorker:
                 self.logger.error("pki_rotation_worker_error", extra={"error": str(e)})
                 await asyncio.sleep(300)  # Backoff on error
 
-    def _get_last_check_time(
-        self, state: RuntimeState, cert_type: str
-    ) -> Optional[datetime]:
+    def _get_last_check_time(self, state: RuntimeState, cert_type: str) -> Optional[datetime]:
         """Get the last check time for a certificate type."""
         if not state.pki_rotation_state:
             return None
@@ -68,7 +66,9 @@ class PKICertRotationWorker:
         last_check = last_check_by_type.get(cert_type)
         if isinstance(last_check, str):
             return datetime.fromisoformat(last_check)
-        return last_check
+        if isinstance(last_check, datetime):
+            return last_check
+        return None
 
     def _should_check_now(
         self, last_check: Optional[datetime], rotation_interval_hours: int
@@ -101,8 +101,10 @@ class PKICertRotationWorker:
             expires_at_str = cert_metadata.get("expires_at")
             if isinstance(expires_at_str, str):
                 expires_at = datetime.fromisoformat(expires_at_str)
-            else:
+            elif isinstance(expires_at_str, datetime):
                 expires_at = expires_at_str
+            else:
+                continue
 
             if expires_at <= warning_threshold:
                 self.logger.info(
