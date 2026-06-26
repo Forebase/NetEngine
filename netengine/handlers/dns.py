@@ -787,7 +787,7 @@ class DNSHandler(BasePhaseHandler):
         dns_output["zone_files"][zone] = updated_content
 
         # Flush to disk so the running CoreDNS container picks up the change
-        zone_file_path = Path(context.zone_dir) / f"{zone}.zone"
+        zone_file_path = Path(context.zone_dir) / "zones" / zone
         if zone_file_path.parent.exists():
             await asyncio.to_thread(zone_file_path.write_text, updated_content)
             logger.debug(f"Zone file flushed to disk: {zone_file_path}")
