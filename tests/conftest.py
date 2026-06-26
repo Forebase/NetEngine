@@ -11,6 +11,24 @@ from netengine.logging import get_logger
 from netengine.spec.loader import load_spec
 from netengine.spec.models import NetEngineSpec
 
+
+def pytest_configure(config):
+    """Keep Starlette's TestClient compatible with newer httpx releases."""
+    import inspect
+
+    import httpx
+
+    if "app" in inspect.signature(httpx.Client.__init__).parameters:
+        return
+
+    original_init = httpx.Client.__init__
+
+    def patched_init(self, *args, app=None, **kwargs):
+        return original_init(self, *args, **kwargs)
+
+    httpx.Client.__init__ = patched_init
+
+
 # ─────────────────────────────────────────────
 # Logger Fixture
 # ─────────────────────────────────────────────

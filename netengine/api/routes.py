@@ -19,6 +19,7 @@ from netengine.api.auth import require_auth
 from netengine.core.reload import ReloadResult, apply_reload, check_immutability, compute_diff
 from netengine.core.state import RuntimeState
 from netengine.logging import get_logger
+from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import SpecLoadError, load_spec
 from netengine.spec.models import NetEngineSpec
 
@@ -30,17 +31,6 @@ router = APIRouter(prefix="/api/v1")
 # Health
 # ─────────────────────────────────────────────
 
-PHASE_LABELS = {
-    "0": "Substrate",
-    "1": "DNS root + platform zones",
-    "2": "DNS TLD hierarchy",
-    "3": "PKI + ACME",
-    "4": "Platform identity",
-    "5": "Registries",
-    "6": "In-world identity",
-    "7": "ANDs",
-    "8": "Services",
-}
 
 
 @router.get("/health")
