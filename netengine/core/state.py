@@ -76,16 +76,19 @@ class RuntimeState:
             # Deserialize datetime strings in certificate metadata
             if data.get("issued_certificates"):
                 for cn, cert_metadata in data["issued_certificates"].items():
-                    for dt_field in ("issued_at", "expires_at", "rotated_at"):
-                        if cert_metadata.get(dt_field):
-                            cert_metadata[dt_field] = datetime.fromisoformat(cert_metadata[dt_field])
+                    if isinstance(cert_metadata, dict):
+                        for dt_field in ("issued_at", "expires_at", "rotated_at"):
+                            dt_value = cert_metadata.get(dt_field)
+                            if dt_value and isinstance(dt_value, str):
+                                cert_metadata[dt_field] = datetime.fromisoformat(dt_value)
 
             # Deserialize datetime strings in pki_rotation_state
             if data.get("pki_rotation_state"):
-                if data["pki_rotation_state"].get("last_check_by_type"):
-                    for cert_type, last_check in data["pki_rotation_state"]["last_check_by_type"].items():
-                        if last_check:
-                            data["pki_rotation_state"]["last_check_by_type"][cert_type] = datetime.fromisoformat(last_check)
+                last_check_by_type = data["pki_rotation_state"].get("last_check_by_type")
+                if last_check_by_type and isinstance(last_check_by_type, dict):
+                    for cert_type, last_check in last_check_by_type.items():
+                        if last_check and isinstance(last_check, str):
+                            last_check_by_type[cert_type] = datetime.fromisoformat(last_check)
 
             state = cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
             state._discard_completion_flags_without_outputs()
