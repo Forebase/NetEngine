@@ -26,7 +26,9 @@ def patched_platform_deps(phase_context):
     mock_oidc = MagicMock()
     mock_oidc.create_platform_realm = AsyncMock(return_value="platform-realm-id")
     mock_oidc.create_admin_user = AsyncMock(return_value="admin-user-id")
-    mock_oidc.create_client = AsyncMock(return_value="platform-api-client-id")
+    mock_oidc.create_client = AsyncMock(
+        return_value=("platform-api-client-id", "platform-api-secret")
+    )
     mock_oidc.add_token_mapper = AsyncMock()
 
     mock_dns = MagicMock()
@@ -93,6 +95,8 @@ class TestPlatformIdentityPhaseHandlerExecute:
             "platform_realm_id",
             "admin_user_id",
             "platform_client_id",
+            "platform_client_auth_id",
+            "platform_client_secret",
             "deployed_at",
         ):
             assert key in output, f"Missing required key '{key}' in identity_platform_output"
@@ -165,6 +169,22 @@ class TestPlatformIdentityPhaseHandlerExecute:
         mock_oidc.create_platform_realm.assert_awaited_once_with("platform")
 
     @pytest.mark.asyncio
+    async def test_execute_creates_confidential_platform_api_client(self, patched_platform_deps):
+        """Phase 4 should request the platform API client's generated secret."""
+        ctx = patched_platform_deps["context"]
+        mock_oidc = patched_platform_deps["oidc"]
+
+        await PlatformIdentityPhaseHandler().execute(ctx)
+
+        mock_oidc.create_client.assert_awaited_once_with(
+            realm="platform",
+            client_id="platform-api",
+            name="Platform API",
+            redirect_uris=["https://api.platform.internal/callback"],
+            public=False,
+            return_secret=True,
+        )
+
     async def test_execute_persists_realm_and_user_ids(self, patched_platform_deps):
         """Phase 4 should write realm and user IDs to runtime_state."""
         ctx = patched_platform_deps["context"]
@@ -173,3 +193,5 @@ class TestPlatformIdentityPhaseHandlerExecute:
         assert ctx.runtime_state.platform_realm_id == "platform-realm-id"
         assert ctx.runtime_state.admin_user_id == "admin-user-id"
         assert ctx.runtime_state.platform_client_id == "platform-api-client-id"
+        assert ctx.runtime_state.platform_client_auth_id == "platform-api"
+        assert ctx.runtime_state.platform_client_secret == "platform-api-secret"
