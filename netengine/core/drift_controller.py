@@ -7,7 +7,7 @@ triggers self-healing by re-running execute() on drifted phases.
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
@@ -281,13 +281,10 @@ class DriftDetectionController:
             changed_phase_num: Phase number that changed
             healed_phases: Set of already-healed phases
         """
-        from netengine.core.orchestrator import _PHASE_PREREQUISITES
-
         for phase_num, handler_class in self.orchestrator.PHASE_HANDLERS:
             if phase_num in healed_phases:
                 continue
 
-            required_fields = _PHASE_PREREQUISITES.get(phase_num, [])
             phase_key = str(changed_phase_num)
 
             if not self.orchestrator.runtime_state.phase_completed.get(phase_key):
@@ -329,7 +326,7 @@ class DriftDetectionController:
                 emitted_by="drift_controller",
                 payload=payload,
             )
-            await self.orchestrator.context.pgmq_client.send(event)
+            await self.orchestrator.context.pgmq_client.send("drift_events", event)
             logger.debug(f"Drift event emitted: {event_type}")
         except Exception as e:
             logger.error(f"Failed to emit drift event: {e}")

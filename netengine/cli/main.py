@@ -224,7 +224,7 @@ async def _down(yes: bool, dry_run: bool) -> None:
 
         for container in client.containers.list(all=True):
             by_id = container.id in state_container_ids
-            by_prefix = any(container.name.startswith(p) for p in _CONTAINER_PREFIXES)
+            by_prefix = container.name and any(container.name.startswith(p) for p in _CONTAINER_PREFIXES)
             if by_id or by_prefix:
                 label = f"container:{container.name}"
                 if dry_run:
@@ -239,7 +239,7 @@ async def _down(yes: bool, dry_run: bool) -> None:
                         errors.append(f"{label}: {exc}")
 
         for network in client.networks.list():
-            if any(network.name.startswith(p) for p in _CONTAINER_PREFIXES):
+            if network.name and any(network.name.startswith(p) for p in _CONTAINER_PREFIXES):
                 label = f"network:{network.name}"
                 if dry_run:
                     click.echo(f"  would remove  {label}")

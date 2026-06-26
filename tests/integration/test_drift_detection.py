@@ -12,7 +12,6 @@ import pytest
 from netengine.core.drift_controller import DriftDetectionController
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
-from netengine.handlers.context import PhaseContext
 from netengine.spec.models import NetEngineSpec
 
 
@@ -244,6 +243,7 @@ class TestDriftDetectionIntegration:
         # Verify event was sent
         orchestrator.context.pgmq_client.send.assert_called_once()
         call_args = orchestrator.context.pgmq_client.send.call_args
-        event = call_args[0][0] if call_args[0] else call_args[1].get('event')
+        # call_args[0][0] is queue_name, call_args[0][1] is event
+        event = call_args[0][1] if len(call_args[0]) > 1 else None
         assert event is not None
         assert event.event_type == "drift.detected"

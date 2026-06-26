@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from netengine.core.orchestrator import Orchestrator, _PHASE_PREREQUISITES
+from netengine.core.orchestrator import Orchestrator
 from netengine.handlers._base import BasePhaseHandler
 
 logger = logging.getLogger(__name__)

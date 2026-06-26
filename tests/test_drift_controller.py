@@ -1,6 +1,5 @@
 """Unit tests for drift detection and self-healing."""
 
-import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -197,8 +196,6 @@ class TestDriftDetectionController:
     @pytest.mark.asyncio
     async def test_runtime_state_persistence(self, mock_orchestrator: Orchestrator) -> None:
         """Test that drift state is persisted to RuntimeState."""
-        controller = DriftDetectionController(orchestrator=mock_orchestrator)
-
         # Record a drift event
         mock_orchestrator.runtime_state.current_drift_phases = [0, 1]
         mock_orchestrator.runtime_state.last_drift_check_at = datetime.utcnow()
