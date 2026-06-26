@@ -172,6 +172,8 @@ _PGMQ_QUEUES = [
     "oidc_provisioning_dlq",
     "and_provisioning",
     "and_provisioning_dlq",
+    "world_health",
+    "world_health_dlq",
 ]
 
 # Both prefixes are used by handlers: netengine_ (coredns, gateway) and netengines_ (all others)
