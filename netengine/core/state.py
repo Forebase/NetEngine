@@ -58,6 +58,10 @@ class RuntimeState:
     bootstrap_admin_password: Optional[str] = None
     platform_client_id: Optional[str] = None
 
+    # PKI certificate rotation tracking
+    issued_certificates: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    pki_rotation_state: Dict[str, Any] = field(default_factory=dict)
+
     @classmethod
     def load(cls) -> "RuntimeState":
         state_file = get_state_file()
@@ -68,6 +72,21 @@ class RuntimeState:
             for dt_field in ("started_at", "completed_at", "last_error_at"):
                 if data.get(dt_field):
                     data[dt_field] = datetime.fromisoformat(data[dt_field])
+
+            # Deserialize datetime strings in certificate metadata
+            if data.get("issued_certificates"):
+                for cn, cert_metadata in data["issued_certificates"].items():
+                    for dt_field in ("issued_at", "expires_at", "rotated_at"):
+                        if cert_metadata.get(dt_field):
+                            cert_metadata[dt_field] = datetime.fromisoformat(cert_metadata[dt_field])
+
+            # Deserialize datetime strings in pki_rotation_state
+            if data.get("pki_rotation_state"):
+                if data["pki_rotation_state"].get("last_check_by_type"):
+                    for cert_type, last_check in data["pki_rotation_state"]["last_check_by_type"].items():
+                        if last_check:
+                            data["pki_rotation_state"]["last_check_by_type"][cert_type] = datetime.fromisoformat(last_check)
+
             state = cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
             state._discard_completion_flags_without_outputs()
             return state
@@ -100,6 +119,21 @@ class RuntimeState:
         for k, v in data.items():
             if isinstance(v, datetime):
                 data[k] = v.isoformat()
+
+        # Serialize nested datetime objects in certificate metadata
+        if data.get("issued_certificates"):
+            for cn, cert_metadata in data["issued_certificates"].items():
+                for dt_field in ("issued_at", "expires_at", "rotated_at"):
+                    if isinstance(cert_metadata.get(dt_field), datetime):
+                        cert_metadata[dt_field] = cert_metadata[dt_field].isoformat()
+
+        # Serialize nested datetime objects in pki_rotation_state
+        if data.get("pki_rotation_state"):
+            if data["pki_rotation_state"].get("last_check_by_type"):
+                for cert_type, last_check in data["pki_rotation_state"]["last_check_by_type"].items():
+                    if isinstance(last_check, datetime):
+                        data["pki_rotation_state"]["last_check_by_type"][cert_type] = last_check.isoformat()
+
         state_file = get_state_file()
         state_file.parent.mkdir(parents=True, exist_ok=True)
         # Atomic write: write to .tmp then rename to avoid corruption on concurrent access.

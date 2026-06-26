@@ -291,6 +291,17 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
         pki = PKIHandler(docker, context.runtime_state, context.spec.__dict__)
         cert, key = await pki.issue_cert(canonical_name, sans=[canonical_name])
 
+        # Track issued certificate in RuntimeState
+        expiry = pki.extract_cert_expiry(cert)
+        context.runtime_state.issued_certificates[canonical_name] = {
+            "cert_type": "inworld_identity",
+            "issued_at": datetime.utcnow().isoformat(),
+            "expires_at": expiry.isoformat(),
+            "sans": [canonical_name],
+            "rotated_at": None,
+            "version": 1,
+        }
+
         cert_dir = "/var/lib/netengines/certs_inworld"
         import os
 
