@@ -410,6 +410,91 @@ async def _diagnose(spec_file: str, as_json: bool) -> None:
         sys.exit(1)
 
 
+@cli.command()
+@click.option("--interval", default=30, type=int, help="Poll interval in seconds (default 30).")
+@click.option("--max-retries", default=3, type=int, help="Max self-heal retries per phase.")
+@click.option("--no-auto-heal", is_flag=True, help="Detect drift but don't auto-heal.")
+def drift_watch(interval: int, max_retries: int, no_auto_heal: bool) -> None:
+    """Watch running world for drift and optionally auto-heal (Ctrl+C to stop)."""
+    asyncio.run(_drift_watch(interval, max_retries, no_auto_heal))
+
+
+async def _drift_watch(interval: int, max_retries: int, no_auto_heal: bool) -> None:
+    state = RuntimeState.load()
+    if not state.world_spec:
+        click.echo("No running world found — use `netengine up` first.", err=True)
+        sys.exit(1)
+
+    click.echo(f"Starting drift detection (interval={interval}s, auto-heal={not no_auto_heal})…")
+    click.echo("Press Ctrl+C to stop.\n")
+
+    orchestrator = Orchestrator(state.world_spec, mock_mode=False)
+
+    orchestrator.start_drift_detection(
+        poll_interval_seconds=interval,
+        max_drift_retries=max_retries,
+        auto_heal=not no_auto_heal,
+    )
+
+    try:
+        await orchestrator.start_consumers()
+        try:
+            await asyncio.sleep(float("inf"))
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
+        finally:
+            await orchestrator.consumer_supervisor.stop_all()
+            click.echo("\nDrift detection stopped.")
+    except Exception as exc:
+        click.echo(f"Drift detection error: {exc}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+def drift_status() -> None:
+    """Show current drift status and history."""
+    state = RuntimeState.load()
+
+    if not state.world_spec:
+        click.echo("No running world found — use `netengine up` first.", err=True)
+        sys.exit(1)
+
+    click.echo("\nDrift Status\n")
+
+    if state.last_drift_check_at:
+        check_time = state.last_drift_check_at.isoformat() if hasattr(
+            state.last_drift_check_at, 'isoformat'
+        ) else str(state.last_drift_check_at)
+        click.echo(f"Last check: {check_time}")
+    else:
+        click.echo("Last check: (no checks yet)")
+
+    if state.current_drift_phases:
+        click.echo(f"\nCurrently drifted phases: {', '.join(str(p) for p in state.current_drift_phases)}")
+    else:
+        click.echo("\nCurrently drifted phases: none")
+
+    if state.drift_history:
+        click.echo("\nRecent drift history (last 10 events):")
+        for event in state.drift_history[-10:]:
+            phase = event.get("phase_num", "?")
+            detected = event.get("detected_at", "?")
+            healed = event.get("healed_at")
+            failed = event.get("healing_failed", False)
+
+            if healed:
+                status = f"✓ healed at {healed}"
+            elif failed:
+                error = event.get("error", "unknown error")
+                status = f"✗ healing failed: {error}"
+            else:
+                status = "⧗ healing in progress"
+
+            click.echo(f"  Phase {phase}: detected at {detected}, {status}")
+    else:
+        click.echo("\nDrift history: (no events)")
+
+
 def _print_status(state: RuntimeState) -> None:
     world_name = None
     if state.world_spec and isinstance(state.world_spec, dict):

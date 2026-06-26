@@ -172,6 +172,35 @@ class Orchestrator:
         """Start all registered background consumer tasks."""
         await self.consumer_supervisor.start_all()
 
+    def start_drift_detection(
+        self,
+        poll_interval_seconds: int = 30,
+        max_drift_retries: int = 3,
+        auto_heal: bool = True,
+    ) -> None:
+        """Start drift detection consumer.
+
+        Registers a DriftDetectionController with ConsumerSupervisor so it runs
+        as a background consumer with automatic restart on crash.
+
+        Args:
+            poll_interval_seconds: Time between healthchecks (default 30)
+            max_drift_retries: Max self-heal attempts per phase
+            auto_heal: If True, automatically re-apply diverged phases
+        """
+        from netengine.core.drift_controller import DriftDetectionController
+
+        drift_controller = DriftDetectionController(
+            orchestrator=self,
+            poll_interval_seconds=poll_interval_seconds,
+            max_drift_retries=max_drift_retries,
+            auto_heal=auto_heal,
+        )
+        self.consumer_supervisor.register(
+            "drift_detection",
+            drift_controller.run,
+        )
+
     def _mark_phase_complete(self, phase_num: int, handler: BasePhaseHandler) -> None:
         """Record user-facing phase completion for a completed handler.
 
