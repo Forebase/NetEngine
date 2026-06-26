@@ -1,9 +1,7 @@
 """Monitoring service — runs all probes on schedule and publishes world_health events to pgmq."""
 
 import asyncio
-import json
 import logging
-from typing import Optional
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.diagnostic import DiagnosticRunner, ProbeResult, ProbeStatus, build_runner
