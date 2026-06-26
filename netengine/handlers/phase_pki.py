@@ -223,7 +223,10 @@ class PKIPhaseHandler(BasePhaseHandler):
         This is a hook point for future graceful transition logic.
         When rotation occurs, a new version of the cert is issued.
         """
-        logger.info("preparing_app_cert_rotation", extra={"cn": cn, "current_version": cert_metadata.get("version", 1)})
+        current_version = cert_metadata.get("version", 1)
+        logger.info(
+            "preparing_app_cert_rotation", extra={"cn": cn, "current_version": current_version}
+        )
 
     async def _emit_event(self, context, event_type, payload):
         event = EventEnvelope.create(
