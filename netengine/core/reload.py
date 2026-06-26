@@ -7,14 +7,14 @@ first; any change to them rejects the entire reload before any handler runs.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import Any
 
 from netengine.core.state import RuntimeState
+from netengine.logging import get_logger
 from netengine.spec.models import NetEngineSpec
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Fields that cannot change after bootstrap.  Keyed by dot-path into the spec's
 # model_dump() output; value is a human-readable reason.
