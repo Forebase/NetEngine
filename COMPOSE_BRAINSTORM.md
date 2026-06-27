@@ -5,8 +5,8 @@ A collection of 20+ specialized Docker Compose configurations for different work
 **Status**: ✅ = implemented, — = planned/future
 
 ## Quick Stats
-- **Total Variants**: 20+
-- **Implemented**: 17 compose files
+- **Total Variants**: 30+
+- **Implemented**: 30 compose files
 - **Config/Script Templates**: 10+
 - **Use Cases Covered**: 
   - 🧪 Testing & CI
@@ -26,9 +26,9 @@ A collection of 20+ specialized Docker Compose configurations for different work
 - **docker-compose.dev.yaml** (exists) — Dev lightweight variant
 
 ### Testing & CI
-- **compose.test-minimal.yml** — CI runner: Postgres only, no Keycloak, pgmq, mock mode
-- **compose.test-integration.yml** — Full integration test: Postgres + pgmq + Keycloak + CoreDNS stub
-- **compose.test-network.yml** — Network testing: CoreDNS, nftables lab, network policies
+- **compose.test-minimal.yml** (exists) — CI runner: Postgres only, no Keycloak, pgmq, mock mode
+- **compose.test-integration.yml** ✅ — Full integration test: Postgres + pgmq + Keycloak + CoreDNS stub
+- **compose.test-network.yml** ✅ — Network testing: CoreDNS, nftables lab, network policies
 
 ### Observability & Debugging
 - **compose.observability.yml** ✅ — Stack: Prometheus, Grafana, Loki, Jaeger
@@ -39,29 +39,29 @@ A collection of 20+ specialized Docker Compose configurations for different work
 ### Data & Persistence
 - **compose.backup-recovery.yml** ✅ — Backup/restore: MinIO S3-compatible, WAL archival, PITR testing, backup validation
 - **compose.database-variants.yml** ✅ — Multi-version: Postgres 15, 16, replicas, TimescaleDB, resource-constrained
-- **compose.state-replay.yml** — State file replay: Postgres + volume mount for `netengines_state.json` history
+- **compose.state-replay.yml** ✅ — State file replay: Postgres + volume mount for `netengines_state.json` history
 
 ### Caching & Message Queues
 - **compose.cache-redis.yml** ✅ — Redis: primary + replica + Sentinel HA, metrics exporter
 - **compose.message-queues.yml** ✅ — RabbitMQ, Kafka + Zookeeper, Kafka UI, Redis Streams
 
 ### Identity & OIDC
-- **compose.keycloak-multi-realm.yml** — Keycloak multi-realm testing (platform + multiple org realms)
-- **compose.oauth-provider-test.yml** — Multiple OIDC providers for federation testing
+- **compose.keycloak-multi-realm.yml** ✅ — Keycloak multi-realm testing (platform + multiple org realms)
+- **compose.oauth-provider-test.yml** ✅ — Multiple OIDC providers for federation testing
 
 ### Services & Mail
 - **compose.mail-visual.yml** ✅ — Postfix + Mailhog (visual inbox testing)
-- **compose.storage-multi.yml** — MinIO + S3-compatible endpoints for storage testing
+- **compose.storage-multi.yml** ✅ — MinIO + S3-compatible endpoints for storage testing
 
 ### Network & SSL/TLS
 - **compose.ssl-testing.yml** ✅ — Nginx TLS termination, mTLS, Let's Encrypt, cert monitoring
 - **compose.chaos-network.yml** ✅ — Toxiproxy: latency, jitter, packet loss, connection resets, timeouts
-- **compose.chaos-db.yml** — Postgres slowness, connection limits, failover testing
+- **compose.chaos-db.yml** ✅ — Postgres slowness, connection limits, failover testing
 
 ### Scaling & Load Testing
 - **compose.load-test.yml** ✅ — K6 + Prometheus + Grafana for orchestrated load generation
 - **compose.resource-constrained.yml** ✅ — CPU/memory limits, Alpine minimal images, slow disk/network
-- **compose.benchmarks.yml** — Performance baseline: pgbench, DNS profiler, cert timing
+- **compose.benchmarks.yml** ✅ — Performance baseline: pgbench, DNS profiler, cert timing
 
 ### Security & Audit
 - **compose.audit.yml** ✅ — Postgres pgAudit, audit logs, Loki collection, Grafana dashboards
@@ -71,8 +71,8 @@ A collection of 20+ specialized Docker Compose configurations for different work
 - **compose.dev-hotreload.yml** ✅ — Hot-reload on code changes, debugpy, test watcher, API docs server
 
 ### Federation & Multi-World
-- **compose.multi-world.yml** — Two separate NetEngine instances with DNS federation
-- **compose.world-bridge.yml** — Network bridging between worlds, cross-world lookup
+- **compose.multi-world.yml** ✅ — Two separate NetEngine instances with DNS federation
+- **compose.world-bridge.yml** ✅ — Network bridging between worlds, cross-world lookup
 
 ### In-World Platform Services (13 variants) ✨
 High-level services that run **within** a NetEngine world to provide platform infrastructure.
@@ -97,9 +97,9 @@ High-level services that run **within** a NetEngine world to provide platform in
 - **compose.federation.yml** ✅ — Cross-world federation, peer discovery, user sync
 
 ### Special Scenarios
-- **compose.offline.yml** — Air-gapped setup; no external image pulls, local registries
-- **compose.arm64.yml** — ARM64 variants (if not all services have ARM images)
-- **compose.gpu.yml** — GPU-accelerated services if applicable
+- **compose.offline.yml** ✅ — Air-gapped setup; no external image pulls, local registries
+- **compose.arm64.yml** ✅ — ARM64 variants (if not all services have ARM images)
+- **compose.gpu.yml** ✅ — GPU-accelerated services if applicable
 
 ---
 

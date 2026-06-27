@@ -1,0 +1,183 @@
+version: '3.8'
+
+# Keycloak multi-realm testing environment
+# Use: docker compose -f docker-compose.yml -f compose/compose.keycloak-multi-realm.yml up -d
+# Tests platform realm + multiple org realms for federation scenarios
+
+services:
+  postgres-keycloak-multi:
+    image: postgres:15
+    container_name: netengine_postgres_keycloak_multi
+    environment:
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_test_password
+      POSTGRES_DB: keycloak
+    ports:
+      - "5437:5432"
+    volumes:
+      - postgres_keycloak_multi_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - keycloak-multi-realm
+    restart: unless-stopped
+
+  keycloak-primary:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: netengine_keycloak_primary
+    depends_on:
+      postgres-keycloak-multi:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres-keycloak-multi:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_test_password
+      KC_HOSTNAME: keycloak-primary.platform.internal
+      KC_HTTP_ENABLED: "true"
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: keycloak_test_password
+      KC_PROXY: edge
+      KC_LOG_LEVEL: INFO
+    ports:
+      - "8184:8080"
+    volumes:
+      - keycloak_multi_data:/opt/keycloak/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - keycloak-multi-realm
+    restart: unless-stopped
+
+  keycloak-replica:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: netengine_keycloak_replica
+    depends_on:
+      keycloak-primary:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres-keycloak-multi:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_test_password
+      KC_HOSTNAME: keycloak-replica.platform.internal
+      KC_HTTP_ENABLED: "true"
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: keycloak_test_password
+      KC_PROXY: edge
+      KC_LOG_LEVEL: INFO
+    ports:
+      - "8185:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - keycloak-multi-realm
+    restart: unless-stopped
+
+  # Admin console and realm management tool
+  keycloak-admin-ui:
+    image: alpine:latest
+    container_name: netengine_keycloak_admin_ui
+    command: |
+      sh -c "
+        apk add --no-cache curl jq &&
+        tail -f /dev/null
+      "
+    environment:
+      KEYCLOAK_PRIMARY_URL: http://keycloak-primary:8080
+      KEYCLOAK_REALM_URL: http://keycloak-primary:8080/realms
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: keycloak_test_password
+    depends_on:
+      keycloak-primary:
+        condition: service_healthy
+    networks:
+      - keycloak-multi-realm
+    restart: unless-stopped
+
+  # Test setup container to create realms
+  keycloak-realm-setup:
+    image: curlimages/curl:latest
+    container_name: netengine_keycloak_realm_setup
+    depends_on:
+      keycloak-primary:
+        condition: service_healthy
+    environment:
+      KEYCLOAK_URL: http://keycloak-primary:8080
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: keycloak_test_password
+      KEYCLOAK_REALM: master
+    command: |
+      sh -c "
+        # Get admin token
+        TOKEN=\$$(curl -s -X POST \
+          \$$KEYCLOAK_URL/realms/master/protocol/openid-connect/token \
+          -H 'Content-Type: application/x-www-form-urlencoded' \
+          -d 'client_id=admin-cli' \
+          -d 'username=\$$KEYCLOAK_ADMIN' \
+          -d 'password=\$$KEYCLOAK_ADMIN_PASSWORD' \
+          -d 'grant_type=password' | grep -o '\"access_token\":\"[^\"]*' | cut -d'\"' -f4)
+
+        # Create organization realms (org1, org2, org3)
+        for ORG in org1 org2 org3; do
+          curl -s -X POST \
+            \$$KEYCLOAK_URL/admin/realms \
+            -H 'Content-Type: application/json' \
+            -H \"Authorization: Bearer \$$TOKEN\" \
+            -d '{
+              \"realm\": \"'\$ORG'\",
+              \"enabled\": true,
+              \"displayName\": \"Organization Realm - '\$ORG'\"
+            }' || echo \"Realm \$ORG already exists\"
+        done
+
+        # Create test users
+        for ORG in org1 org2 org3; do
+          for USER in user1 user2; do
+            curl -s -X POST \
+              \$$KEYCLOAK_URL/admin/realms/\$ORG/users \
+              -H 'Content-Type: application/json' \
+              -H \"Authorization: Bearer \$$TOKEN\" \
+              -d '{
+                \"username\": \"'\$USER'\",
+                \"email\": \"'\$USER'@'\$ORG'.local\",
+                \"enabled\": true,
+                \"emailVerified\": true,
+                \"credentials\": [{
+                  \"type\": \"password\",
+                  \"value\": \"test_password_123\",
+                  \"temporary\": false
+                }]
+              }' || echo \"User \$USER in \$ORG already exists\"
+          done
+        done
+
+        echo 'Realms and test users created successfully'
+        sleep infinity
+      "
+    networks:
+      - keycloak-multi-realm
+    restart: unless-stopped
+
+volumes:
+  postgres_keycloak_multi_data:
+  keycloak_multi_data:
+
+networks:
+  keycloak-multi-realm:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.33.0.0/16

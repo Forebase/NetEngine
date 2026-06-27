@@ -1,0 +1,63 @@
+{
+  "httpServer": {
+    "actionHandlers": [
+      {
+        "httpRequest": {
+          "method": "GET",
+          "path": "/oauth2/authorize"
+        },
+        "httpResponse": {
+          "statusCode": 302,
+          "headers": {
+            "Location": ["http://localhost:4180/oauth/callback?code=mock_auth_code&state=test_state"]
+          }
+        }
+      },
+      {
+        "httpRequest": {
+          "method": "POST",
+          "path": "/oauth2/token"
+        },
+        "httpResponse": {
+          "statusCode": 200,
+          "body": {
+            "string": "{\"access_token\":\"mock_access_token\",\"token_type\":\"Bearer\",\"expires_in\":3600,\"refresh_token\":\"mock_refresh_token\"}"
+          },
+          "headers": {
+            "Content-Type": ["application/json"]
+          }
+        }
+      },
+      {
+        "httpRequest": {
+          "method": "GET",
+          "path": "/oauth2/userinfo"
+        },
+        "httpResponse": {
+          "statusCode": 200,
+          "body": {
+            "string": "{\"sub\":\"user123\",\"name\":\"Test User\",\"email\":\"test@example.com\",\"email_verified\":true}"
+          },
+          "headers": {
+            "Content-Type": ["application/json"]
+          }
+        }
+      },
+      {
+        "httpRequest": {
+          "method": "GET",
+          "path": "/.well-known/openid-configuration"
+        },
+        "httpResponse": {
+          "statusCode": 200,
+          "body": {
+            "string": "{\"issuer\":\"http://oauth2-server:1080\",\"authorization_endpoint\":\"http://oauth2-server:1080/oauth2/authorize\",\"token_endpoint\":\"http://oauth2-server:1080/oauth2/token\",\"userinfo_endpoint\":\"http://oauth2-server:1080/oauth2/userinfo\",\"jwks_uri\":\"http://oauth2-server:1080/.well-known/jwks.json\",\"scopes_supported\":[\"openid\",\"profile\",\"email\"],\"response_types_supported\":[\"code\",\"token\"],\"subject_types_supported\":[\"public\"]}"
+          },
+          "headers": {
+            "Content-Type": ["application/json"]
+          }
+        }
+      }
+    ]
+  }
+}

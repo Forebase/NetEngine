@@ -1,0 +1,230 @@
+version: '3.8'
+
+# Database chaos engineering for testing resilience
+# Use: docker compose -f docker-compose.yml -f compose/compose.chaos-db.yml up -d
+# Tests database slowness, connection limits, failover, and failure scenarios
+
+services:
+  postgres-chaos-primary:
+    image: postgres:15
+    container_name: netengine_postgres_chaos_primary
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: chaos_test_password
+      POSTGRES_DB: netengine_chaos
+    # Don't expose directly - use via toxiproxy
+    volumes:
+      - postgres_chaos_primary_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - chaos-db
+    restart: unless-stopped
+
+  postgres-chaos-standby:
+    image: postgres:15
+    container_name: netengine_postgres_chaos_standby
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: chaos_test_password
+      POSTGRES_DB: netengine_chaos
+    volumes:
+      - postgres_chaos_standby_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - chaos-db
+    restart: unless-stopped
+
+  # Toxiproxy for chaos injection on primary
+  toxiproxy-db:
+    image: shopify/toxiproxy:2.4.0
+    container_name: netengine_toxiproxy_db
+    depends_on:
+      postgres-chaos-primary:
+        condition: service_healthy
+    ports:
+      - "8474:8474"  # Toxiproxy API
+      - "5439:5432"  # Proxied Postgres
+    volumes:
+      - ./toxiproxy-db-config.json:/config/toxiproxy.json
+    command: -config /config/toxiproxy.json
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8474/version || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - chaos-db
+    restart: unless-stopped
+
+  # Chaos control interface (HTTP API for scenario management)
+  chaos-controller:
+    image: python:3.13-alpine
+    container_name: netengine_chaos_controller
+    depends_on:
+      toxiproxy-db:
+        condition: service_healthy
+    command: |
+      sh -c "
+        pip install flask requests &&
+        python -c '
+import json
+import requests
+import os
+from flask import Flask, jsonify, request
+
+app = Flask(__name__)
+TOXIPROXY_URL = os.environ.get(\"TOXIPROXY_URL\", \"http://toxiproxy-db:8474\")
+
+@app.route(\"/health\", methods=[\"GET\"])
+def health():
+    return jsonify({\"status\": \"healthy\"}), 200
+
+@app.route(\"/scenarios\", methods=[\"GET\"])
+def list_scenarios():
+    return jsonify({
+        \"scenarios\": [
+            \"latency\", \"jitter\", \"packet_loss\",
+            \"timeout\", \"connection_reset\", \"bandwidth_limit\"
+        ]
+    }), 200
+
+@app.route(\"/chaos/latency\", methods=[\"POST\"])
+def apply_latency():
+    data = request.json
+    latency_ms = data.get(\"latency_ms\", 500)
+    try:
+        resp = requests.post(
+            f\"{TOXIPROXY_URL}/proxies/postgres_chaos/toxics\",
+            json={
+                \"name\": \"latency\",
+                \"type\": \"latency\",
+                \"stream\": \"upstream\",
+                \"attributes\": {\"latency\": latency_ms}
+            }
+        )
+        return jsonify({\"applied\": True, \"latency_ms\": latency_ms}), 200
+    except Exception as e:
+        return jsonify({\"error\": str(e)}), 500
+
+@app.route(\"/chaos/bandwidth\", methods=[\"POST\"])
+def apply_bandwidth_limit():
+    data = request.json
+    rate = data.get(\"rate_kbps\", 100)
+    try:
+        resp = requests.post(
+            f\"{TOXIPROXY_URL}/proxies/postgres_chaos/toxics\",
+            json={
+                \"name\": \"bandwidth\",
+                \"type\": \"bandwidth\",
+                \"stream\": \"downstream\",
+                \"attributes\": {\"rate\": rate}
+            }
+        )
+        return jsonify({\"applied\": True, \"rate_kbps\": rate}), 200
+    except Exception as e:
+        return jsonify({\"error\": str(e)}), 500
+
+@app.route(\"/chaos/disable\", methods=[\"POST\"])
+def disable_chaos():
+    try:
+        resp = requests.delete(
+            f\"{TOXIPROXY_URL}/proxies/postgres_chaos/toxics\"
+        )
+        return jsonify({\"chaos_disabled\": True}), 200
+    except Exception as e:
+        return jsonify({\"error\": str(e)}), 500
+
+if __name__ == \"__main__\":
+    app.run(host=\"0.0.0.0\", port=5555, debug=False)
+' &
+        sleep infinity
+      "
+    environment:
+      TOXIPROXY_URL: http://toxiproxy-db:8474
+    ports:
+      - "5555:5555"
+    networks:
+      - chaos-db
+    restart: unless-stopped
+
+  # Connection pool chaos (PgBouncer with chaos settings)
+  pgbouncer-chaos:
+    image: edoburu/pgbouncer:latest
+    container_name: netengine_pgbouncer_chaos
+    depends_on:
+      postgres-chaos-primary:
+        condition: service_healthy
+    environment:
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_MAX_CLIENT_CONN: 10
+      PGBOUNCER_DEFAULT_POOL_SIZE: 5
+      PGBOUNCER_MIN_POOL_SIZE: 2
+      PGBOUNCER_RESERVE_POOL_SIZE: 1
+      PGBOUNCER_RESERVE_POOL_TIMEOUT: 3
+      PGBOUNCER_MAX_IDLE_TIME: 600
+      PGBOUNCER_CONNECTION_LIFETIME: 3600
+      PGBOUNCER_SERVER_LIFETIME: 3600
+      PGBOUNCER_DATABASE_HOST: postgres-chaos-primary
+      PGBOUNCER_DATABASE_PORT: 5432
+      PGBOUNCER_DATABASE_USER: netengine
+      PGBOUNCER_DATABASE_PASSWORD: chaos_test_password
+      PGBOUNCER_DATABASE_NAME: netengine_chaos
+    ports:
+      - "6432:6432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 6432 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - chaos-db
+    restart: unless-stopped
+
+  # Chaos testing client
+  chaos-test-client:
+    image: python:3.13-alpine
+    container_name: netengine_chaos_test_client
+    depends_on:
+      toxiproxy-db:
+        condition: service_healthy
+      chaos-controller:
+        condition: service_started
+    command: tail -f /dev/null  # Stay alive for manual testing
+    environment:
+      # Via Toxiproxy (with chaos injection)
+      DB_CHAOS_URL: postgresql://netengine:chaos_test_password@toxiproxy-db:5432/netengine_chaos
+
+      # Via PgBouncer (connection pooling)
+      DB_POOLED_URL: postgresql://netengine:chaos_test_password@pgbouncer-chaos:6432/netengine_chaos
+
+      # Direct (no chaos)
+      DB_DIRECT_URL: postgresql://netengine:chaos_test_password@postgres-chaos-primary:5432/netengine_chaos
+
+      # Chaos controller
+      CHAOS_API_URL: http://chaos-controller:5555
+    networks:
+      - chaos-db
+    restart: unless-stopped
+
+volumes:
+  postgres_chaos_primary_data:
+  postgres_chaos_standby_data:
+
+networks:
+  chaos-db:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.36.0.0/16

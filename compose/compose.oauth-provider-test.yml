@@ -1,0 +1,164 @@
+version: '3.8'
+
+# Multiple OIDC providers for federation testing
+# Use: docker compose -f docker-compose.yml -f compose/compose.oauth-provider-test.yml up -d
+# Tests federation scenarios with multiple identity providers
+
+services:
+  postgres-oauth:
+    image: postgres:15
+    container_name: netengine_postgres_oauth
+    environment:
+      POSTGRES_USER: oauth
+      POSTGRES_PASSWORD: oauth_test_password
+      POSTGRES_DB: oauth_providers
+    ports:
+      - "5438:5432"
+    volumes:
+      - postgres_oauth_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oauth"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - oauth-providers
+    restart: unless-stopped
+
+  # Primary OIDC provider (Keycloak)
+  oidc-provider-1:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: netengine_oidc_provider_1
+    depends_on:
+      postgres-oauth:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres-oauth:5432/oauth_providers
+      KC_DB_USERNAME: oauth
+      KC_DB_PASSWORD: oauth_test_password
+      KC_HOSTNAME: oidc-provider-1.local
+      KC_HTTP_ENABLED: "true"
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: provider1_password
+      KC_PROXY: edge
+    ports:
+      - "8186:8080"
+    volumes:
+      - oidc_provider_1_data:/opt/keycloak/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - oauth-providers
+    restart: unless-stopped
+
+  # Secondary OIDC provider (Keycloak with different realm)
+  oidc-provider-2:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: netengine_oidc_provider_2
+    depends_on:
+      postgres-oauth:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres-oauth:5432/oauth_providers
+      KC_DB_USERNAME: oauth
+      KC_DB_PASSWORD: oauth_test_password
+      KC_HOSTNAME: oidc-provider-2.local
+      KC_HTTP_ENABLED: "true"
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: provider2_password
+      KC_PROXY: edge
+    ports:
+      - "8187:8080"
+    volumes:
+      - oidc_provider_2_data:/opt/keycloak/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - oauth-providers
+    restart: unless-stopped
+
+  # OAuth2 Proxy for testing federation flows
+  oauth2-proxy:
+    image: oauth2-proxy/oauth2-proxy:latest
+    container_name: netengine_oauth2_proxy
+    depends_on:
+      oidc-provider-1:
+        condition: service_healthy
+    command:
+      - --http-address=0.0.0.0:4180
+      - --upstream=http://localhost:8080
+      - --provider=oidc
+      - --oidc-issuer-url=http://oidc-provider-1:8080/realms/master
+      - --client-id=oauth2-proxy
+      - --client-secret=oauth2_proxy_secret
+      - --cookie-secure=false
+      - --cookie-domain=localhost
+      - --whitelist-domain=localhost
+      - --skip-jwt-bearer-tokens=true
+    ports:
+      - "4180:4180"
+    networks:
+      - oauth-providers
+    restart: unless-stopped
+
+  # OAuth2 Authorization Server (mock)
+  oauth2-server:
+    image: mockserver/mockserver:latest
+    container_name: netengine_oauth2_server
+    environment:
+      MOCKSERVER_INITIALIZATION_JSON_PATH: /config/mockserver-init.json
+    ports:
+      - "1080:1080"
+    volumes:
+      - ./oauth2-server-config.json:/config/mockserver-init.json
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:1080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - oauth-providers
+    restart: unless-stopped
+
+  # Federation test client
+  federation-client:
+    image: curlimages/curl:latest
+    container_name: netengine_federation_client
+    depends_on:
+      oidc-provider-1:
+        condition: service_healthy
+      oidc-provider-2:
+        condition: service_healthy
+    command: tail -f /dev/null  # Stay alive for manual testing
+    environment:
+      OIDC_PROVIDER_1_URL: http://oidc-provider-1:8080
+      OIDC_PROVIDER_2_URL: http://oidc-provider-2:8080
+      OIDC_CLIENT_ID: federation-test-client
+      OIDC_CLIENT_SECRET: federation_test_secret
+    networks:
+      - oauth-providers
+    restart: unless-stopped
+
+volumes:
+  postgres_oauth_data:
+  oidc_provider_1_data:
+  oidc_provider_2_data:
+
+networks:
+  oauth-providers:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.34.0.0/16

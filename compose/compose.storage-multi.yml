@@ -1,0 +1,213 @@
+version: '3.8'
+
+# Multiple storage backends for testing
+# Use: docker compose -f docker-compose.yml -f compose/compose.storage-multi.yml up -d
+# Tests MinIO S3-compatible endpoints across multiple backends and configurations
+
+services:
+  # Primary MinIO instance (default S3 endpoint)
+  minio-primary:
+    image: minio/minio:latest
+    container_name: netengine_minio_primary
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin_password_123
+    ports:
+      - "9000:9000"  # S3 API
+      - "9001:9001"  # Web console
+    volumes:
+      - minio_primary_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - storage-multi
+    restart: unless-stopped
+
+  # Secondary MinIO instance (regional/zone replica)
+  minio-secondary:
+    image: minio/minio:latest
+    container_name: netengine_minio_secondary
+    command: server /data --console-address ":9002"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin_password_123
+    ports:
+      - "9010:9000"  # S3 API
+      - "9002:9002"  # Web console
+    volumes:
+      - minio_secondary_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - storage-multi
+    restart: unless-stopped
+
+  # Distributed MinIO cluster (3-node)
+  minio-node-1:
+    image: minio/minio:latest
+    container_name: netengine_minio_cluster_node_1
+    command: server --console-address ":9001" http://minio-node-{1...3}/data
+    environment:
+      MINIO_ROOT_USER: cluster_admin
+      MINIO_ROOT_PASSWORD: cluster_password_123
+    volumes:
+      - minio_cluster_data_1:/data
+    ports:
+      - "9020:9000"
+      - "9021:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - storage-multi
+    restart: unless-stopped
+
+  minio-node-2:
+    image: minio/minio:latest
+    container_name: netengine_minio_cluster_node_2
+    command: server --console-address ":9002" http://minio-node-{1...3}/data
+    environment:
+      MINIO_ROOT_USER: cluster_admin
+      MINIO_ROOT_PASSWORD: cluster_password_123
+    volumes:
+      - minio_cluster_data_2:/data
+    ports:
+      - "9030:9000"
+      - "9022:9002"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - storage-multi
+    restart: unless-stopped
+
+  minio-node-3:
+    image: minio/minio:latest
+    container_name: netengine_minio_cluster_node_3
+    command: server --console-address ":9003" http://minio-node-{1...3}/data
+    environment:
+      MINIO_ROOT_USER: cluster_admin
+      MINIO_ROOT_PASSWORD: cluster_password_123
+    volumes:
+      - minio_cluster_data_3:/data
+    ports:
+      - "9040:9000"
+      - "9023:9003"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - storage-multi
+    restart: unless-stopped
+
+  # S3-compatible gateway (LocalStack)
+  localstack:
+    image: localstack/localstack:latest
+    container_name: netengine_localstack_s3
+    ports:
+      - "4566:4566"  # LocalStack API Gateway
+    environment:
+      SERVICES: s3
+      DEBUG: 1
+      DATA_DIR: /tmp/localstack/data
+      DOCKER_HOST: unix:///var/run/docker.sock
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    volumes:
+      - localstack_data:/tmp/localstack
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal s3 ls || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - storage-multi
+    restart: unless-stopped
+
+  # S3 proxy/gateway for protocol testing
+  s3-proxy:
+    image: nginx:alpine
+    container_name: netengine_s3_proxy
+    depends_on:
+      minio-primary:
+        condition: service_healthy
+    volumes:
+      - ./s3-proxy-nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8050:8050"
+    networks:
+      - storage-multi
+    restart: unless-stopped
+
+  # Storage testing client
+  storage-test-client:
+    image: python:3.13-alpine
+    container_name: netengine_storage_test_client
+    depends_on:
+      minio-primary:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    command: |
+      sh -c "
+        pip install boto3 moto &&
+        tail -f /dev/null
+      "
+    environment:
+      # MinIO primary
+      S3_PRIMARY_ENDPOINT: http://minio-primary:9000
+      S3_PRIMARY_ACCESS_KEY: minioadmin
+      S3_PRIMARY_SECRET_KEY: minioadmin_password_123
+
+      # MinIO secondary
+      S3_SECONDARY_ENDPOINT: http://minio-secondary:9000
+      S3_SECONDARY_ACCESS_KEY: minioadmin
+      S3_SECONDARY_SECRET_KEY: minioadmin_password_123
+
+      # LocalStack
+      S3_LOCALSTACK_ENDPOINT: http://localstack:4566
+      S3_LOCALSTACK_ACCESS_KEY: test
+      S3_LOCALSTACK_SECRET_KEY: test
+
+      # Cluster
+      S3_CLUSTER_ENDPOINT: http://minio-node-1:9000
+      S3_CLUSTER_ACCESS_KEY: cluster_admin
+      S3_CLUSTER_SECRET_KEY: cluster_password_123
+    networks:
+      - storage-multi
+    restart: unless-stopped
+
+volumes:
+  minio_primary_data:
+  minio_secondary_data:
+  minio_cluster_data_1:
+  minio_cluster_data_2:
+  minio_cluster_data_3:
+  localstack_data:
+
+networks:
+  storage-multi:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.35.0.0/16
