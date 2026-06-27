@@ -37,7 +37,7 @@ def _minimal_spec(name: str = "test-network") -> dict:
             "ntp": {"enabled": True, "servers": ["pool.ntp.org"]},
             "networks": {
                 "platform": {"type": "bridge", "subnet": "172.20.0.0/16"},
-                "core": {"type": "bridge", "subnet": "10.0.0.0/8"},
+                "core": {"type": "bridge", "subnet": "10.0.0.0/24"},
             },
             "gateway": {"platform_ip": "172.20.0.1", "core_ip": "10.0.0.1"},
         },

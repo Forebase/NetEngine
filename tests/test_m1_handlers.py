@@ -34,7 +34,7 @@ class TestSubstrateHandler:
         assert "platform" in networks
         assert "core" in networks
         assert networks["platform"]["subnet"] == "172.20.0.0/16"
-        assert networks["core"]["subnet"] == "10.0.0.0/8"
+        assert networks["core"]["subnet"] == "10.0.0.0/24"
 
     async def test_execute_configures_ntp(self, phase_context_substrate: PhaseContext) -> None:
         """Substrate handler should configure NTP if enabled."""
