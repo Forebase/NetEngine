@@ -15,14 +15,14 @@ substrate:
   networks:
     platform:
       type: bridge
-      subnet: 172.20.0.0/16
+      subnet: 172.28.0.0/16
       description: "Platform management network"
     core:
       type: bridge
       subnet: 10.0.0.0/8
       description: "In-world core network"
   gateway:
-    platform_ip: 172.20.0.1
+    platform_ip: 172.28.0.1
     core_ip: 10.0.0.1
     description: "Gateway stub"
 
@@ -131,7 +131,7 @@ gateway_portal:
 operator:
   api:
     enabled: true
-    listen_ip: 172.20.0.11
+    listen_ip: 172.28.0.11
     port: 8080
     canonical_name: api.platform.internal
   auth:

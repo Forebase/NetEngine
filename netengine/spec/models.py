@@ -73,7 +73,7 @@ class SubstratePhase(SpecModel):
     ntp: NTPConfig = Field(default_factory=NTPConfig)
     networks: dict[str, NetworkConfig] = Field(
         default_factory=lambda: {
-            "platform": NetworkConfig(subnet="172.20.0.0/16"),
+            "platform": NetworkConfig(subnet="172.28.0.0/16"),
             "core": NetworkConfig(subnet="10.0.0.0/8"),
         }
     )
@@ -514,7 +514,7 @@ class OperatorAPIConfig(SpecModel):
     """Operator API configuration."""
 
     enabled: bool = Field(default=True)
-    listen_ip: str = Field(default="172.20.0.11")
+    listen_ip: str = Field(default="172.28.0.11")
     port: int = Field(default=8080)
     canonical_name: str = Field(default="api.platform.internal")
 
