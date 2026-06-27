@@ -1,6 +1,6 @@
 """Regression tests for Phase 3+ DNS record insertion callers."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
@@ -47,7 +47,7 @@ async def test_phase_3_pki_inserts_ca_dns_record(context_with_zone_files):
 async def test_storage_handler_inserts_minio_dns_record(context_with_zone_files, tmp_path):
     """Phase 8 storage helper should store context and insert DNS records."""
     docker = SimpleNamespace(start_container=AsyncMock())
-    future_expiry = datetime.utcnow() + timedelta(days=365)
+    future_expiry = datetime.now(UTC) + timedelta(days=365)
     pki = SimpleNamespace(
         issue_cert=AsyncMock(return_value=("cert", "key")),
         extract_cert_expiry=MagicMock(return_value=future_expiry),

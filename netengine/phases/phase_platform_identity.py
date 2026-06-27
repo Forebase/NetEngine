@@ -1,6 +1,6 @@
 import os
 import secrets
-from datetime import datetime
+from datetime import datetime, UTC
 
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -42,7 +42,7 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
         expiry = pki.extract_cert_expiry(cert)
         context.runtime_state.issued_certificates["auth.platform.internal"] = {
             "cert_type": "platform_identity",
-            "issued_at": datetime.utcnow().isoformat(),
+            "issued_at": datetime.now(UTC).isoformat(),
             "expires_at": expiry.isoformat(),
             "sans": [],
             "rotated_at": None,
@@ -134,7 +134,7 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
             "platform_realm_id": realm_id,
             "admin_user_id": user_id,
             "platform_client_id": client_id,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
         context.runtime_state.phase_completed["4"] = True
         context.runtime_state.save()
@@ -193,8 +193,8 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
 
         import aiohttp
 
-        start = datetime.utcnow()
-        while (datetime.utcnow() - start).total_seconds() < timeout:
+        start = datetime.now(UTC)
+        while (datetime.now(UTC) - start).total_seconds() < timeout:
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(url, ssl=False) as resp:

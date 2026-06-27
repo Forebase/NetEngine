@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Dict
 
 from netengine.core.pgmq_client import PGMQClient
@@ -71,7 +71,7 @@ class AppHandler:
         expiry = self.pki.extract_cert_expiry(cert)
         self.context.runtime_state.issued_certificates[domain] = {
             "cert_type": "app",
-            "issued_at": datetime.utcnow().isoformat(),
+            "issued_at": datetime.now(UTC).isoformat(),
             "expires_at": expiry.isoformat(),
             "sans": [f"*.{org}.internal"],
             "rotated_at": None,
@@ -99,7 +99,7 @@ class AppHandler:
             "domain": domain,
             "container_id": container_id,
             "client_id": client_id,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
         db = await self._get_db()
         await db.table("app_deployments").upsert(deployment).execute()

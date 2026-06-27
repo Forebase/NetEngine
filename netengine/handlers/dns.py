@@ -12,7 +12,7 @@ Responsibilities:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -73,7 +73,7 @@ class DNSHandler(BasePhaseHandler):
                 "Ensure Phase 0 has run and created networks."
             )
 
-        context.runtime_state.started_at = datetime.utcnow()
+        context.runtime_state.started_at = datetime.now(UTC)
 
         try:
             dns_output: dict[str, Any] = {}
@@ -116,12 +116,12 @@ class DNSHandler(BasePhaseHandler):
             if not dns_healthy:
                 raise DNSError("DNS service verification failed")
 
-            dns_output["deployed_at"] = datetime.utcnow().isoformat()
+            dns_output["deployed_at"] = datetime.now(UTC).isoformat()
 
             context.runtime_state.dns_output = dns_output
             context.runtime_state.phase_completed["1"] = True
             context.runtime_state.phase_completed["2"] = True
-            context.runtime_state.completed_at = datetime.utcnow()
+            context.runtime_state.completed_at = datetime.now(UTC)
 
             logger.info("Phases 1-2: DNS setup complete")
 
@@ -138,7 +138,7 @@ class DNSHandler(BasePhaseHandler):
 
         except Exception as e:
             context.runtime_state.last_error = str(e)
-            context.runtime_state.last_error_at = datetime.utcnow()
+            context.runtime_state.last_error_at = datetime.now(UTC)
             logger.error(f"Phases 1-2 DNS setup failed: {e}")
             raise
 
@@ -235,7 +235,7 @@ class DNSHandler(BasePhaseHandler):
             "soa_primary_ns": root_config.soa_primary_ns,
             "soa_email": root_config.soa_email,
             "serial_policy": root_config.serial_policy.value,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
 
     async def _setup_platform_zone(
@@ -266,7 +266,7 @@ class DNSHandler(BasePhaseHandler):
             "type": platform_config.type,
             "listen_ip": platform_config.listen_ip,
             "ns_server": "ns.platform.internal",
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
 
     # ─────────────────────────────────────────────
@@ -306,7 +306,7 @@ class DNSHandler(BasePhaseHandler):
                 "listen_ip": tld_config.listen_ip,
                 "description": tld_config.description,
                 "ns_server": f"ns{tld_config.listen_ip.split('.')[-1]}.internal",
-                "deployed_at": datetime.utcnow().isoformat(),
+                "deployed_at": datetime.now(UTC).isoformat(),
             }
 
         return tlds_output
@@ -503,7 +503,7 @@ class DNSHandler(BasePhaseHandler):
 
         lines = [
             f"; Root zone: {root_zone['name']}",
-            f"; Generated: {datetime.utcnow().isoformat()}",
+            f"; Generated: {datetime.now(UTC).isoformat()}",
             soa_record,
             f"{root_zone['name']}. NS ns.root.internal.",
             "",
@@ -547,7 +547,7 @@ class DNSHandler(BasePhaseHandler):
 
         lines = [
             f"; Platform zone: {platform_zone['name']}",
-            f"; Generated: {datetime.utcnow().isoformat()}",
+            f"; Generated: {datetime.now(UTC).isoformat()}",
             platform_soa,
             f"{platform_zone['name']}. NS {platform_zone['ns_server']}.",
             f"{platform_zone['ns_server']}. A {platform_zone['listen_ip']}",
@@ -575,7 +575,7 @@ class DNSHandler(BasePhaseHandler):
 
         lines = [
             f"; TLD zone: {tld_name}",
-            f"; Generated: {datetime.utcnow().isoformat()}",
+            f"; Generated: {datetime.now(UTC).isoformat()}",
             tld_soa,
             f"{tld_name}. NS {tld_config['ns_server']}.",
             f"{tld_config['ns_server']}. A {tld_config['listen_ip']}",
@@ -600,7 +600,7 @@ class DNSHandler(BasePhaseHandler):
             Serial number as string
         """
         if policy == "timestamp":
-            return str(int(datetime.utcnow().timestamp()))
+            return str(int(datetime.now(UTC).timestamp()))
         else:
             # Fallback for unknown policy
             return "1"

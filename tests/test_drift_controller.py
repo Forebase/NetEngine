@@ -1,6 +1,6 @@
 """Unit tests for drift detection and self-healing."""
 
-from datetime import datetime
+from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -201,12 +201,12 @@ class TestDriftDetectionController:
         """Test that drift state is persisted to RuntimeState."""
         # Record a drift event
         mock_orchestrator.runtime_state.current_drift_phases = [0, 1]
-        mock_orchestrator.runtime_state.last_drift_check_at = datetime.utcnow()
+        mock_orchestrator.runtime_state.last_drift_check_at = datetime.now(UTC)
 
         # Verify drift history can be updated
         event = {
             "phase_num": 0,
-            "detected_at": datetime.utcnow().isoformat(),
+            "detected_at": datetime.now(UTC).isoformat(),
             "healed_at": None,
             "healing_failed": False,
             "error": None,
@@ -261,7 +261,7 @@ class TestDriftState:
 
     def test_drift_state_creation(self) -> None:
         """Test DriftState creation."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         state = DriftState(
             phase_num=0,
             handler_name="TestHandler",

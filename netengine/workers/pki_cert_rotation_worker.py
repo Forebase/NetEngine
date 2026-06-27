@@ -2,7 +2,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from netengine.core.pgmq_client import PGMQClient
@@ -77,7 +77,7 @@ class PKICertRotationWorker:
         if last_check is None:
             return True
         next_check = last_check + timedelta(hours=rotation_interval_hours)
-        return datetime.utcnow() >= next_check
+        return datetime.now(UTC) >= next_check
 
     def _update_last_check_time(self, state: RuntimeState, cert_type: str) -> None:
         """Update the last check time for a certificate type."""
@@ -85,13 +85,13 @@ class PKICertRotationWorker:
             state.pki_rotation_state = {}
         if "last_check_by_type" not in state.pki_rotation_state:
             state.pki_rotation_state["last_check_by_type"] = {}
-        state.pki_rotation_state["last_check_by_type"][cert_type] = datetime.utcnow()
+        state.pki_rotation_state["last_check_by_type"][cert_type] = datetime.now(UTC)
 
     async def _check_and_rotate_cert_type(
         self, state: RuntimeState, cert_type: str, config: CertTypeRotationConfig
     ) -> None:
         """Check tracked certificates of a type and rotate those expiring within threshold."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         warning_threshold = now + timedelta(days=config.expiry_warning_days)
 
         for cn, cert_metadata in state.issued_certificates.items():
@@ -129,9 +129,9 @@ class PKICertRotationWorker:
                     new_expiry = self.pki_handler.extract_cert_expiry(cert_pem)
                     new_version = cert_metadata.get("version", 1) + 1
 
-                    cert_metadata["issued_at"] = datetime.utcnow().isoformat()
+                    cert_metadata["issued_at"] = datetime.now(UTC).isoformat()
                     cert_metadata["expires_at"] = new_expiry.isoformat()
-                    cert_metadata["rotated_at"] = datetime.utcnow().isoformat()
+                    cert_metadata["rotated_at"] = datetime.now(UTC).isoformat()
                     cert_metadata["version"] = new_version
 
                     # Emit event for monitoring
@@ -169,7 +169,7 @@ class PKICertRotationWorker:
             "cn": cn,
             "cert_type": cert_type,
             "status": status,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "expires_at": expiry_date.isoformat() if expiry_date else None,
             "version": version,
             "error": error,

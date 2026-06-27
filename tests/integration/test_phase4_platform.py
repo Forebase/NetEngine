@@ -4,7 +4,7 @@ Covers execute() behaviour with mocked infrastructure — the interface contract
 (should_skip / healthcheck) is already exercised in test_m3_bootstrap.py.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
@@ -15,7 +15,7 @@ from netengine.phases.phase_platform_identity import PlatformIdentityPhaseHandle
 @pytest.fixture
 def patched_platform_deps(phase_context):
     """Phase context with all Phase 4 external dependencies mocked out."""
-    future_expiry = datetime.utcnow() + timedelta(days=365)
+    future_expiry = datetime.now(UTC) + timedelta(days=365)
     mock_pki = MagicMock()
     mock_pki.issue_cert = AsyncMock(return_value=("CERT-DATA", "KEY-DATA"))
     mock_pki.extract_cert_expiry = MagicMock(return_value=future_expiry)

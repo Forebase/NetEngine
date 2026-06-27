@@ -8,7 +8,7 @@ triggers self-healing by re-running execute() on drifted phases.
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Optional
 
 from netengine.core.orchestrator import Orchestrator
@@ -108,14 +108,14 @@ class DriftDetectionController:
                         {
                             "phase": phase_num,
                             "handler": handler.__class__.__name__,
-                            "detected_at": datetime.utcnow().isoformat(),
+                            "detected_at": datetime.now(UTC).isoformat(),
                         },
                     )
 
             if drift_this_round and self.auto_heal:
                 await self._trigger_self_healing(drift_this_round)
 
-            self.orchestrator.runtime_state.last_drift_check_at = datetime.utcnow()
+            self.orchestrator.runtime_state.last_drift_check_at = datetime.now(UTC)
             self.orchestrator.runtime_state.current_drift_phases = drift_this_round
             self.orchestrator.runtime_state.save()
 
@@ -127,7 +127,7 @@ class DriftDetectionController:
                 "drift.loop_error",
                 {
                     "error": str(e),
-                    "error_at": datetime.utcnow().isoformat(),
+                    "error_at": datetime.now(UTC).isoformat(),
                 },
             )
 
@@ -162,21 +162,21 @@ class DriftDetectionController:
             self.drift_states[phase_num] = DriftState(
                 phase_num=phase_num,
                 handler_name=handler_name,
-                last_healthcheck_at=datetime.utcnow(),
+                last_healthcheck_at=datetime.now(UTC),
                 is_drifted=not is_healthy,
-                drift_detected_at=datetime.utcnow() if not is_healthy else None,
+                drift_detected_at=datetime.now(UTC) if not is_healthy else None,
                 consecutive_drift_count=1 if not is_healthy else 0,
             )
         else:
             state = self.drift_states[phase_num]
-            state.last_healthcheck_at = datetime.utcnow()
+            state.last_healthcheck_at = datetime.now(UTC)
 
             if not is_healthy:
                 if state.is_drifted:
                     state.consecutive_drift_count += 1
                 else:
                     state.is_drifted = True
-                    state.drift_detected_at = datetime.utcnow()
+                    state.drift_detected_at = datetime.now(UTC)
                     state.consecutive_drift_count = 1
             else:
                 if state.is_drifted:
@@ -242,13 +242,13 @@ class DriftDetectionController:
                 "drift.self_healed",
                 {
                     "phase": phase_num,
-                    "healed_at": datetime.utcnow().isoformat(),
+                    "healed_at": datetime.now(UTC).isoformat(),
                 },
             )
 
             if drift_state:
                 drift_state.self_healing_attempted = True
-                drift_state.last_self_heal_at = datetime.utcnow()
+                drift_state.last_self_heal_at = datetime.now(UTC)
                 drift_state.last_self_heal_error = None
 
             self.orchestrator.runtime_state.save()
@@ -263,7 +263,7 @@ class DriftDetectionController:
                 {
                     "phase": phase_num,
                     "error": str(e),
-                    "failed_at": datetime.utcnow().isoformat(),
+                    "failed_at": datetime.now(UTC).isoformat(),
                 },
             )
 
