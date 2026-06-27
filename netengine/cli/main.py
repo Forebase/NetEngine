@@ -329,9 +329,9 @@ async def _down(yes: bool, dry_run: bool) -> None:
     # --- Zone files ---
     import shutil
 
-    from netengine.handlers.context import DEFAULT_ZONE_DIR
+    from netengine.handlers.context import default_zone_dir
 
-    zone_dir = Path(os.environ.get("NETENGINE_ZONE_DIR", DEFAULT_ZONE_DIR))
+    zone_dir = Path(os.environ.get("NETENGINE_ZONE_DIR", default_zone_dir()))
     if zone_dir.exists():
         label = f"zone-files:{zone_dir}"
         if dry_run:

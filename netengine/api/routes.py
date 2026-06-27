@@ -227,6 +227,27 @@ class OrgAdmitRequest(BaseModel):
     and_profile: str = "business"
 
 
+@router.get("/orgs")
+async def list_orgs(user: dict = Depends(require_auth)) -> Any:
+    """List all organisations in the world registry."""
+    from netengine.handlers.world_registry_handler import WorldRegistryHandler
+
+    handler = WorldRegistryHandler()
+    return await handler.list_orgs()
+
+
+@router.get("/orgs/{org}")
+async def get_org(org: str, user: dict = Depends(require_auth)) -> Any:
+    """Return a single organisation by name."""
+    from netengine.handlers.world_registry_handler import WorldRegistryHandler
+
+    handler = WorldRegistryHandler()
+    result = await handler.get_org(org)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Org {org} not found")
+    return result
+
+
 @router.post("/orgs")
 async def admit_org(body: OrgAdmitRequest, user: dict = Depends(require_auth)) -> dict[str, Any]:
     """Admit a new organisation to the world registry and trigger provisioning."""
@@ -239,6 +260,56 @@ async def admit_org(body: OrgAdmitRequest, user: dict = Depends(require_auth)) -
         and_profile=body.and_profile,
     )
     return {"status": "admitted", "org": body.name}
+
+
+class OrgUpdateRequest(BaseModel):
+    capabilities: list[str] = []
+    and_profile: str = "business"
+
+
+@router.put("/orgs/{org}")
+async def update_org(
+    org: str, body: OrgUpdateRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Update an organisation's capabilities and AND profile."""
+    from netengine.handlers.world_registry_handler import WorldRegistryHandler
+
+    handler = WorldRegistryHandler()
+    existing = await handler.get_org(org)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"Org {org} not found")
+    await handler.update_org(org, body.capabilities, body.and_profile)
+    return {"status": "updated", "org": org}
+
+
+class OrgRemoveRequest(BaseModel):
+    confirm: bool = False
+
+
+@router.delete("/orgs/{org}")
+async def remove_org(
+    org: str, body: OrgRemoveRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Remove an organisation from the world registry.
+
+    Persistent worlds require confirm=true in the request body.
+    """
+    state = RuntimeState.load()
+    if state.world_spec:
+        raw_lifecycle = (state.world_spec.get("metadata") or {}).get("lifecycle", "ephemeral")
+        if raw_lifecycle == "persistent" and not body.confirm:
+            raise HTTPException(
+                status_code=409,
+                detail="Org removal from a persistent world requires confirm=true",
+            )
+
+    from netengine.handlers.world_registry_handler import WorldRegistryHandler
+
+    handler = WorldRegistryHandler()
+    removed = await handler.remove_org(org)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"Org {org} not found")
+    return {"status": "removed", "org": org}
 
 
 class AppDeployRequest(BaseModel):
@@ -281,6 +352,77 @@ async def deploy_app(
 
 
 # ─────────────────────────────────────────────
+# ANDs
+# ─────────────────────────────────────────────
+
+
+class ANDCreateRequest(BaseModel):
+    name: str
+    org: str
+    profile: str = "business"
+    dns_suffix: str = ""
+
+
+@router.get("/ands")
+async def list_ands(user: dict = Depends(require_auth)) -> dict[str, Any]:
+    """List provisioned AND instances from runtime state."""
+    state = RuntimeState.load()
+    ands_out = state.ands_output or {}
+    return {"ands": ands_out.get("instances", [])}
+
+
+@router.post("/ands")
+async def create_and(
+    body: ANDCreateRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Provision a new AND for an org."""
+    from netengine.core.supabase_client import get_db
+
+    db = await get_db()
+    org_result = await db.table("world_registry").select("org_name").eq("org_name", body.org).execute()
+    if not org_result.data:
+        raise HTTPException(status_code=404, detail=f"Org {body.org} not found in world registry")
+
+    dns_suffix = body.dns_suffix or f"{body.org}.internal"
+    record = {
+        "and_name": body.name,
+        "org_name": body.org,
+        "profile": body.profile,
+        "dns_suffix": dns_suffix,
+    }
+    await db.table("and_instances").upsert(record).execute()
+
+    state = RuntimeState.load()
+    ands_out = state.ands_output or {}
+    instances: list[dict[str, Any]] = ands_out.get("instances", [])
+    if not any(i.get("name") == body.name for i in instances):
+        instances.append(record)
+        ands_out["instances"] = instances
+        state.ands_output = ands_out
+        state.save()
+
+    return {"status": "provisioned", "and": body.name, "org": body.org, "dns_suffix": dns_suffix}
+
+
+@router.delete("/ands/{and_name}")
+async def remove_and(and_name: str, user: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Remove an AND instance."""
+    from netengine.core.supabase_client import get_db
+
+    db = await get_db()
+    await db.table("and_instances").delete().eq("and_name", and_name).execute()
+
+    state = RuntimeState.load()
+    ands_out = state.ands_output or {}
+    instances = [i for i in ands_out.get("instances", []) if i.get("and_name") != and_name]
+    ands_out["instances"] = instances
+    state.ands_output = ands_out
+    state.save()
+
+    return {"status": "removed", "and": and_name}
+
+
+# ─────────────────────────────────────────────
 # Registry
 # ─────────────────────────────────────────────
 
@@ -292,6 +434,41 @@ async def list_domains(user: dict = Depends(require_auth)) -> Any:
     db = await get_db()
     result = await db.table("domain_records").select("*").execute()
     return result.data
+
+
+class DomainRegisterRequest(BaseModel):
+    domain: str
+    org: str
+    record_type: str = "A"
+    value: str = ""
+
+
+@router.post("/registry/domains")
+async def register_domain(
+    body: DomainRegisterRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Register a domain in the domain registry."""
+    from netengine.core.supabase_client import get_db
+
+    db = await get_db()
+    record = {
+        "domain": body.domain,
+        "org_name": body.org,
+        "record_type": body.record_type,
+        "value": body.value,
+    }
+    await db.table("domain_records").upsert(record).execute()
+    return {"status": "registered", "domain": body.domain, "org": body.org}
+
+
+@router.delete("/registry/domains/{domain:path}")
+async def remove_domain(domain: str, user: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Remove a domain from the domain registry."""
+    from netengine.core.supabase_client import get_db
+
+    db = await get_db()
+    await db.table("domain_records").delete().eq("domain", domain).execute()
+    return {"status": "removed", "domain": domain}
 
 
 @router.get("/registry/addresses")

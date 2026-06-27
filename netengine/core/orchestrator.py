@@ -135,6 +135,11 @@ class Orchestrator:
         Raises:
             RuntimeError: If any phase fails or dependency validation fails
         """
+        # Persist the spec at bootstrap start so the running world is always queryable
+        if not self.runtime_state.world_spec:
+            self.runtime_state.world_spec = self.spec.model_dump()
+            self.runtime_state.save()
+
         for phase_num, handler_class in self.PHASE_HANDLERS:
             if phase_num > up_to_phase:
                 break
