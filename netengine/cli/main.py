@@ -582,5 +582,198 @@ def _print_status(state: RuntimeState) -> None:
         click.echo(f"step-ca container: {state.step_ca_container_id}")
 
 
+_INIT_SPEC_TEMPLATE = """\
+metadata:
+  name: {name}
+  version: "1.0"
+  lifecycle: {lifecycle}
+
+substrate:
+  orchestrator: swarm
+  ntp:
+    enabled: true
+    servers:
+      - pool.ntp.org
+  networks:
+    platform:
+      type: bridge
+      subnet: 172.28.0.0/16
+      description: "Platform management network"
+    core:
+      type: bridge
+      subnet: 10.0.0.0/24
+      description: "In-world core network"
+  gateway:
+    platform_ip: 172.28.0.1
+    core_ip: 10.0.0.1
+    description: "Gateway stub"
+
+dns:
+  root:
+    enabled: true
+    type: authoritative
+    server: coredns
+    listen_ip: 10.0.0.2
+    soa_primary_ns: root.internal
+    soa_email: admin.internal
+    serial_policy: timestamp
+  platform_zone:
+    name: platform.internal
+    type: authoritative
+    listen_ip: 10.0.0.3
+  tlds:
+    - name: internal
+      description: "Default in-world TLD"
+      type: authoritative
+      listen_ip: 10.0.0.4
+
+pki:
+  root_ca:
+    cn: "{name} Root CA"
+    o: "{name}"
+    c: "US"
+    key_storage_mode: ephemeral
+    cert_lifetime_days: 3650
+  acme:
+    enabled: true
+    listen_ip: 10.0.0.6
+    canonical_name: ca.platform.internal
+  dnssec_enabled: true
+  dnssec_ksk_lifetime_days: 365
+  dnssec_zsk_lifetime_days: 30
+
+identity_platform:
+  oidc_provider: keycloak
+  listen_ip: 10.0.0.7
+  canonical_name: auth.platform.internal
+  realm_name: platform
+  admin_user:
+    username: admin
+    email: admin@platform.internal
+  scopes:
+    - "netengines:read"
+    - "netengines:write"
+    - "netengines:admin"
+
+world_registry:
+  enabled: true
+  listen_ip: 10.0.0.8
+  canonical_name: registry.platform.internal
+  organizations: []
+  operators: []
+  whois:
+    enabled: true
+    listen_ip: 10.0.0.9
+    port: 43
+
+domain_registry:
+  enabled: true
+  listen_ip: 10.0.0.10
+  canonical_name: domainreg.platform.internal
+  tld_delegations: []
+  address_space: []
+  registrar:
+    enabled: true
+    listen_ip: 10.0.0.11
+    canonical_name: registrar.platform.internal
+
+identity_inworld:
+  oidc_provider: keycloak
+  listen_ip: 10.0.0.12
+  canonical_name: auth.internal
+  realm_name: inworld
+  org_users: []
+  scopes:
+    - profile
+    - email
+    - openid
+
+ands:
+  profiles: {{}}
+  instances: []
+
+world_services:
+  mail:
+    enabled: false
+  storage:
+    enabled: false
+
+org_apps:
+  enabled: true
+  catalog: []
+  deployments: []
+
+gateway_portal:
+  enabled: true
+  real_internet:
+    mode: isolated
+  cross_world:
+    mode: none
+
+operator:
+  api:
+    enabled: true
+    listen_ip: 172.28.0.11
+    port: 8080
+    canonical_name: api.platform.internal
+  auth:
+    provider: oidc
+    issuer: "https://auth.platform.internal/realms/platform"
+    required_scope: "netengines:read"
+"""
+
+
+@cli.command()
+@click.option("--name", default=None, help="World name (e.g. my-world).")
+@click.option(
+    "--lifecycle",
+    type=click.Choice(["ephemeral", "persistent"]),
+    default=None,
+    help="World lifecycle mode.",
+)
+@click.option("--output", "-o", default=None, help="Output file path (default: <name>.yaml).")
+@click.option(
+    "--yes", "-y", is_flag=True, default=False, help="Accept all defaults without prompting."
+)
+def init(name: str | None, lifecycle: str | None, output: str | None, yes: bool) -> None:
+    """Scaffold a new world spec file and print next steps."""
+    if not name:
+        if yes:
+            name = "my-world"
+        else:
+            name = click.prompt("World name", default="my-world")
+
+    if not lifecycle:
+        if yes:
+            lifecycle = "ephemeral"
+        else:
+            lifecycle = click.prompt(
+                "Lifecycle",
+                type=click.Choice(["ephemeral", "persistent"]),
+                default="ephemeral",
+            )
+
+    out_path = Path(output) if output else Path(f"{name}.yaml")
+
+    if out_path.exists() and not yes:
+        click.confirm(f"{out_path} already exists — overwrite?", abort=True)
+
+    spec_content = _INIT_SPEC_TEMPLATE.format(name=name, lifecycle=lifecycle)
+    out_path.write_text(spec_content)
+
+    click.echo(f"\nCreated {out_path}\n")
+    click.echo("Next steps:\n")
+    click.echo("  1. Start a local Postgres + pgmq instance:")
+    click.echo("       docker compose up -d db\n")
+    click.echo("  2. Boot your world:")
+    click.echo(f"       netengine up {out_path}\n")
+    click.echo("  3. Check status at any time:")
+    click.echo("       netengine status\n")
+    click.echo("  4. Tear down when done:")
+    click.echo("       netengine down\n")
+    click.echo(f"Edit {out_path} to add orgs, ANDs, mail, storage, and more.")
+    click.echo("See examples/ for reference specs.")
+
+
 if __name__ == "__main__":
     cli()

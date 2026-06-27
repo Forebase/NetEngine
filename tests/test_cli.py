@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import click
+import pytest
 from click.testing import CliRunner
 
 from netengine.cli import main as cli_main
@@ -84,6 +85,68 @@ def test_up_supports_environment_loader_option():
     spec_arg = mock_orchestrator_class.call_args.args[0]
     assert spec_arg.metadata.name == "minimal-example"
     mock_orchestrator.execute_phases.assert_awaited_once_with(up_to_phase=9)
+
+
+def test_init_creates_spec_file(tmp_path: Path) -> None:
+    """The init command should write a valid parseable spec and print next steps."""
+    from netengine.spec.loader import load_spec
+
+    out_file = tmp_path / "hello.yaml"
+    result = CliRunner().invoke(
+        cli_main.cli,
+        ["init", "--name", "hello", "--lifecycle", "ephemeral", "--output", str(out_file), "--yes"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert out_file.exists()
+    spec = load_spec(str(out_file))
+    assert spec.metadata.name == "hello"
+    assert "netengine up" in result.output
+    assert "netengine status" in result.output
+
+
+def test_init_uses_name_as_default_output_path(tmp_path: Path) -> None:
+    """Without --output the init command writes to <name>.yaml in cwd."""
+    import os
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        result = CliRunner().invoke(
+            cli_main.cli,
+            ["init", "--name", "my-world", "--lifecycle", "ephemeral", "--yes"],
+        )
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / "my-world.yaml").exists()
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_init_aborts_on_existing_file_without_yes(tmp_path: Path) -> None:
+    """Without --yes the init command should prompt before overwriting an existing file."""
+    out_file = tmp_path / "world.yaml"
+    out_file.write_text("original")
+
+    result = CliRunner().invoke(
+        cli_main.cli,
+        ["init", "--name", "world", "--lifecycle", "ephemeral", "--output", str(out_file)],
+        input="n\n",
+    )
+
+    assert result.exit_code != 0
+    assert out_file.read_text() == "original"
+
+
+@pytest.mark.parametrize("lifecycle", ["ephemeral", "persistent"])
+def test_init_lifecycle_propagates_to_spec(tmp_path: Path, lifecycle: str) -> None:
+    """The lifecycle flag should appear verbatim in the written spec."""
+    out_file = tmp_path / "world.yaml"
+    CliRunner().invoke(
+        cli_main.cli,
+        ["init", "--name", "world", "--lifecycle", lifecycle, "--output", str(out_file), "--yes"],
+    )
+    content = out_file.read_text()
+    assert f"lifecycle: {lifecycle}" in content
 
 
 def test_up_supports_repeatable_set_overrides():
