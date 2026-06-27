@@ -569,6 +569,7 @@ async def list_realms(user: dict = Depends(require_auth)) -> dict[str, Any]:
 # Event queue / DLQ
 # ─────────────────────────────────────────────
 
+
 @router.get("/queues")
 async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
     """Return pgmq queue depths and DLQ state for all handler boundaries."""
