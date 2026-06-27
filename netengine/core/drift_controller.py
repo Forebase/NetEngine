@@ -289,9 +289,12 @@ class DriftDetectionController:
             if phase_num in healed_phases:
                 continue
 
-            phase_key = str(changed_phase_num)
+            # Only re-heal phases that come after the changed phase and are completed
+            if phase_num <= changed_phase_num:
+                continue
 
-            if not self.orchestrator.runtime_state.phase_completed.get(phase_key):
+            candidate_key = str(phase_num)
+            if not self.orchestrator.runtime_state.phase_completed.get(candidate_key):
                 continue
 
             handler = handler_class()
