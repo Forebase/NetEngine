@@ -308,9 +308,8 @@ class SubstrateHandler(BasePhaseHandler):
                     if "Pool overlaps" in str(e) or "overlap" in str(e).lower():
                         raise SubstrateError(
                             f"Cannot create Docker network '{name}' with subnet {subnet}: "
-                            f"that address range is already in use by another Docker network. "
-                            f"Run `docker network ls` and `docker network inspect <name>` to find the "
-                            f"conflicting network, then either remove it with `docker network rm <name>` "
+                            f"that address range is already in use by another network. "
+                            f"Run `docker network ls` to find the conflict, then remove it "
                             f"or choose a different subnet for '{name}' in your world spec."
                         ) from e
                     raise
