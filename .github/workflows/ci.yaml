@@ -110,8 +110,6 @@ jobs:
 
       - name: Run integration tests
         run: poetry run pytest tests/integration/ -v --tb=short
-        env:
-          NETENGINE_MOCK: "1"
 
   typecheck:
     name: Type Checking
