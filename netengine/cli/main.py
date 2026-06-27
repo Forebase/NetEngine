@@ -582,5 +582,167 @@ def _print_status(state: RuntimeState) -> None:
         click.echo(f"step-ca container: {state.step_ca_container_id}")
 
 
+@cli.command()
+@click.option("--name", default=None, help="World name (pre-fills wizard prompt).")
+@click.option(
+    "--lifecycle",
+    type=click.Choice(["ephemeral", "persistent"]),
+    default=None,
+    help="World lifecycle mode (pre-fills wizard prompt).",
+)
+@click.option(
+    "--preset",
+    type=click.Choice(["minimal", "single-org", "dev-sandbox"]),
+    default=None,
+    help=(
+        "Skip sections of the wizard with a preset. "
+        "minimal: no orgs, services off. "
+        "single-org: one org with services and Gitea. "
+        "dev-sandbox: two orgs, all services, dev apps."
+    ),
+)
+@click.option("--output", "-o", default=None, help="Output file path (default: <name>.yaml).")
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    default=False,
+    help="Accept all defaults without prompting (useful for CI/scripts).",
+)
+def init(
+    name: str | None,
+    lifecycle: str | None,
+    preset: str | None,
+    output: str | None,
+    yes: bool,
+) -> None:
+    """Interactively scaffold a new world spec — DNS, PKI, orgs, services, and apps.
+
+    \b
+    Preset modes (--preset):
+      minimal     Bare-bones spec — no orgs, services off
+      single-org  One org with mail, storage, and Gitea
+      dev-sandbox Two orgs, all services, Gitea + Mailpit
+
+    \b
+    Without a preset the full wizard runs, covering:
+      • World identity and lifecycle
+      • Network subnets and internet isolation mode
+      • Certificate authority details (CN, org, country, lifetime, CRL/OCSP)
+      • Platform administrator account
+      • Organisations with AND profiles, capabilities, and users
+      • Extra TLDs
+      • Mail (Postfix) and storage (MinIO) services
+      • Org app catalog (Gitea, Mailpit)
+
+    The generated spec is validated against the Pydantic models before writing.
+    """
+    from netengine.cli.init_wizard import WorldConfig, build_spec_yaml, run_wizard
+    from netengine.spec.loader import load_spec
+
+    # When --output is explicit we know the path before the wizard runs — check early
+    # so the user isn't asked to fill in the whole wizard only to have it abort.
+    if output and not yes:
+        early_path = Path(output)
+        if early_path.exists():
+            click.confirm(f"{early_path} already exists — overwrite?", abort=True)
+
+    try:
+        cfg: WorldConfig = run_wizard(preset=preset, yes=yes, name=name, lifecycle=lifecycle)
+    except click.Abort:
+        click.echo("\nAborted.", err=True)
+        return
+
+    out_path = Path(output) if output else Path(f"{cfg.name}.yaml")
+
+    # When --output was not set, we now know the name-derived path — check it here.
+    if not output and out_path.exists() and not yes:
+        click.confirm(f"\n{out_path} already exists — overwrite?", abort=True)
+
+    spec_yaml = build_spec_yaml(cfg)
+
+    # Validate before writing
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tmp:
+        tmp.write(spec_yaml)
+        tmp_path = tmp.name
+
+    try:
+        load_spec(tmp_path)
+    except Exception as exc:
+        import os as _os
+
+        _os.unlink(tmp_path)
+        click.echo(f"\nSpec validation failed — please report this as a bug:\n  {exc}", err=True)
+        raise SystemExit(1) from exc
+
+    import os as _os
+
+    _os.unlink(tmp_path)
+    out_path.write_text(spec_yaml)
+
+    _print_init_summary(cfg, out_path)
+
+
+def _print_init_summary(cfg: "Any", out_path: Path) -> None:
+    from netengine.cli.init_wizard import WorldConfig
+
+    cfg = cfg  # type: WorldConfig
+    click.echo(
+        f"\n{click.style('✓', fg='green')} Created {click.style(str(out_path), bold=True)}\n"
+    )
+
+    # What was configured
+    click.echo(click.style("World summary:", fg="cyan"))
+    click.echo(f"  Name:       {cfg.name}")
+    click.echo(f"  Lifecycle:  {cfg.lifecycle}")
+    if cfg.environment:
+        click.echo(f"  Env:        {cfg.environment}")
+    click.echo(f"  Subnets:    platform={cfg.platform_subnet}  core={cfg.core_subnet}")
+    click.echo(f"  Internet:   {cfg.internet_mode}")
+
+    if cfg.orgs:
+        click.echo(f"\n  Organisations ({len(cfg.orgs)}):")
+        for org in cfg.orgs:
+            user_count = len(org.users)
+            click.echo(f"    • {org.name:<20} profile={org.and_profile}  users={user_count}")
+    else:
+        click.echo("\n  Organisations: none (add later with `netengine reload`)")
+
+    services = []
+    if cfg.mail_enabled:
+        services.append(f"mail (quota={cfg.mail_quota_mb}MB, DMARC={cfg.dmarc_policy})")
+    if cfg.storage_enabled:
+        services.append(f"storage ({', '.join(cfg.storage_buckets)})")
+    if services:
+        click.echo(f"\n  Services: {', '.join(services)}")
+    else:
+        click.echo("\n  Services: none")
+
+    apps = []
+    if cfg.gitea_enabled:
+        apps.append("gitea")
+    if cfg.mailpit_enabled:
+        apps.append("mailpit")
+    if apps:
+        click.echo(f"  Apps:     {', '.join(apps)}")
+
+    click.echo(click.style("\nNext steps:", fg="cyan"))
+    click.echo("\n  1. Start local Postgres + pgmq:")
+    click.echo("       docker compose up -d db\n")
+    click.echo("  2. Boot your world:")
+    click.echo(f"       netengine up {out_path}\n")
+    click.echo("  3. Check phase status:")
+    click.echo("       netengine status\n")
+    click.echo("  4. Diagnose running services:")
+    click.echo(f"       netengine diagnose {out_path}\n")
+    click.echo("  5. Tear down when done:")
+    click.echo("       netengine down\n")
+    click.echo(
+        f"Edit {out_path} directly or use `netengine reload {out_path}` to apply changes live."
+    )
+
+
 if __name__ == "__main__":
     cli()
