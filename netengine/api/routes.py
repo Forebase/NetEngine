@@ -16,9 +16,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from netengine.api.auth import require_admin, require_auth
-from netengine.events.queues import PRIMARY_QUEUES
 from netengine.core.reload import ReloadResult, apply_reload, check_immutability, compute_diff
 from netengine.core.state import RuntimeState
+from netengine.events.queues import PRIMARY_QUEUES
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import SpecLoadError, load_spec
