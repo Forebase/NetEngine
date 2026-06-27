@@ -104,5 +104,5 @@ jobs:
       - name: Install dependencies
         run: poetry install
 
-      - name: Type check with mypy (strict mode)
-        run: poetry run mypy netengine --strict
+      - name: Type check with mypy
+        run: poetry run mypy netengine --config-file pyproject.toml

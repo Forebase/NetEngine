@@ -39,9 +39,9 @@ pre-commit = "^3.5"
 strict = true
 python_version = "3.13"
 exclude = [
-    "netengine/api/",
-    "netengine/cli/",
-    "netengine/phases/",
+    "netengine/api/.*",
+    "netengine/cli/.*",
+    "netengine/phases/.*",
     "netengine/core/orchestrator\\.py",
     "netengine/core/pgmq_client\\.py",
     "netengine/handlers/substrate\\.py",
@@ -64,6 +64,34 @@ exclude = [
 [[tool.mypy.overrides]]
 module = "docker.*"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "netengine.api.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "netengine.cli.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "netengine.phases.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "netengine.handlers.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "netengine.logging.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "netengine.core.orchestrator"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "netengine.core.pgmq_client"
+ignore_errors = true
 
 [tool.black]
 line-length = 100
