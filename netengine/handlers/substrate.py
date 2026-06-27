@@ -295,14 +295,25 @@ class SubstrateHandler(BasePhaseHandler):
                 net = client.networks.get(name)
                 return net.id
             except docker_lib.errors.NotFound:
-                net = client.networks.create(
-                    name=name,
-                    driver=driver if driver != "overlay" else "overlay",
-                    ipam=docker_lib.types.IPAMConfig(
-                        pool_configs=[docker_lib.types.IPAMPool(subnet=subnet)]
-                    ),
-                )
-                return net.id
+                try:
+                    net = client.networks.create(
+                        name=name,
+                        driver=driver if driver != "overlay" else "overlay",
+                        ipam=docker_lib.types.IPAMConfig(
+                            pool_configs=[docker_lib.types.IPAMPool(subnet=subnet)]
+                        ),
+                    )
+                    return net.id
+                except docker_lib.errors.APIError as e:
+                    if "Pool overlaps" in str(e) or "overlap" in str(e).lower():
+                        raise SubstrateError(
+                            f"Cannot create Docker network '{name}' with subnet {subnet}: "
+                            f"that address range is already in use by another Docker network. "
+                            f"Run `docker network ls` and `docker network inspect <name>` to find the "
+                            f"conflicting network, then either remove it with `docker network rm <name>` "
+                            f"or choose a different subnet for '{name}' in your world spec."
+                        ) from e
+                    raise
 
         return await asyncio.to_thread(_sync)
 

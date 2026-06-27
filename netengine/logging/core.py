@@ -281,7 +281,7 @@ class LoggerFactory:
             sys.stdout,
             format=formatter,
             level=config.LOG_LEVEL,
-            colorize=True,
+            colorize=not config.SERIALIZE_JSON,
             backtrace=config.INCLUDE_TRACEBACK,
             diagnose=config.DEBUG,
             filter=noise_filter,
