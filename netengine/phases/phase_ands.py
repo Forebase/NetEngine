@@ -12,7 +12,7 @@ Responsibilities:
 import asyncio
 import ipaddress
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 from netengine.events.schema import EventEnvelope
@@ -64,7 +64,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
                 "Ensure address pools are created."
             )
 
-        context.runtime_state.started_at = datetime.utcnow()
+        context.runtime_state.started_at = datetime.now(UTC)
 
         try:
             ands_output: dict[str, Any] = {}
@@ -120,10 +120,10 @@ class ANDsPhaseHandler(BasePhaseHandler):
             ands_output["ands_provisioned"] = ands_provisioned
             ands_output["address_allocations"] = address_allocations
             ands_output["profiles_used"] = list(profiles_used)
-            ands_output["deployed_at"] = datetime.utcnow().isoformat()
+            ands_output["deployed_at"] = datetime.now(UTC).isoformat()
 
             context.runtime_state.ands_output = ands_output
-            context.runtime_state.completed_at = datetime.utcnow()
+            context.runtime_state.completed_at = datetime.now(UTC)
 
             logger.info(f"Phase 7 complete: {len(ands_provisioned)} ANDs provisioned")
 
@@ -146,7 +146,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
 
         except Exception as e:
             context.runtime_state.last_error = str(e)
-            context.runtime_state.last_error_at = datetime.utcnow()
+            context.runtime_state.last_error_at = datetime.now(UTC)
             logger.error(f"Phase 7 setup failed: {e}")
             raise
 
@@ -294,7 +294,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
             "gateway_ip": gateway_ip,
             "bridge_name": bridge_name,
             "dns_suffix": dns_suffix,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
 
         try:

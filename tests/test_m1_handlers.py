@@ -3,7 +3,7 @@
 Tests the execute/healthcheck/should_skip interface for Phase 0 and Phases 1-2.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from netengine.errors import DNSError
 from netengine.handlers.context import PhaseContext
@@ -48,9 +48,9 @@ class TestSubstrateHandler:
     async def test_execute_sets_timestamps(self, phase_context_substrate: PhaseContext) -> None:
         """Substrate handler should set started_at and completed_at timestamps."""
         handler = SubstrateHandler()
-        before = datetime.utcnow()
+        before = datetime.now(UTC)
         await handler.execute(phase_context_substrate)
-        after = datetime.utcnow()
+        after = datetime.now(UTC)
 
         assert phase_context_substrate.runtime_state.started_at is not None
         assert phase_context_substrate.runtime_state.completed_at is not None

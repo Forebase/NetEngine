@@ -52,10 +52,11 @@ def record_phase(phase_num: int) -> Generator[None, None, None]:
     start = time.perf_counter()
     try:
         yield
-        phase_duration_seconds.labels(phase_num=str(phase_num)).observe(time.perf_counter() - start)
     except Exception:
         phase_errors_total.labels(phase_num=str(phase_num)).inc()
         raise
+    finally:
+        phase_duration_seconds.labels(phase_num=str(phase_num)).observe(time.perf_counter() - start)
 
 
 def record_healthcheck_failure(phase_num: int) -> None:
