@@ -155,9 +155,7 @@ class TestDriftDetectionIntegration:
 
         # Patch orchestrator.PHASE_HANDLERS to return our mock handler
         with patch.object(
-            orchestrator,
-            'PHASE_HANDLERS',
-            [(0, MagicMock(return_value=mock_handler))]
+            orchestrator, "PHASE_HANDLERS", [(0, MagicMock(return_value=mock_handler))]
         ):
             # This would trigger self-healing in the real flow
             await controller._trigger_self_healing(drifted_phases)
@@ -179,13 +177,15 @@ class TestDriftDetectionIntegration:
         orchestrator = Orchestrator(minimal_spec, mock_mode=True)
 
         # Add a drift event to history
-        orchestrator.runtime_state.drift_history.append({
-            "phase_num": 0,
-            "detected_at": "2025-06-26T12:00:00",
-            "healed_at": "2025-06-26T12:00:05",
-            "healing_failed": False,
-            "error": None,
-        })
+        orchestrator.runtime_state.drift_history.append(
+            {
+                "phase_num": 0,
+                "detected_at": "2025-06-26T12:00:00",
+                "healed_at": "2025-06-26T12:00:05",
+                "healing_failed": False,
+                "error": None,
+            }
+        )
 
         # Save state
         orchestrator.runtime_state.save()

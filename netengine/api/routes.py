@@ -32,7 +32,6 @@ router = APIRouter(prefix="/api/v1")
 # ─────────────────────────────────────────────
 
 
-
 @router.get("/health")
 async def health() -> dict[str, Any]:
     """Per-phase healthcheck status."""

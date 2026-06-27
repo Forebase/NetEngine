@@ -193,7 +193,11 @@ class DriftDetectionController:
 
         for phase_num in sorted(drifted_phases):
             handler_class = next(
-                (handler for pnum, handler in self.orchestrator.PHASE_HANDLERS if pnum == phase_num),
+                (
+                    handler
+                    for pnum, handler in self.orchestrator.PHASE_HANDLERS
+                    if pnum == phase_num
+                ),
                 None,
             )
             if handler_class is None:
