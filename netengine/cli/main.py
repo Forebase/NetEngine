@@ -11,6 +11,7 @@ import yaml
 
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
+from netengine.events.queues import PRIMARY_QUEUES, Queue
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import load_spec, load_spec_with_composition, load_spec_with_environment
@@ -220,16 +221,7 @@ def status() -> None:
     _print_status(state)
 
 
-_PGMQ_QUEUES = [
-    "dns_updates",
-    "dns_updates_dlq",
-    "oidc_provisioning",
-    "oidc_provisioning_dlq",
-    "and_provisioning",
-    "and_provisioning_dlq",
-    "world_health",
-    "world_health_dlq",
-]
+_PGMQ_QUEUES = [q.value for q in Queue]
 
 # Both prefixes are used by handlers: netengine_ (coredns, gateway) and netengines_ (all others)
 _CONTAINER_PREFIXES = ("netengine_", "netengines_")
@@ -556,6 +548,100 @@ def drift_status() -> None:
             click.echo(f"  Phase {phase}: detected at {detected}, {status}")
     else:
         click.echo("\nDrift history: (no events)")
+
+
+@cli.command()
+@click.option(
+    "--queue",
+    default=None,
+    type=click.Choice([q.value for q in PRIMARY_QUEUES]),
+    help="Show depth for a specific queue (default: all).",
+)
+@click.option("--dlq", is_flag=True, help="Show dead-letter queue contents.")
+@click.option("--limit", default=10, show_default=True, help="Max messages to display.")
+def events(queue: str | None, dlq: bool, limit: int) -> None:
+    """Inspect event queue depths and dead-letter queue contents."""
+    asyncio.run(_events(queue, dlq, limit))
+
+
+async def _events(queue: str | None, dlq: bool, limit: int) -> None:
+    db_url = os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+    if not db_url:
+        click.echo(
+            "NETENGINE_DB_URL is not set — event inspection requires a direct DB connection.",
+            err=True,
+        )
+        sys.exit(1)
+
+    try:
+        import asyncpg  # type: ignore[import]
+    except ImportError:
+        click.echo("asyncpg is not installed.", err=True)
+        sys.exit(1)
+
+    conn = await asyncpg.connect(db_url)
+    try:
+        queues_to_check = [queue] if queue else [q.value for q in PRIMARY_QUEUES]
+
+        if dlq:
+            click.echo("\nDead-letter queue contents:\n")
+            for q in queues_to_check:
+                dlq_name = f"{q}_dlq"
+                try:
+                    rows = await conn.fetch(
+                        "SELECT msg_id, message, enqueued_at, read_ct "
+                        "FROM pgmq.q_$1 ORDER BY enqueued_at DESC LIMIT $2",
+                        dlq_name,
+                        limit,
+                    )
+                    if rows:
+                        click.echo(
+                            click.style(f"  {dlq_name} ({len(rows)} message(s)):", bold=True)
+                        )
+                        for row in rows:
+                            import json as _json
+
+                            try:
+                                payload = _json.loads(row["message"])
+                                event_type = payload.get("event_type", "?")
+                                emitted_by = payload.get("emitted_by", "?")
+                                retry_count = payload.get("retry_count", 0)
+                                dlq_reason = (payload.get("payload") or {}).get("dlq_reason", "")
+                                click.echo(
+                                    f"    [{row['msg_id']}] {event_type} "
+                                    f"from={emitted_by} retries={retry_count}"
+                                    + (f" reason={dlq_reason}" if dlq_reason else "")
+                                )
+                            except Exception:
+                                click.echo(f"    [{row['msg_id']}] (unparseable message)")
+                    else:
+                        click.echo(f"  {dlq_name}: empty")
+                except Exception as exc:
+                    click.echo(f"  {dlq_name}: error reading — {exc}")
+        else:
+            click.echo("\nEvent queue depths:\n")
+            for q in queues_to_check:
+                dlq_name = f"{q}_dlq"
+                try:
+                    depth_row = await conn.fetchrow("SELECT count(*) AS depth FROM pgmq.q_$1", q)
+                    dlq_row = await conn.fetchrow(
+                        "SELECT count(*) AS depth FROM pgmq.q_$1", dlq_name
+                    )
+                    depth = depth_row["depth"] if depth_row else 0
+                    dlq_depth = dlq_row["depth"] if dlq_row else 0
+                    status = (
+                        click.style("✓", fg="green")
+                        if depth == 0
+                        else click.style("!", fg="yellow")
+                    )
+                    dlq_status = (
+                        "" if dlq_depth == 0 else click.style(f"  DLQ: {dlq_depth}", fg="red")
+                    )
+                    click.echo(f"  {status}  {q:<30} depth={depth}{dlq_status}")
+                except Exception as exc:
+                    click.echo(f"  ?  {q}: error — {exc}")
+    finally:
+        await conn.close()
 
 
 def _print_status(state: RuntimeState) -> None:

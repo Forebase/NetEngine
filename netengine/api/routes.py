@@ -759,3 +759,19 @@ async def import_world(body: ImportRequest, user: dict = Depends(require_admin))
         state.world_services_output = _sanitize_export_value(body.world_services_output)
     state.save()
     return {"status": "imported", "phases_restored": phases_restored}
+
+
+# ─────────────────────────────────────────────
+# Prometheus metrics scrape endpoint
+# ─────────────────────────────────────────────
+
+
+@router.get("/metrics")
+async def prometheus_metrics() -> Any:
+    """Expose Prometheus metrics for scraping."""
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+    from starlette.responses import Response
+
+    from netengine.monitoring.metrics import REGISTRY
+
+    return Response(content=generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)

@@ -14,6 +14,7 @@ from netengine.handlers.dns import DNSHandler
 from netengine.handlers.phase_pki import PKIPhaseHandler
 from netengine.handlers.substrate import SubstrateHandler
 from netengine.logging import get_logger
+from netengine.monitoring.metrics import record_healthcheck_failure, record_phase
 from netengine.phases.phase_ands import ANDsPhaseHandler
 from netengine.phases.phase_inworld_identity import InWorldIdentityPhaseHandler
 from netengine.phases.phase_platform_identity import PlatformIdentityPhaseHandler
@@ -140,9 +141,11 @@ class Orchestrator:
 
             logger.info(f"Phase {phase_num}: {handler_class.__name__} starting")
             try:
-                await handler.execute(self.context)
+                with record_phase(phase_num):
+                    await handler.execute(self.context)
 
                 if not await handler.healthcheck(self.context):
+                    record_healthcheck_failure(phase_num)
                     raise RuntimeError(f"Phase {phase_num} healthcheck failed")
 
                 self._mark_phase_complete(phase_num, handler)

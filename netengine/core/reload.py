@@ -10,27 +10,42 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from pydantic import BaseModel
+
 from netengine.core.state import RuntimeState
 from netengine.logging import get_logger
 from netengine.spec.models import NetEngineSpec
 
 logger = get_logger(__name__)
 
-# Fields that cannot change after bootstrap.  Keyed by dot-path into the spec's
-# model_dump() output; value is a human-readable reason.
-IMMUTABLE_PATHS: dict[str, str] = {
-    "substrate.networks": "L0 Docker bridge CIDRs underpin every container IP — reset required",
-    "substrate.gateway.platform_ip": "Hardcoded into every resolver config — reset required",
-    "substrate.gateway.core_ip": "Hardcoded into every resolver config — reset required",
-    "dns.root.listen_ip": "Hardcoded into every container resolver config — reset required",
-    "pki.acme.listen_ip": (
-        "Hardcoded into every service ACME config and trust store — reset required"
-    ),
-    "metadata.lifecycle": "Ephemeral ↔ persistent requires explicit migration, not a reload",
-    "domain_registry.address_space": (
-        "Existing AND leases reference these CIDRs — new pool entries only"
-    ),
-}
+
+def _collect_immutable_paths(model_cls: type[BaseModel], prefix: str = "") -> dict[str, str]:
+    """Walk a Pydantic model tree and collect dot-paths marked with immutable=True.
+
+    Fields use json_schema_extra={"immutable": True, "immutable_reason": "..."} to
+    declare immutability. Adding a new field automatically registers it here — no
+    manual list to maintain.
+    """
+    paths: dict[str, str] = {}
+    for name, field_info in model_cls.model_fields.items():
+        path = f"{prefix}.{name}" if prefix else name
+        extra = field_info.json_schema_extra
+        if isinstance(extra, dict) and extra.get("immutable"):
+            paths[path] = str(extra.get("immutable_reason", "immutable field"))
+        # Recurse into direct SpecModel subclass fields (non-optional nested models).
+        ann = field_info.annotation
+        if (
+            ann is not None
+            and isinstance(ann, type)
+            and issubclass(ann, BaseModel)
+            and ann is not model_cls
+        ):
+            paths.update(_collect_immutable_paths(ann, path))
+    return paths
+
+
+# Derived from field-level annotations at import time — no manual maintenance required.
+IMMUTABLE_PATHS: dict[str, str] = _collect_immutable_paths(NetEngineSpec)
 
 # Phase dependency order for applying diffs
 DIFF_APPLY_ORDER = [
