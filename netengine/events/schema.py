@@ -56,6 +56,11 @@ class EventEnvelope:
     Incremented by event queue. After N retries, moved to DLQ.
     """
 
+    schema_version: str = "1.0"
+    """Envelope schema version. Increment when fields are added or semantics change
+    so consumers can detect and handle mismatches without silent data loss.
+    """
+
     @staticmethod
     def create(
         event_type: str,

@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from netengine.api.auth import require_admin, require_auth
+from netengine.events.queues import PRIMARY_QUEUES
 from netengine.core.reload import ReloadResult, apply_reload, check_immutability, compute_diff
 from netengine.core.state import RuntimeState
 from netengine.logging import get_logger
@@ -568,15 +569,6 @@ async def list_realms(user: dict = Depends(require_auth)) -> dict[str, Any]:
 # Event queue / DLQ
 # ─────────────────────────────────────────────
 
-KNOWN_QUEUES = [
-    "dns_updates",
-    "oidc_provisioning",
-    "and_provisioning",
-    "mail_provisioning",
-    "app_deployments",
-]
-
-
 @router.get("/queues")
 async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
     """Return pgmq queue depths and DLQ state for all handler boundaries."""
@@ -585,7 +577,7 @@ async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
     try:
         db = await get_db()
         queue_stats: list[dict[str, Any]] = []
-        for q in KNOWN_QUEUES:
+        for q in PRIMARY_QUEUES:
             try:
                 result = await db.rpc("pgmq_metrics", {"queue_name": q}).execute()
                 metrics = result.data[0] if result.data else {}
@@ -603,7 +595,7 @@ async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
                     "queue": q,
                     "depth": metrics.get("queue_length", 0),
                     "oldest_msg_age_sec": metrics.get("oldest_msg_age_sec"),
-                    "dlq": f"{q}_dlq",
+                    "dlq": f"{q}_dlq",  # DLQ name follows convention: {queue}_dlq
                     "dlq_depth": dlq_metrics.get("queue_length", 0),
                 }
             )

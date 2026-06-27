@@ -1,9 +1,11 @@
 import os
-from typing import Any, List, Optional, Type, cast
+from typing import Any, Optional
 
 from pydantic import ValidationError
 
 from netengine.core.consumer_supervisor import ConsumerSupervisor
+from netengine.core.docker_factory import create_docker_client
+from netengine.core.phase_graph import PHASE_HANDLERS, PHASE_PREREQUISITES
 from netengine.core.state import RuntimeState
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.app_handler import OrgAppsPhaseHandler
@@ -20,17 +22,21 @@ from netengine.phases.phase_services import ServicesPhaseHandler
 from netengine.spec.loader import SpecLoadError
 from netengine.spec.models import NetEngineSpec
 
-logger = get_logger(__name__)
+# Re-exported for test patching: tests patch via "netengine.core.orchestrator.<Handler>"
+__all__ = [
+    "Orchestrator",
+    "SubstrateHandler",
+    "DNSHandler",
+    "PKIPhaseHandler",
+    "PlatformIdentityPhaseHandler",
+    "RegistriesPhaseHandler",
+    "InWorldIdentityPhaseHandler",
+    "ANDsPhaseHandler",
+    "ServicesPhaseHandler",
+    "OrgAppsPhaseHandler",
+]
 
-# Required runtime_state field(s) that must be truthy before a phase runs.
-_PHASE_PREREQUISITES: dict[int, list[str]] = {
-    3: ["dns_output"],
-    4: ["pki_bootstrapped"],
-    5: ["identity_platform_output"],
-    6: ["world_registry_output", "domain_registry_output"],
-    7: ["identity_inworld_output"],
-    8: ["ands_output"],
-}
+logger = get_logger(__name__)
 
 
 class Orchestrator:
@@ -40,20 +46,8 @@ class Orchestrator:
     error handling, and state persistence.
     """
 
-    # Phase registry: (phase_number, handler_class)
-    # DNS is a single combined milestone: one handler performs both Phase 1
-    # (root/platform zones) and Phase 2 (TLD setup), then marks both complete.
-    PHASE_HANDLERS: List[tuple[int, Type[BasePhaseHandler]]] = [
-        (0, SubstrateHandler),
-        (1, DNSHandler),
-        (3, PKIPhaseHandler),
-        (4, PlatformIdentityPhaseHandler),
-        (5, RegistriesPhaseHandler),
-        (6, InWorldIdentityPhaseHandler),
-        (7, ANDsPhaseHandler),
-        (8, ServicesPhaseHandler),
-        (9, OrgAppsPhaseHandler),
-    ]
+    # Expose the phase graph at class level for external consumers (tests, drift controller).
+    PHASE_HANDLERS = PHASE_HANDLERS
 
     def __init__(self, spec: NetEngineSpec | dict[str, Any], mock_mode: Optional[bool] = None):
         """Initialize orchestrator with a validated NetEngine spec.
@@ -65,26 +59,16 @@ class Orchestrator:
         self.spec = self._normalize_spec(spec)
         self.runtime_state = RuntimeState.load()
 
-        # Resolve mock_mode: explicit arg wins, then env var
-        effective_mock = (
-            mock_mode
-            if mock_mode is not None
-            else os.environ.get("NETENGINE_MOCK", "").lower() in ("1", "true", "yes")
-        )
+        # Explicit arg wins over env var
+        if mock_mode is not None:
+            effective_mock = mock_mode
+            docker_client: Optional[Any] = None
+            if not effective_mock:
+                docker_client, effective_mock = create_docker_client()
+        else:
+            docker_client, effective_mock = create_docker_client()
+
         self.mock_mode = effective_mock
-
-        # Initialise Docker client only when running for real
-        docker_client: Optional[Any] = None
-        if not effective_mock:
-            try:
-                from netengine.handlers.docker_handler import DockerHandler
-
-                docker_client = cast(Any, DockerHandler())
-            except Exception as exc:
-                logger.warning(f"Docker unavailable, falling back to mock mode: {exc}")
-                effective_mock = True
-
-        # Initialize consumer supervisor for background tasks
         self.consumer_supervisor = ConsumerSupervisor()
 
         self.context = PhaseContext(
@@ -118,7 +102,7 @@ class Orchestrator:
 
     def _check_prerequisites(self, phase_num: int) -> None:
         """Raise RuntimeError if required prior-phase outputs are absent."""
-        required = _PHASE_PREREQUISITES.get(phase_num, [])
+        required = PHASE_PREREQUISITES.get(phase_num, [])
         missing = [f for f in required if not getattr(self.runtime_state, f, None)]
         if missing:
             raise RuntimeError(
@@ -135,12 +119,11 @@ class Orchestrator:
         Raises:
             RuntimeError: If any phase fails or dependency validation fails
         """
-        # Persist the spec at bootstrap start so the running world is always queryable
         if not self.runtime_state.world_spec:
             self.runtime_state.world_spec = self.spec.model_dump()
             self.runtime_state.save()
 
-        for phase_num, handler_class in self.PHASE_HANDLERS:
+        for phase_num, handler_class in PHASE_HANDLERS:
             if phase_num > up_to_phase:
                 break
 
@@ -207,13 +190,15 @@ class Orchestrator:
         )
 
     def _mark_phase_complete(self, phase_num: int, handler: BasePhaseHandler) -> None:
-        """Record user-facing phase completion for a completed handler.
+        """Record phase completion.
 
-        DNS is intentionally registered once because it performs Phase 1 and
-        Phase 2 in one combined operation. Preserve user-facing progress by
-        marking both phase numbers complete when that combined milestone is
-        healthy or skipped.
+        DNS is intentionally registered once: DNSHandler performs Phase 1
+        and Phase 2 in one combined operation. Mark both complete here.
         """
         self.runtime_state.phase_completed[str(phase_num)] = True
         if isinstance(handler, DNSHandler):
             self.runtime_state.phase_completed["2"] = True
+
+    def get_env_mock_mode(self) -> bool:
+        """Read mock mode from environment variable."""
+        return os.environ.get("NETENGINE_MOCK", "").lower() in ("1", "true", "yes")
