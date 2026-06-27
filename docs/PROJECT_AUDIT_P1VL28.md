@@ -96,7 +96,7 @@ exclude = [
 
 ### 2.1 datetime.utcnow() Deprecation
 
-**Status:** 🟡 **HIGH** — 668 test warnings from 12+ instances in production code
+**Status:** 🟡 **HIGH** — 668 test warnings from ~65 instances in production code
 
 **Affected locations:**
 - `netengine/api/routes.py:542` — export timestamp
@@ -105,23 +105,28 @@ exclude = [
 - `netengine/phases/phase_platform_identity.py:137` — phase deployment timestamp
 - `netengine/phases/phase_registries.py:67` — registries deployment timestamp
 - `netengine/phases/phase_registries.py:72` — domain registry deployment timestamp
-- **Plus others** in test files
+- `netengine/handlers/substrate.py` — ~15 instances
+- `netengine/handlers/dns.py` — ~10 instances
+- `netengine/core/drift_controller.py` — ~9 instances
+- `netengine/workers/pki_cert_rotation_worker.py` — ~6 instances
+- **Plus test files** with 10+ instances
 
 **Why it matters:**
 - `datetime.utcnow()` is deprecated in Python 3.12+ and will be removed in future versions
 - Project targets Python 3.13+
 - Tests generate 668 deprecation warnings (clutter in test output)
 
-**Recommended replacement:**
-```python
-# OLD (deprecated)
-datetime.utcnow().isoformat()
+**Complexity Note:**
+Initial replacement attempt using `datetime.now(timezone.utc)` caused logging system failures because loguru's formatter cannot handle timezone-aware datetime objects. This requires:
+1. Updating loguru configuration (`netengine/logging/`) to handle timezone-aware datetimes
+2. Then replacing all `datetime.utcnow()` calls
+3. Comprehensive testing of logging output
 
-# NEW (recommended)
-datetime.now(datetime.UTC).isoformat()
-```
+**Recommended approach:**
+1. First: Fix logging configuration to support timezone-aware datetimes
+2. Then: Use `datetime.now(datetime.UTC)` (available in Python 3.11+)
 
-**Estimated effort:** 1-2 hours (find + replace + test)
+**Estimated effort:** 2-3 hours (logging config fix + replacement + testing)
 
 ---
 
@@ -389,9 +394,14 @@ Key outdated packages:
 - [ ] Verify all tests still pass: `poetry run pytest --tb=short`
 
 ### This Sprint
-- [ ] Replace `datetime.utcnow()` with `datetime.now(datetime.UTC)`
-  - [ ] Find all 12+ instances
-  - [ ] Update with proper imports
+- [ ] Fix logging system to handle timezone-aware datetimes
+  - [ ] Update `netengine/logging/core.py` loguru configuration
+  - [ ] Ensure formatters work with tzinfo in datetime objects
+  - [ ] Test with sample log output
+  
+- [ ] Replace `datetime.utcnow()` with `datetime.now(datetime.UTC)` 
+  - [ ] Replace all ~65 instances across 14 files
+  - [ ] Update imports to include timezone/UTC
   - [ ] Re-run tests (should eliminate 668 warnings)
   
 - [ ] Update key dependencies
