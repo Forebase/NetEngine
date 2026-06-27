@@ -19,7 +19,7 @@ substrate:
       description: "Platform management network"
     core:
       type: bridge
-      subnet: 10.0.0.0/8
+      subnet: 10.0.0.0/24
       description: "In-world core network"
   gateway:
     platform_ip: 172.28.0.1

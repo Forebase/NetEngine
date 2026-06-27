@@ -74,7 +74,7 @@ class SubstratePhase(SpecModel):
     networks: dict[str, NetworkConfig] = Field(
         default_factory=lambda: {
             "platform": NetworkConfig(subnet="172.28.0.0/16"),
-            "core": NetworkConfig(subnet="10.0.0.0/8"),
+            "core": NetworkConfig(subnet="10.0.0.0/4"),
         }
     )
     gateway: GatewaySubstrate = Field(..., description="Gateway stub configuration")
