@@ -32,7 +32,6 @@ router = APIRouter(prefix="/api/v1")
 # ─────────────────────────────────────────────
 
 
-
 @router.get("/health")
 async def health() -> dict[str, Any]:
     """Per-phase healthcheck status."""
@@ -372,14 +371,14 @@ async def list_ands(user: dict = Depends(require_auth)) -> dict[str, Any]:
 
 
 @router.post("/ands")
-async def create_and(
-    body: ANDCreateRequest, user: dict = Depends(require_auth)
-) -> dict[str, Any]:
+async def create_and(body: ANDCreateRequest, user: dict = Depends(require_auth)) -> dict[str, Any]:
     """Provision a new AND for an org."""
     from netengine.core.supabase_client import get_db
 
     db = await get_db()
-    org_result = await db.table("world_registry").select("org_name").eq("org_name", body.org).execute()
+    org_result = (
+        await db.table("world_registry").select("org_name").eq("org_name", body.org).execute()
+    )
     if not org_result.data:
         raise HTTPException(status_code=404, detail=f"Org {body.org} not found in world registry")
 

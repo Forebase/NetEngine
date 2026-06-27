@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from netengine.core.consumer_supervisor import ConsumerSupervisor
     from netengine.core.pgmq_client import PGMQClient
 
+
 def default_zone_dir() -> str:
     """Return the default directory for CoreDNS Corefile and zone files.
 

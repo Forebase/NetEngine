@@ -77,9 +77,7 @@ def _all_phase_mocks():
             patch(f"{mod}.{cls}.healthcheck", new_callable=AsyncMock, return_value=True)
         )
     # Skip prerequisite checks so mocked phases don't block each other
-    stack.enter_context(
-        patch("netengine.core.orchestrator.Orchestrator._check_prerequisites")
-    )
+    stack.enter_context(patch("netengine.core.orchestrator.Orchestrator._check_prerequisites"))
     # Prevent state.save() from stripping completion flags (mock execute doesn't populate outputs)
     stack.enter_context(
         patch("netengine.core.state.RuntimeState._discard_completion_flags_without_outputs")
@@ -100,9 +98,9 @@ class TestFullMockBootstrap:
 
         state = orchestrator.runtime_state
         for phase in range(10):
-            assert state.phase_completed.get(str(phase)), (
-                f"Phase {phase} not marked complete after mock bootstrap"
-            )
+            assert state.phase_completed.get(
+                str(phase)
+            ), f"Phase {phase} not marked complete after mock bootstrap"
 
     @pytest.mark.asyncio
     async def test_bootstrap_stores_world_spec_in_state(self, tmp_path, monkeypatch, minimal_spec):
@@ -128,9 +126,9 @@ class TestFullMockBootstrap:
 
         state = orchestrator.runtime_state
         for phase in range(4):
-            assert state.phase_completed.get(str(phase)), (
-                f"Phase {phase} should be complete with up_to=3"
-            )
+            assert state.phase_completed.get(
+                str(phase)
+            ), f"Phase {phase} should be complete with up_to=3"
         # Phase 4 should NOT be complete
         assert not state.phase_completed.get("4")
 
@@ -211,8 +209,14 @@ class TestReloadAfterBootstrap:
 
         client = TestClient(app)
 
-        with patch("netengine.phases.phase_registries.RegistriesPhaseHandler.execute", new_callable=AsyncMock):
-            with patch("netengine.phases.phase_inworld_identity.InWorldIdentityPhaseHandler.execute", new_callable=AsyncMock):
+        with patch(
+            "netengine.phases.phase_registries.RegistriesPhaseHandler.execute",
+            new_callable=AsyncMock,
+        ):
+            with patch(
+                "netengine.phases.phase_inworld_identity.InWorldIdentityPhaseHandler.execute",
+                new_callable=AsyncMock,
+            ):
                 resp = client.post(
                     "/api/v1/reload",
                     json={"spec_yaml": yaml.dump(new_dict)},
@@ -285,9 +289,7 @@ class TestOrgCRUDAPI:
             "netengine.handlers.world_registry_handler.WorldRegistryHandler._get_db",
             AsyncMock(return_value=mock_db),
         ):
-            resp = api_client.get(
-                "/api/v1/orgs", headers={"X-Bootstrap-Secret": "e2e-secret"}
-            )
+            resp = api_client.get("/api/v1/orgs", headers={"X-Bootstrap-Secret": "e2e-secret"})
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
 

@@ -115,7 +115,8 @@ async def test_require_auth_uses_persisted_runtime_ca_bundle(monkeypatch):
     monkeypatch.setattr(auth.ssl, "create_default_context", fake_create_default_context)
 
     ssl_option = await _call_require_auth(
-        monkeypatch, _phase4_state(ca_cert_pem="-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
+        monkeypatch,
+        _phase4_state(ca_cert_pem="-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"),
     )
 
     assert isinstance(ssl_option, ssl.SSLContext)

@@ -61,6 +61,8 @@ def test_repeated_saves_with_custom_state_file_are_atomic_and_private(tmp_path, 
     loaded = RuntimeState.load()
     assert loaded.correlation_id == "second"
     assert loaded.last_error == "saved twice"
+
+
 async def test_sync_to_supabase_returns_task_and_logs_async_failure(monkeypatch):
     async def failing_get_db():
         raise RuntimeError("boom")
