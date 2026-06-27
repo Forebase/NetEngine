@@ -9,7 +9,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from netengine.core.orchestrator import Orchestrator
 from netengine.events.schema import EventEnvelope
@@ -310,7 +310,7 @@ class DriftDetectionController:
         phase_num: int,
         handler_name: str,
         event_type: str,
-        payload: dict,
+        payload: dict[str, Any],
     ) -> None:
         """Emit a drift event.
 
