@@ -100,10 +100,10 @@ def runtime_state_with_substrate() -> RuntimeState:
     state.substrate_output = {
         "orchestrator": "docker",
         "networks": {
-            "platform": {"subnet": "172.20.0.0/16", "created": True},
+            "platform": {"subnet": "172.28.0.0/16", "created": True},
             "core": {"subnet": "10.0.0.0/8", "created": True},
         },
-        "gateway": {"platform_ip": "172.20.0.1", "core_ip": "10.0.0.1"},
+        "gateway": {"platform_ip": "172.28.0.1", "core_ip": "10.0.0.1"},
         "ntp": {"enabled": True, "synced": True},
         "healthy": True,
     }

@@ -36,10 +36,10 @@ def _minimal_spec(name: str = "test-network") -> dict:
             "orchestrator": "swarm",
             "ntp": {"enabled": True, "servers": ["pool.ntp.org"]},
             "networks": {
-                "platform": {"type": "bridge", "subnet": "172.20.0.0/16"},
+                "platform": {"type": "bridge", "subnet": "172.28.0.0/16"},
                 "core": {"type": "bridge", "subnet": "10.0.0.0/8"},
             },
-            "gateway": {"platform_ip": "172.20.0.1", "core_ip": "10.0.0.1"},
+            "gateway": {"platform_ip": "172.28.0.1", "core_ip": "10.0.0.1"},
         },
         "dns": {
             "root": {
@@ -117,7 +117,7 @@ def _minimal_spec(name: str = "test-network") -> dict:
         "operator": {
             "api": {
                 "enabled": True,
-                "listen_ip": "172.20.0.11",
+                "listen_ip": "172.28.0.11",
                 "port": 8080,
                 "canonical_name": "api.platform.internal",
             },
@@ -145,7 +145,7 @@ def prod_spec_file(temp_spec_dir: Path) -> Path:
     """Create a production override spec file."""
     spec = {
         "substrate": {
-            "gateway": {"platform_ip": "172.20.0.1", "core_ip": "10.0.0.1"},
+            "gateway": {"platform_ip": "172.28.0.1", "core_ip": "10.0.0.1"},
         },
     }
     spec_file = temp_spec_dir / "spec.prod.yaml"
@@ -323,7 +323,7 @@ class TestSpecCrossValidation:
     def test_non_overlapping_subnets_accepted(self, temp_spec_dir: Path) -> None:
         data = _minimal_spec()
         data["substrate"]["networks"] = {
-            "platform": {"type": "bridge", "subnet": "172.20.0.0/16"},
+            "platform": {"type": "bridge", "subnet": "172.28.0.0/16"},
             "core": {"type": "bridge", "subnet": "10.0.0.0/24"},
         }
         path = self._write_spec(temp_spec_dir, data)

@@ -128,7 +128,7 @@ class TestSpecDefaults:
         """Substrate networks should have default values."""
         assert "platform" in minimal_spec.substrate.networks
         assert "core" in minimal_spec.substrate.networks
-        assert minimal_spec.substrate.networks["platform"].subnet == "172.20.0.0/16"
+        assert minimal_spec.substrate.networks["platform"].subnet == "172.28.0.0/16"
         assert minimal_spec.substrate.networks["core"].subnet == "10.0.0.0/8"
 
     def test_tld_defaults(self, single_org_spec: NetEngineSpec) -> None:
