@@ -1,0 +1,128 @@
+version: "3.8"
+
+# Service catalog & service discovery for in-world
+# Registry of all services running in the world
+# Available at: catalog.platform.internal, discovery.platform.internal
+
+services:
+  # Consul - distributed service catalog
+  consul-server:
+    image: consul:1.15
+    container_name: netengine_consul_server
+    command: agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0
+    environment:
+      CONSUL_BIND_INTERFACE: eth0
+    ports:
+      - "8500:8500"   # HTTP API
+      - "8600:8600/udp"  # DNS
+    volumes:
+      - consul_server_data:/consul/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8500/v1/status/leader"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Consul client (service registration)
+  consul-client:
+    image: consul:1.15
+    container_name: netengine_consul_client
+    command: agent -node=client-1 -join=consul-server
+    environment:
+      CONSUL_BIND_INTERFACE: eth0
+    depends_on:
+      - consul-server
+    profiles:
+      - consul-client
+
+  # Service registry API
+  catalog-api:
+    image: python:3.13-slim
+    container_name: netengine_catalog_api
+    environment:
+      CONSUL_URL: http://consul-server:8500
+      KEYCLOAK_URL: http://keycloak:8180
+      CATALOG_DB_URL: postgresql://netengine:${POSTGRES_PASSWORD:-dev_password}@postgres:5432/netengine
+      API_PORT: 8091
+    ports:
+      - "8091:8091"
+    volumes:
+      - ./compose/catalog-api.py:/app/api.py:ro
+      - catalog_data:/app/data
+    working_dir: /app
+    entrypoint: python
+    command:
+      - api.py
+    depends_on:
+      - consul-server
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8091/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - catalog
+
+  # Service mesh control plane (Istio)
+  istiod:
+    image: istio/pilot:1.17.0
+    container_name: netengine_istiod
+    environment:
+      CLUSTER_ID: primary
+      PILOT_PLUGINS: authn,authz
+    ports:
+      - "15010:15010"  # XDS server
+      - "8883:8883"    # Webhooks
+    volumes:
+      - ./compose/istio-config.yaml:/etc/istio/config.yaml:ro
+    depends_on:
+      - consul-server
+    profiles:
+      - istio
+
+  # OpenSearch (Consul alternative with more features)
+  opensearch:
+    image: opensearchproject/opensearch:latest
+    container_name: netengine_opensearch
+    environment:
+      discovery.type: single-node
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_PASSWORD:-NetEngine123!}
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9201:9200"
+      - "9601:9600"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "-k", "https://localhost:9200/_cluster/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - opensearch
+
+  # Service dependency graph viewer
+  catalog-ui:
+    image: node:18-alpine
+    container_name: netengine_catalog_ui
+    ports:
+      - "3401:3000"
+    environment:
+      REACT_APP_CONSUL_URL: http://consul-server:8500
+      REACT_APP_API_URL: http://catalog-api:8091
+    volumes:
+      - ./compose/catalog-ui:/app:ro
+    working_dir: /app
+    command:
+      - npm
+      - start
+    depends_on:
+      - consul-server
+      - catalog-api
+    profiles:
+      - catalog-ui
+
+volumes:
+  consul_server_data:
+  catalog_data:
+  opensearch_data:

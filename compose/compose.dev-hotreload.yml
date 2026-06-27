@@ -1,0 +1,126 @@
+version: "3.8"
+
+# Development with hot-reload and debugging
+# Use for iterative development with auto-restart on code changes
+# Usage: docker compose -f docker-compose.yml -f compose/compose.dev-hotreload.yml up -d
+
+services:
+  # NetEngine development container with volume mounts
+  netengine-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: netengine_dev
+    environment:
+      NETENGINE_DB_URL: postgresql://netengine:${POSTGRES_PASSWORD:-dev_password}@postgres:5432/netengine
+      NETENGINE_STATE_FILE: /workspace/data/netengines_state.json
+      NETENGINE_ZONE_DIR: /workspace/data/coredns
+      NETENGINE_MOCK: ${NETENGINE_MOCK:-false}
+      LOG_LEVEL: DEBUG
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/workspace
+      - netengine_dev_cache:/root/.cache
+      - netengine_dev_data:/workspace/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - dev
+
+  # Hot-reload watcher
+  code-watcher:
+    image: python:3.13-slim
+    container_name: netengine_code_watcher
+    volumes:
+      - .:/workspace
+      - ./compose/watch-reload.sh:/scripts/watch.sh:ro
+    working_dir: /workspace
+    entrypoint: /bin/bash
+    command:
+      - /scripts/watch.sh
+    depends_on:
+      - netengine-dev
+    profiles:
+      - dev
+
+  # Debugger sidecar (pdb, debugpy)
+  debugger:
+    image: python:3.13-slim
+    container_name: netengine_debugger
+    environment:
+      DEBUGPY_LISTEN: 0.0.0.0:5678
+    ports:
+      - "5678:5678"  # debugpy port
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    entrypoint: python
+    command:
+      - -m
+      - debugpy.adapter
+    depends_on:
+      - netengine-dev
+    profiles:
+      - debugger
+
+  # Test runner with watch mode
+  test-watcher:
+    image: python:3.13-slim
+    container_name: netengine_test_watcher
+    volumes:
+      - .:/workspace
+      - ./compose/run-tests-watch.sh:/scripts/run-tests.sh:ro
+    working_dir: /workspace
+    entrypoint: /bin/bash
+    command:
+      - /scripts/run-tests.sh
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - test-watch
+
+  # Documentation server (live docs)
+  docs-server:
+    image: python:3.13-slim
+    container_name: netengine_docs_server
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./docs:/docs:ro
+    working_dir: /docs
+    entrypoint: python
+    command:
+      - -m
+      - http.server
+      - "8000"
+    profiles:
+      - dev-docs
+
+  # API spec browser (Swagger/ReDoc)
+  api-spec-browser:
+    image: swaggerapi/swagger-ui:latest
+    container_name: netengine_swagger_ui
+    ports:
+      - "8001:8080"
+    environment:
+      URLS: |
+        [
+          { url: "http://localhost:8080/openapi.json", name: "NetEngine API" }
+        ]
+    depends_on:
+      - netengine-dev
+    profiles:
+      - dev-docs
+
+volumes:
+  netengine_dev_cache:
+  netengine_dev_data:

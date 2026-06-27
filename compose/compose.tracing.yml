@@ -1,0 +1,147 @@
+version: "3.8"
+
+# Distributed tracing for observability
+# Compare Jaeger vs Zipkin, view request flows across services
+# Usage: docker compose -f docker-compose.yml -f compose/compose.observability.yml -f compose/compose.tracing.yml up -d
+
+services:
+  # Jaeger all-in-one (already in observability.yml, but including variants)
+  jaeger-collector:
+    image: jaegertracing/jaeger-collector:latest
+    container_name: netengine_jaeger_collector
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      COLLECTOR_ZIPKIN_HTTP_PORT: "9411"
+    ports:
+      - "14268:14268"  # Jaeger Thrift HTTP
+      - "14250:14250"  # Jaeger gRPC
+      - "9411:9411"    # Zipkin HTTP
+      - "4317:4317"    # OTLP gRPC
+      - "4318:4318"    # OTLP HTTP
+    depends_on:
+      - elasticsearch
+    environment:
+      SPAN_STORAGE_TYPE: elasticsearch
+      ES_SERVER_URLS: http://elasticsearch:9200
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:14268/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Jaeger Query UI
+  jaeger-query:
+    image: jaegertracing/jaeger-query:latest
+    container_name: netengine_jaeger_query
+    ports:
+      - "16686:16686"
+    environment:
+      SPAN_STORAGE_TYPE: elasticsearch
+      ES_SERVER_URLS: http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:16686/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Elasticsearch for Jaeger storage
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.5.0
+    container_name: netengine_elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9200/_cluster/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Zipkin alternative for comparison
+  zipkin:
+    image: openzipkin/zipkin:latest
+    container_name: netengine_zipkin
+    ports:
+      - "9410:9410"   # Zipkin UI (alternative port)
+      - "9411:9411"   # Zipkin HTTP collector
+    volumes:
+      - zipkin_data:/zipkin-storage
+    environment:
+      STORAGE_TYPE: mem
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9410/zipkin/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - zipkin
+
+  # Tempo for trace aggregation (Grafana Loki equivalent for traces)
+  tempo:
+    image: grafana/tempo:latest
+    container_name: netengine_tempo
+    ports:
+      - "3200:3200"   # Tempo API
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+    volumes:
+      - ./compose/tempo-config.yml:/etc/tempo-config.yml:ro
+      - tempo_data:/var/tempo
+    command:
+      - -config.file=/etc/tempo-config.yml
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3200/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - tempo
+
+  # Trace visualization dashboard (Grafana integration)
+  grafana-traces:
+    image: grafana/grafana:latest
+    container_name: netengine_grafana_traces
+    ports:
+      - "3002:3000"
+    volumes:
+      - grafana_traces_data:/var/lib/grafana
+      - ./compose/grafana-traces-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    depends_on:
+      - jaeger-query
+      - tempo
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - traces-dashboard
+
+  # Trace generator for testing
+  trace-generator:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib:latest
+    container_name: netengine_trace_generator
+    volumes:
+      - ./compose/otel-config.yml:/etc/otel-config.yml:ro
+    command:
+      - --config
+      - /etc/otel-config.yml
+    depends_on:
+      - jaeger-collector
+    profiles:
+      - trace-generator
+
+volumes:
+  elasticsearch_data:
+  zipkin_data:
+  tempo_data:
+  grafana_traces_data:

@@ -1,0 +1,109 @@
+version: "3.8"
+
+# Full-text search engine services for in-world use
+# Available at: search.platform.internal
+# Supports domain/org discovery, content search, people search
+
+services:
+  # Elasticsearch - primary search backend
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.5.0
+    container_name: netengine_elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      ELASTICSEARCH_HEAP_SIZE: 512m
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9200/_cluster/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Kibana - Elasticsearch UI for admin/debugging
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.5.0
+    container_name: netengine_kibana
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      ELASTICSEARCH_USERNAME: elastic
+      ELASTICSEARCH_PASSWORD: changeme
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5601/api/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Meilisearch - lightweight search alternative
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    container_name: netengine_meilisearch
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-netengine-master-key}
+      MEILI_ENV: production
+    volumes:
+      - meilisearch_data:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Search API gateway (optional - wraps Elasticsearch/Meilisearch)
+  search-api:
+    image: node:18-alpine
+    container_name: netengine_search_api
+    ports:
+      - "3500:3500"
+    environment:
+      SEARCH_BACKEND: elasticsearch
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      MEILISEARCH_URL: http://meilisearch:7700
+      API_PORT: 3500
+    volumes:
+      - ./compose/search-api.js:/app/index.js:ro
+    working_dir: /app
+    entrypoint: node
+    command:
+      - index.js
+    depends_on:
+      - elasticsearch
+      - meilisearch
+    profiles:
+      - search-api
+
+  # Search indexer - crawls domains, orgs, users
+  search-indexer:
+    image: python:3.13-slim
+    container_name: netengine_search_indexer
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      KEYCLOAK_URL: http://keycloak:8180
+      KEYCLOAK_REALM: platform
+      INDEXING_INTERVAL: "3600"  # Index hourly
+    volumes:
+      - ./compose/search-indexer.py:/scripts/indexer.py:ro
+    working_dir: /scripts
+    entrypoint: python
+    command:
+      - indexer.py
+    depends_on:
+      - elasticsearch
+    profiles:
+      - search-indexer
+
+volumes:
+  elasticsearch_data:
+  meilisearch_data:

@@ -1,0 +1,128 @@
+version: "3.8"
+
+# Database variant testing: different versions, configurations, replication
+# Test migrations, version upgrades, multi-node setups
+# Usage: docker compose -f compose/compose.database-variants.yml up -d
+
+services:
+  # Postgres 15 (primary)
+  postgres-15:
+    image: postgres:15
+    container_name: netengine_postgres_15
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      POSTGRES_DB: netengine
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./scripts/install_pgmq.sh:/docker-entrypoint-initdb.d/install_pgmq.sh:ro
+      - postgres_15_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Postgres 16 for upgrade testing
+  postgres-16:
+    image: postgres:16
+    container_name: netengine_postgres_16
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      POSTGRES_DB: netengine_new
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./scripts/install_pgmq.sh:/docker-entrypoint-initdb.d/install_pgmq.sh:ro
+      - postgres_16_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    profiles:
+      - pg-upgrade
+
+  # Postgres logical replication setup (replica)
+  postgres-replica:
+    image: postgres:15
+    container_name: netengine_postgres_replica
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      POSTGRES_DB: netengine
+      POSTGRES_INITDB_ARGS: "-c wal_level=logical"
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./scripts/install_pgmq.sh:/docker-entrypoint-initdb.d/install_pgmq.sh:ro
+      - postgres_replica_data:/var/lib/postgresql/data
+    depends_on:
+      postgres-15:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    profiles:
+      - pg-replication
+
+  # Postgres with low resources (memory constraints)
+  postgres-constrained:
+    image: postgres:15
+    container_name: netengine_postgres_constrained
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      POSTGRES_DB: netengine
+      POSTGRES_INITDB_ARGS: "-c shared_buffers=64MB -c max_connections=20"
+    ports:
+      - "5435:5432"
+    volumes:
+      - ./scripts/install_pgmq.sh:/docker-entrypoint-initdb.d/install_pgmq.sh:ro
+      - postgres_constrained_data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    profiles:
+      - pg-constrained
+
+  # TimescaleDB for time-series testing
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: netengine_timescaledb
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      POSTGRES_DB: metrics
+    ports:
+      - "5436:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    profiles:
+      - timescaledb
+
+volumes:
+  postgres_15_data:
+  postgres_16_data:
+  postgres_replica_data:
+  postgres_constrained_data:
+  timescaledb_data:

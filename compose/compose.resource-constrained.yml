@@ -1,0 +1,128 @@
+version: "3.8"
+
+# Resource-constrained testing: low CPU, low memory, slow disk
+# Simulate edge devices, embedded systems, resource-limited environments
+# Usage: docker compose -f compose/compose.resource-constrained.yml up -d
+
+services:
+  # Postgres with minimal resources
+  postgres:
+    image: postgres:15-alpine
+    container_name: netengine_postgres_minimal
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      POSTGRES_DB: netengine
+      POSTGRES_INITDB_ARGS: "-c shared_buffers=32MB -c max_connections=10 -c work_mem=1MB"
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./scripts/install_pgmq.sh:/docker-entrypoint-initdb.d/install_pgmq.sh:ro
+      - postgres_minimal_data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Keycloak with minimal resources
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: netengine_keycloak_minimal
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/netengine
+      KC_DB_USERNAME: netengine
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      KC_DB_SCHEMA: keycloak
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HTTP_PORT: 8180
+      KC_HEAP_SIZE: 256m
+      KC_HOSTNAME_STRICT: "false"
+    ports:
+      - "8180:8180"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8180/health/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # Lightweight NetEngine API
+  netengine-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: netengine_api_minimal
+    environment:
+      NETENGINE_DB_URL: postgresql://netengine:${POSTGRES_PASSWORD:-dev_password}@postgres:5432/netengine
+      NETENGINE_MOCK: "true"  # Mock mode (no real Docker calls)
+      LOG_LEVEL: INFO
+    ports:
+      - "8080:8080"
+    volumes:
+      - netengine_minimal_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 128M
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Slow disk simulator (iotop, iostat monitoring)
+  disk-monitor:
+    image: nicolaka/netshoot:latest
+    container_name: netengine_disk_monitor
+    volumes:
+      - /:/rootfs:ro
+      - /sys:/sys:ro
+      - /proc:/proc:ro
+    entrypoint: sleep
+    command:
+      - "infinity"
+    profiles:
+      - monitoring
+
+  # Slow network simulator (tc - traffic control)
+  network-limiter:
+    image: nicolaka/netshoot:latest
+    container_name: netengine_network_limiter
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./compose/limit-network.sh:/scripts/limit.sh:ro
+    entrypoint: /bin/sh
+    command:
+      - /scripts/limit.sh
+    profiles:
+      - network-limit
+
+volumes:
+  postgres_minimal_data:
+  netengine_minimal_data:

@@ -1,0 +1,50 @@
+version: "3.8"
+
+# Load testing compose: k6 orchestration + result collection
+# Usage: docker compose -f docker-compose.yml -f compose/compose.load-test.yml up -d
+#
+# k6 runs in the container and reports metrics to Prometheus
+# Monitor results in Grafana dashboard
+
+services:
+  k6:
+    image: grafana/k6:latest
+    container_name: netengine_k6_runner
+    environment:
+      K6_VUS: ${K6_VUS:-10}
+      K6_DURATION: ${K6_DURATION:-5m}
+      K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
+      K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM: "true"
+      NETENGINE_TARGET_URL: ${NETENGINE_TARGET_URL:-https://api.platform.internal:8080}
+    volumes:
+      - ./compose/k6-script.js:/scripts/script.js:ro
+    command:
+      - run
+      - --vus
+      - "${K6_VUS:-10}"
+      - --duration
+      - "${K6_DURATION:-5m}"
+      - /scripts/script.js
+    depends_on:
+      - prometheus
+    networks:
+      - default
+
+  # Optional: Results viewer
+  k6-reporter:
+    image: node:18-alpine
+    container_name: netengine_k6_reporter
+    working_dir: /app
+    volumes:
+      - ./compose/k6-reporter:/app:ro
+    command: npm start
+    ports:
+      - "8081:3000"
+    depends_on:
+      - prometheus
+    profiles:
+      - k6-reporter  # docker compose --profile k6-reporter up
+
+networks:
+  default:
+    name: netengine_network

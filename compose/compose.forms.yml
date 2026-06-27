@@ -1,0 +1,180 @@
+version: "3.8"
+
+# Form builder, surveys, and data collection
+# Available at: forms.platform.internal
+
+services:
+  # Forms database
+  forms-db:
+    image: postgres:15
+    container_name: netengine_forms_db
+    environment:
+      POSTGRES_USER: forms
+      POSTGRES_PASSWORD: ${FORMS_DB_PASSWORD:-forms_dev}
+      POSTGRES_DB: forms
+    ports:
+      - "5449:5432"
+    volumes:
+      - ./compose/forms-schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+      - forms_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forms"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Formspree - form backend
+  formspree:
+    image: node:18-alpine
+    container_name: netengine_formspree
+    ports:
+      - "3500:3500"
+    environment:
+      DB_URL: postgresql://forms:${FORMS_DB_PASSWORD:-forms_dev}@forms-db:5432/forms
+      JWT_SECRET: ${FORMSPREE_JWT_SECRET:-change-me}
+      API_PORT: 3500
+    volumes:
+      - ./compose/formspree-config.js:/app/config.js:ro
+    working_dir: /app
+    command:
+      - npm
+      - start
+    depends_on:
+      - forms-db
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3500/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - formspree
+
+  # Jotform-like form builder
+  form-builder:
+    image: node:18-alpine
+    container_name: netengine_form_builder
+    ports:
+      - "3405:3000"
+    environment:
+      REACT_APP_API_URL: http://form-api:8099
+      REACT_APP_KEYCLOAK_URL: http://keycloak:8180
+    volumes:
+      - ./compose/form-builder:/app:ro
+    working_dir: /app
+    command:
+      - npm
+      - start
+    depends_on:
+      - form-api
+    profiles:
+      - form-builder-ui
+
+  # Form API backend
+  form-api:
+    image: python:3.13-slim
+    container_name: netengine_form_api
+    ports:
+      - "8099:8099"
+    environment:
+      FORMS_DB_URL: postgresql://forms:${FORMS_DB_PASSWORD:-forms_dev}@forms-db:5432/forms
+      KEYCLOAK_URL: http://keycloak:8180
+      API_PORT: 8099
+      MAX_FORM_SIZE: "10mb"
+    volumes:
+      - ./compose/form-api.py:/app/api.py:ro
+      - forms_data:/app/data
+    working_dir: /app
+    entrypoint: python
+    command:
+      - api.py
+    depends_on:
+      - forms-db
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8099/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - form-api
+
+  # Survey engine (Lime Survey alternative)
+  survey-engine:
+    image: python:3.13-slim
+    container_name: netengine_survey_engine
+    ports:
+      - "8100:8100"
+    environment:
+      FORMS_DB_URL: postgresql://forms:${FORMS_DB_PASSWORD:-forms_dev}@forms-db:5432/forms
+      SURVEY_PORT: 8100
+      SURVEY_THEMES_DIR: /app/themes
+    volumes:
+      - ./compose/survey-engine.py:/app/engine.py:ro
+      - ./compose/survey-themes:/app/themes:ro
+      - survey_data:/app/data
+    working_dir: /app
+    entrypoint: python
+    command:
+      - engine.py
+    depends_on:
+      - forms-db
+    profiles:
+      - survey-engine
+
+  # Response analytics
+  response-analytics:
+    image: python:3.13-slim
+    container_name: netengine_response_analytics
+    environment:
+      FORMS_DB_URL: postgresql://forms:${FORMS_DB_PASSWORD:-forms_dev}@forms-db:5432/forms
+      ANALYTICS_INTERVAL: "3600"
+    volumes:
+      - ./compose/response-analytics.py:/app/analytics.py:ro
+    working_dir: /app
+    entrypoint: python
+    command:
+      - analytics.py
+    depends_on:
+      - forms-db
+    profiles:
+      - response-analytics
+
+  # Email notifications for form submissions
+  submission-notifier:
+    image: python:3.13-slim
+    container_name: netengine_submission_notifier
+    environment:
+      FORMS_DB_URL: postgresql://forms:${FORMS_DB_PASSWORD:-forms_dev}@forms-db:5432/forms
+      SMTP_HOST: ${SMTP_HOST:-smtp-relay}
+      SMTP_PORT: 25
+      NOTIFICATION_QUEUE_URL: redis://notification-queue:6379
+    volumes:
+      - ./compose/submission-notifier.py:/app/notifier.py:ro
+    working_dir: /app
+    entrypoint: python
+    command:
+      - notifier.py
+    depends_on:
+      - forms-db
+      - notification-queue
+    profiles:
+      - submission-notifier
+
+  # Redis queue for async processing
+  notification-queue:
+    image: redis:7-alpine
+    container_name: netengine_notification_queue
+    ports:
+      - "6384:6379"
+    volumes:
+      - notification_queue_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  forms_db_data:
+  forms_data:
+  survey_data:
+  notification_queue_data:
