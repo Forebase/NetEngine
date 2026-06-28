@@ -464,21 +464,29 @@ class DNSHandler(BasePhaseHandler):
             # Listen IP comes from the spec (dns_output not yet set at deploy time)
             root_listen_ip = context.spec.dns.root.listen_ip
 
-            # Start without a network so the listen IP can be assigned statically
-            container = client.containers.run(
+            # Create container directly on the core network with the static IP.
+            # Docker v1.48+ rejects connecting a container that is already in
+            # "none" (private) mode to a second network, so we use the low-level
+            # API to attach to core with the desired IP at creation time.
+            networking_config = client.api.create_networking_config(
+                {
+                    "core": client.api.create_endpoint_config(
+                        ipv4_address=root_listen_ip
+                    )
+                }
+            )
+            response = client.api.create_container(
                 image=COREDNS_IMAGE,
                 name=COREDNS_CONTAINER_NAME,
                 command=["-conf", "/etc/coredns/Corefile"],
-                # rw so the gateway portal handler can append stub zones at runtime
-                volumes={str(zone_dir): {"bind": "/etc/coredns", "mode": "rw"}},
-                network_mode="none",
-                detach=True,
-                restart_policy={"Name": "unless-stopped"},
+                host_config=client.api.create_host_config(
+                    binds={str(zone_dir): {"bind": "/etc/coredns", "mode": "rw"}},
+                    restart_policy={"Name": "unless-stopped"},
+                ),
+                networking_config=networking_config,
             )
-            # Attach to the in-world core network with the declared listen IP
-            net = client.networks.get("core")
-            net.connect(container, ipv4_address=root_listen_ip)
-            return container.id
+            client.api.start(response["Id"])
+            return response["Id"]
 
         container_id: str = await asyncio.to_thread(_sync)
         logger.info(f"CoreDNS container: {container_id[:12]}")
