@@ -45,6 +45,41 @@ class MigrationRunResult:
         return sum(1 for result in self.results if result.status == "failed")
 
 
+@dataclass(frozen=True)
+class MigrationStatusResult:
+    """Current database status for a single migration file."""
+
+    filename: str
+    checksum: str
+    status: str
+    applied_at: datetime | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class MigrationStatusReport:
+    """Structured status report for migration files."""
+
+    migrations_dir: Path
+    results: tuple[MigrationStatusResult, ...] = field(default_factory=tuple)
+
+    @property
+    def pending_count(self) -> int:
+        return sum(1 for result in self.results if result.status == "pending")
+
+    @property
+    def applied_count(self) -> int:
+        return sum(1 for result in self.results if result.status == "applied")
+
+    @property
+    def failed_count(self) -> int:
+        return sum(1 for result in self.results if result.status == "failed")
+
+    @property
+    def drifted_count(self) -> int:
+        return sum(1 for result in self.results if result.status == "drifted")
+
+
 class MigrationChecksumDriftError(RuntimeError):
     """Raised when an already-applied migration file changes on disk."""
 
@@ -191,3 +226,52 @@ async def run_migrations(
         await conn.close()
 
     return MigrationRunResult(resolved_dir, tuple(results))
+
+
+async def migration_status(
+    db_url: str | None = None,
+    migrations_dir: Path | str = MIGRATIONS_DIR,
+) -> MigrationStatusReport:
+    """Inspect migration state without applying pending migration files."""
+    import asyncpg  # type: ignore[import]
+
+    resolved_dir = Path(migrations_dir)
+    migration_files = discover_migrations(resolved_dir)
+    if db_url is None:
+        db_url = database_url_from_environment()
+    if not db_url:
+        raise RuntimeError("No database URL configured for migrations")
+
+    conn = await asyncpg.connect(db_url)
+    results: list[MigrationStatusResult] = []
+    try:
+        await conn.execute(_SCHEMA_MIGRATIONS_SQL)
+        for migration_path in migration_files:
+            sql = migration_path.read_text(encoding="utf-8")
+            checksum = migration_checksum(sql)
+            filename = migration_path.name
+            existing = await conn.fetchrow(
+                "SELECT checksum, success, applied_at, error FROM schema_migrations WHERE filename = $1",
+                filename,
+            )
+            if not existing:
+                status = "pending"
+            elif existing["success"] and existing["checksum"] == checksum:
+                status = "applied"
+            elif existing["success"]:
+                status = "drifted"
+            else:
+                status = "failed"
+            results.append(
+                MigrationStatusResult(
+                    filename=filename,
+                    checksum=checksum,
+                    status=status,
+                    applied_at=existing["applied_at"] if existing else None,
+                    error=existing["error"] if existing else None,
+                )
+            )
+    finally:
+        await conn.close()
+
+    return MigrationStatusReport(resolved_dir, tuple(results))

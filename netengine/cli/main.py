@@ -11,7 +11,7 @@ import yaml
 
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
-from netengine.db.migrations import MigrationRunResult, run_migrations
+from netengine.db.migrations import MigrationRunResult, migration_status, run_migrations
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
@@ -59,8 +59,7 @@ async def _run_migrations(db_url: str) -> MigrationRunResult:
     for migration in result.results:
         if migration.status == "applied":
             logger.info(
-                f"Applied migration: {migration.filename} "
-                f"({migration.duration_seconds:.3f}s)"
+                f"Applied migration: {migration.filename} " f"({migration.duration_seconds:.3f}s)"
             )
         elif migration.status == "skipped":
             logger.info(f"Skipped migration: {migration.filename} (already applied)")
@@ -165,6 +164,67 @@ async def _up(
         finally:
             await orchestrator.consumer_supervisor.stop_all()
             logger.info("Consumers stopped.")
+
+
+@cli.group()
+def migrate() -> None:
+    """Inspect and apply database migrations."""
+
+
+@migrate.command("run")
+def migrate_run() -> None:
+    """Apply pending database migrations."""
+    db_url = os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+    if not db_url:
+        click.echo("No database URL configured for migrations", err=True)
+        sys.exit(2)
+    try:
+        asyncio.run(_run_migrations(db_url))
+    except Exception as exc:
+        click.echo(f"Migrations failed: {exc}", err=True)
+        sys.exit(1)
+
+
+@migrate.command("status")
+def migrate_status() -> None:
+    """Show database migration status without applying migrations."""
+    db_url = os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+    if not db_url:
+        click.echo("No database URL configured for migrations", err=True)
+        sys.exit(2)
+    try:
+        report = asyncio.run(migration_status(db_url))
+    except Exception as exc:
+        click.echo(f"Migration status failed: {exc}", err=True)
+        sys.exit(1)
+    for migration in report.results:
+        click.echo(f"{migration.status}: {migration.filename}")
+    click.echo(
+        f"Migrations status: {report.applied_count} applied, "
+        f"{report.pending_count} pending, {report.failed_count} failed, "
+        f"{report.drifted_count} drifted"
+    )
+
+
+@migrate.command("check")
+def migrate_check() -> None:
+    """Exit non-zero when migrations are pending, failed, or drifted."""
+    db_url = os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+    if not db_url:
+        click.echo("No database URL configured for migrations", err=True)
+        sys.exit(2)
+    try:
+        report = asyncio.run(migration_status(db_url))
+    except Exception as exc:
+        click.echo(f"Migration check failed: {exc}", err=True)
+        sys.exit(1)
+    if report.pending_count or report.failed_count or report.drifted_count:
+        click.echo(
+            f"Migrations not current: {report.pending_count} pending, "
+            f"{report.failed_count} failed, {report.drifted_count} drifted"
+        )
+        sys.exit(1)
+    click.echo("Migrations current.")
 
 
 @cli.command()
