@@ -10,6 +10,7 @@ This is a boundary handler, not a numbered phase. It is invoked after Phase 7
     other NetEngine worlds (NONE / PEERED / FEDERATED).
 """
 
+import os
 from datetime import datetime
 from typing import Any
 
@@ -133,8 +134,9 @@ class GatewayPortalHandler(BasePhaseHandler):
 
         Adds a ``forward . <resolver_ip>`` directive so that names not
         resolved within the world are forwarded to the real internet resolver.
-        This method is best-effort: a failure is logged but does not abort
-        the portal setup.
+        Writes to the host-mounted Corefile to avoid shell dependency in the
+        CoreDNS container. This method is best-effort: failures are logged
+        but do not abort portal setup.
         """
         if context.docker_client is None:
             return
@@ -143,20 +145,11 @@ class GatewayPortalHandler(BasePhaseHandler):
             corefile_patch = (
                 f"\n# Upstream internet resolver (gateway portal)\n" f"forward . {resolver_ip}\n"
             )
-            corefile_append_cmd = [
-                "sh",
-                "-c",
-                f"echo '{corefile_patch}' >> /etc/coredns/Corefile",
-            ]
-            exit_code, output = await context.docker_client.exec_command(
-                "netengine_coredns", corefile_append_cmd
-            )
-            if exit_code != 0:
-                context.logger.warning(f"Could not append upstream resolver to CoreDNS: {output}")
-            else:
-                # Reload CoreDNS to pick up the change
-                await context.docker_client.exec_command("netengine_coredns", ["kill", "-HUP", "1"])
-                context.logger.info(f"Upstream resolver configured: {resolver_ip}")
+            corefile_path = os.path.join(context.zone_dir, "Corefile")
+            with open(corefile_path, "a") as f:
+                f.write(corefile_patch)
+            await context.docker_client.exec_command("netengine_coredns", ["kill", "-HUP", "1"])
+            context.logger.info(f"Upstream resolver configured: {resolver_ip}")
         except Exception as exc:
             context.logger.warning(f"Upstream resolver setup skipped: {exc}")
 
@@ -278,6 +271,8 @@ class GatewayPortalHandler(BasePhaseHandler):
 
         Derives the peer TLD from ``<peer.name>.internal`` and adds a
         ``forward <tld> <peer_resolver>`` stub to the CoreDNS root Corefile.
+        Writes to the host-mounted Corefile to avoid shell dependency in the
+        CoreDNS container (which may not have sh in its PATH).
         The peer's DNS resolver is assumed to live at port 53 of the peer endpoint.
         """
         if context.docker_client is None:
@@ -292,12 +287,13 @@ class GatewayPortalHandler(BasePhaseHandler):
             f"    forward . {peer_ip}:53\n"
             f"}}\n"
         )
-        exit_code, output = await context.docker_client.exec_command(
-            "netengine_coredns",
-            ["sh", "-c", f"echo '{corefile_stub}' >> /etc/coredns/Corefile"],
-        )
-        if exit_code != 0:
-            raise GatewayError(f"Could not configure DNS forwarding for peer {peer.name}: {output}")
+
+        corefile_path = os.path.join(context.zone_dir, "Corefile")
+        try:
+            with open(corefile_path, "a") as f:
+                f.write(corefile_stub)
+        except OSError as exc:
+            raise GatewayError(f"Could not append to Corefile at {corefile_path}: {exc}") from exc
 
         # Signal CoreDNS to reload config
         await context.docker_client.exec_command("netengine_coredns", ["kill", "-HUP", "1"])
