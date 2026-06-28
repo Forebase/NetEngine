@@ -18,6 +18,7 @@ class Queue(StrEnum):
     PKI_CERT_ROTATION_EVENTS = "pki_cert_rotation_events"
     DRIFT_EVENTS = "drift_events"
     WORLD_HEALTH = "world_health"
+    GATEWAY_PORTAL_EVENTS = "gateway_portal_events"
 
     # Dead-letter queues (derived from primary names)
     DNS_UPDATES_DLQ = "dns_updates_dlq"
@@ -29,6 +30,7 @@ class Queue(StrEnum):
     PKI_CERT_ROTATION_EVENTS_DLQ = "pki_cert_rotation_events_dlq"
     DRIFT_EVENTS_DLQ = "drift_events_dlq"
     WORLD_HEALTH_DLQ = "world_health_dlq"
+    GATEWAY_PORTAL_EVENTS_DLQ = "gateway_portal_events_dlq"
 
 
 # Primary queues only — used for metrics/introspection endpoints
@@ -42,4 +44,5 @@ PRIMARY_QUEUES: tuple[Queue, ...] = (
     Queue.PKI_CERT_ROTATION_EVENTS,
     Queue.DRIFT_EVENTS,
     Queue.WORLD_HEALTH,
+    Queue.GATEWAY_PORTAL_EVENTS,
 )
