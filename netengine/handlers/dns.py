@@ -461,10 +461,8 @@ class DNSHandler(BasePhaseHandler):
                 logger.info(f"Pulling {COREDNS_IMAGE}...")
                 client.images.pull(COREDNS_IMAGE)
 
-            # Listen IP comes from the root zone config
-            root_listen_ip = context.runtime_state.dns_output.get(  # type: ignore[union-attr]
-                "root_zone", {}
-            ).get("listen_ip", "10.0.0.2")
+            # Listen IP comes from the spec (dns_output not yet set at deploy time)
+            root_listen_ip = context.spec.dns.root.listen_ip
 
             # Start without a network so the listen IP can be assigned statically
             container = client.containers.run(

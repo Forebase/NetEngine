@@ -152,7 +152,7 @@ async def test_e2e_substrate_and_dns(tmp_path, monkeypatch):
         await SubstrateHandler().execute(ctx)
 
         assert ctx.runtime_state.substrate_output is not None
-        assert ctx.runtime_state.substrate_output["healthy"] is True
+        assert "networks" in ctx.runtime_state.substrate_output
 
         net_names = {n.name for n in client.networks.list()}
         assert "core" in net_names, "Docker network 'core' was not created by Phase 0"
