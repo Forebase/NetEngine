@@ -469,11 +469,7 @@ class DNSHandler(BasePhaseHandler):
             # "none" (private) mode to a second network, so we use the low-level
             # API to attach to core with the desired IP at creation time.
             networking_config = client.api.create_networking_config(
-                {
-                    "core": client.api.create_endpoint_config(
-                        ipv4_address=root_listen_ip
-                    )
-                }
+                {"core": client.api.create_endpoint_config(ipv4_address=root_listen_ip)}
             )
             response = client.api.create_container(
                 image=COREDNS_IMAGE,
