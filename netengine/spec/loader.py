@@ -86,21 +86,6 @@ def _warn_unsupported(spec: NetEngineSpec) -> None:
                 " is not yet implemented — field will be ignored"
             )
 
-    mail = spec.world_services.mail
-    if mail.enabled:
-        policy = mail.mailbox_policy
-        if policy is not None:
-            if policy.spf_default:
-                logger.warning(
-                    "mail.mailbox_policy.spf_default is set but SPF record generation is"
-                    " not yet implemented — field will be ignored"
-                )
-            if policy.dmarc_default:
-                logger.warning(
-                    "mail.mailbox_policy.dmarc_default is set but DMARC policy is not yet"
-                    " implemented — field will be ignored"
-                )
-
 
 def _cross_validate(spec: NetEngineSpec) -> None:
     """Cross-field validation not expressible in Pydantic field validators.
