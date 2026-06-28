@@ -80,7 +80,7 @@ class PGMQClient:
                 parent_event_id=envelope.parent_event_id,
                 retry_count=envelope.retry_count + 1,
             )
-            await self.send(dlq_for(queue_name), dlq_envelope)
+            await self.send(dlq_for(Queue(queue_name)), dlq_envelope)
         else:
             requeue_envelope = EventEnvelope(
                 event_id=envelope.event_id,
