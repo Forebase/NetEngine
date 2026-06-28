@@ -22,7 +22,8 @@ What is intentionally NOT tested here (requires dedicated infrastructure):
 from __future__ import annotations
 
 import asyncio
-import time
+import io
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -79,10 +80,23 @@ def _cleanup_docker(client) -> None:
 
 
 def _read_corefile_from_container(client, container_name: str) -> str:
-    """Return the current contents of /etc/coredns/Corefile inside the container."""
+    """Return the current contents of /etc/coredns/Corefile inside the container.
+
+    Uses Docker's get_archive API rather than exec+cat so it works with minimal
+    CoreDNS images that have no shell utilities in their PATH.
+    """
     container = client.containers.get(container_name)
-    exit_code, output = container.exec_run(["cat", "/etc/coredns/Corefile"], demux=False)
-    return (output or b"").decode("utf-8", errors="replace")
+    bits, _ = container.get_archive("/etc/coredns/Corefile")
+    buf = io.BytesIO()
+    for chunk in bits:
+        buf.write(chunk)
+    buf.seek(0)
+    with tarfile.open(fileobj=buf) as tar:
+        members = tar.getmembers()
+        if not members:
+            return ""
+        f = tar.extractfile(members[0])
+        return f.read().decode("utf-8", errors="replace") if f else ""
 
 
 # ─────────────────────────────────────────────

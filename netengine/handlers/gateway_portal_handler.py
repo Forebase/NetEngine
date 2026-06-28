@@ -148,7 +148,7 @@ class GatewayPortalHandler(BasePhaseHandler):
             corefile_path = os.path.join(context.zone_dir, "Corefile")
             with open(corefile_path, "a") as f:
                 f.write(corefile_patch)
-            await context.docker_client.exec_command("netengine_coredns", ["kill", "-HUP", "1"])
+            await context.docker_client.signal_container("netengine_coredns", "HUP")
             context.logger.info(f"Upstream resolver configured: {resolver_ip}")
         except Exception as exc:
             context.logger.warning(f"Upstream resolver setup skipped: {exc}")
@@ -295,8 +295,8 @@ class GatewayPortalHandler(BasePhaseHandler):
         except OSError as exc:
             raise GatewayError(f"Could not append to Corefile at {corefile_path}: {exc}") from exc
 
-        # Signal CoreDNS to reload config
-        await context.docker_client.exec_command("netengine_coredns", ["kill", "-HUP", "1"])
+        # Signal CoreDNS to reload config via Docker daemon (no shell required)
+        await context.docker_client.signal_container("netengine_coredns", "HUP")
         context.logger.info(f"DNS forwarding configured for peer TLD: {peer_tld}")
 
     # ─────────────────────────────────────────────
