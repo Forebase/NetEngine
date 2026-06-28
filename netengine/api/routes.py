@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from netengine.api.auth import require_admin, require_auth
 from netengine.core.reload import ReloadResult, apply_reload, check_immutability, compute_diff
 from netengine.core.state import RuntimeState
+from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import SpecLoadError, load_spec
@@ -99,7 +100,6 @@ PHASE_LABELS = {
     "7": "ANDs",
     "8": "Services",
 }
-
 
 @router.get("/health")
 async def health() -> dict[str, Any]:
@@ -266,6 +266,34 @@ async def teardown_world(
 # ─────────────────────────────────────────────
 
 
+class ServiceToggleRequest(BaseModel):
+    enabled: bool
+
+
+@router.put("/services/{name}")
+async def update_service(
+    name: str, body: ServiceToggleRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Enable or disable a named world service (mail, storage) in the spec."""
+    state = RuntimeState.load()
+
+    if not state.world_spec:
+        raise HTTPException(status_code=409, detail="No world spec loaded")
+
+    world_services = state.world_spec.get("world_services") or {}
+    if name not in world_services:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Service '{name}' not found — known services: {list(world_services)}",
+        )
+
+    world_services[name]["enabled"] = body.enabled
+    state.world_spec["world_services"] = world_services
+    state.save()
+
+    return {"status": "updated", "service": name, "enabled": body.enabled}
+
+
 @router.get("/services")
 async def get_services(user: dict = Depends(require_auth)) -> dict[str, Any]:
     """List running NetEngines containers and their status."""
@@ -297,6 +325,27 @@ class OrgAdmitRequest(BaseModel):
     and_profile: str = "business"
 
 
+@router.get("/orgs")
+async def list_orgs(user: dict = Depends(require_auth)) -> Any:
+    """List all organisations in the world registry."""
+    from netengine.handlers.world_registry_handler import WorldRegistryHandler
+
+    handler = WorldRegistryHandler()
+    return await handler.list_orgs()
+
+
+@router.get("/orgs/{org}")
+async def get_org(org: str, user: dict = Depends(require_auth)) -> Any:
+    """Return a single organisation by name."""
+    from netengine.handlers.world_registry_handler import WorldRegistryHandler
+
+    handler = WorldRegistryHandler()
+    result = await handler.get_org(org)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Org {org} not found")
+    return result
+
+
 @router.post("/orgs")
 async def admit_org(body: OrgAdmitRequest, user: dict = Depends(require_auth)) -> dict[str, Any]:
     """Admit a new organisation to the world registry and trigger provisioning."""
@@ -309,6 +358,56 @@ async def admit_org(body: OrgAdmitRequest, user: dict = Depends(require_auth)) -
         and_profile=body.and_profile,
     )
     return {"status": "admitted", "org": body.name}
+
+
+class OrgUpdateRequest(BaseModel):
+    capabilities: list[str] = []
+    and_profile: str = "business"
+
+
+@router.put("/orgs/{org}")
+async def update_org(
+    org: str, body: OrgUpdateRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Update an organisation's capabilities and AND profile."""
+    from netengine.handlers.world_registry_handler import WorldRegistryHandler
+
+    handler = WorldRegistryHandler()
+    existing = await handler.get_org(org)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"Org {org} not found")
+    await handler.update_org(org, body.capabilities, body.and_profile)
+    return {"status": "updated", "org": org}
+
+
+class OrgRemoveRequest(BaseModel):
+    confirm: bool = False
+
+
+@router.delete("/orgs/{org}")
+async def remove_org(
+    org: str, body: OrgRemoveRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Remove an organisation from the world registry.
+
+    Persistent worlds require confirm=true in the request body.
+    """
+    state = RuntimeState.load()
+    if state.world_spec:
+        raw_lifecycle = (state.world_spec.get("metadata") or {}).get("lifecycle", "ephemeral")
+        if raw_lifecycle == "persistent" and not body.confirm:
+            raise HTTPException(
+                status_code=409,
+                detail="Org removal from a persistent world requires confirm=true",
+            )
+
+    from netengine.handlers.world_registry_handler import WorldRegistryHandler
+
+    handler = WorldRegistryHandler()
+    removed = await handler.remove_org(org)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"Org {org} not found")
+    return {"status": "removed", "org": org}
 
 
 class AppDeployRequest(BaseModel):
@@ -351,6 +450,115 @@ async def deploy_app(
 
 
 # ─────────────────────────────────────────────
+# ANDs
+# ─────────────────────────────────────────────
+
+
+class ANDCreateRequest(BaseModel):
+    name: str
+    org: str
+    profile: str = "business"
+    dns_suffix: str = ""
+
+
+@router.get("/ands")
+async def list_ands(user: dict = Depends(require_auth)) -> dict[str, Any]:
+    """List provisioned AND instances from runtime state."""
+    state = RuntimeState.load()
+    ands_out = state.ands_output or {}
+    return {"ands": ands_out.get("instances", [])}
+
+
+@router.post("/ands")
+async def create_and(body: ANDCreateRequest, user: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Provision a new AND for an org."""
+    from netengine.core.supabase_client import get_db
+
+    db = await get_db()
+    org_result = (
+        await db.table("world_registry").select("org_name").eq("org_name", body.org).execute()
+    )
+    if not org_result.data:
+        raise HTTPException(status_code=404, detail=f"Org {body.org} not found in world registry")
+
+    dns_suffix = body.dns_suffix or f"{body.org}.internal"
+    record = {
+        "and_name": body.name,
+        "org_name": body.org,
+        "profile": body.profile,
+        "dns_suffix": dns_suffix,
+    }
+    await db.table("and_instances").upsert(record).execute()
+
+    state = RuntimeState.load()
+    ands_out = state.ands_output or {}
+    instances: list[dict[str, Any]] = ands_out.get("instances", [])
+    if not any(i.get("name") == body.name for i in instances):
+        instances.append(record)
+        ands_out["instances"] = instances
+        state.ands_output = ands_out
+        state.save()
+
+    return {"status": "provisioned", "and": body.name, "org": body.org, "dns_suffix": dns_suffix}
+
+
+class ANDProfileUpdateRequest(BaseModel):
+    profile: str
+    dns_suffix: str = ""
+
+
+@router.put("/ands/{and_name}/profile")
+async def update_and_profile(
+    and_name: str, body: ANDProfileUpdateRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Update the profile (and optionally dns_suffix) of a provisioned AND instance."""
+    state = RuntimeState.load()
+
+    if not state.world_spec:
+        raise HTTPException(status_code=409, detail="No world spec loaded")
+
+    ands_out = state.ands_output or {}
+    instances: list[dict[str, Any]] = ands_out.get("instances", [])
+    instance = next((i for i in instances if i.get("and_name") == and_name), None)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"AND instance '{and_name}' not found")
+    profiles = (state.world_spec.get("ands") or {}).get("profiles", {})
+    if body.profile not in profiles:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Profile '{body.profile}' not defined in spec"
+            f" — known profiles: {list(profiles)}",
+        )
+
+    instance["profile"] = body.profile
+    if body.dns_suffix:
+        instance["dns_suffix"] = body.dns_suffix
+
+    state.ands_output = ands_out
+    state.save()
+
+    return {"status": "updated", "and": and_name, "profile": body.profile}
+
+
+@router.delete("/ands/{and_name}")
+async def remove_and(and_name: str, user: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Remove an AND instance."""
+    from netengine.core.supabase_client import get_db
+
+    db = await get_db()
+    await db.table("and_instances").delete().eq("and_name", and_name).execute()
+
+    state = RuntimeState.load()
+    ands_out = state.ands_output or {}
+    instances = [i for i in ands_out.get("instances", []) if i.get("and_name") != and_name]
+    ands_out["instances"] = instances
+    state.ands_output = ands_out
+    state.save()
+
+    return {"status": "removed", "and": and_name}
+
+
+# ─────────────────────────────────────────────
 # Registry
 # ─────────────────────────────────────────────
 
@@ -362,6 +570,41 @@ async def list_domains(user: dict = Depends(require_auth)) -> Any:
     db = await get_db()
     result = await db.table("domain_records").select("*").execute()
     return result.data
+
+
+class DomainRegisterRequest(BaseModel):
+    domain: str
+    org: str
+    record_type: str = "A"
+    value: str = ""
+
+
+@router.post("/registry/domains")
+async def register_domain(
+    body: DomainRegisterRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Register a domain in the domain registry."""
+    from netengine.core.supabase_client import get_db
+
+    db = await get_db()
+    record = {
+        "domain": body.domain,
+        "org_name": body.org,
+        "record_type": body.record_type,
+        "value": body.value,
+    }
+    await db.table("domain_records").upsert(record).execute()
+    return {"status": "registered", "domain": body.domain, "org": body.org}
+
+
+@router.delete("/registry/domains/{domain:path}")
+async def remove_domain(domain: str, user: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Remove a domain from the domain registry."""
+    from netengine.core.supabase_client import get_db
+
+    db = await get_db()
+    await db.table("domain_records").delete().eq("domain", domain).execute()
+    return {"status": "removed", "domain": domain}
 
 
 @router.get("/registry/addresses")
@@ -406,6 +649,71 @@ async def dns_query(
 
 
 # ─────────────────────────────────────────────
+# Gateway
+# ─────────────────────────────────────────────
+
+
+class GatewayUpdateRequest(BaseModel):
+    real_internet_mode: str = ""
+    upstream_resolver_enabled: bool | None = None
+    upstream_resolver_ip: str = ""
+    cross_world_mode: str = ""
+
+
+@router.put("/gateway")
+async def update_gateway(
+    body: GatewayUpdateRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Update gateway portal configuration in the running spec.
+
+    Fields left at their zero-values are not modified. Changes take effect on
+    the next bootstrap cycle; live gateway reconfiguration requires a full reload.
+    """
+    state = RuntimeState.load()
+
+    if not state.world_spec:
+        raise HTTPException(status_code=409, detail="No world spec loaded")
+
+    gw = state.world_spec.get("gateway_portal") or {}
+    real_internet = gw.get("real_internet") or {}
+    cross_world = gw.get("cross_world") or {}
+
+    valid_ri_modes = {"isolated", "shadowed", "mirrored", "exposed", "custom"}
+    valid_cw_modes = {"none", "peered", "federated"}
+
+    if body.real_internet_mode:
+        if body.real_internet_mode not in valid_ri_modes:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid real_internet_mode '{body.real_internet_mode}'"
+                f" — valid: {valid_ri_modes}",
+            )
+        real_internet["mode"] = body.real_internet_mode
+
+    if body.upstream_resolver_enabled is not None:
+        real_internet["upstream_resolver_enabled"] = body.upstream_resolver_enabled
+
+    if body.upstream_resolver_ip:
+        real_internet["upstream_resolver_ip"] = body.upstream_resolver_ip
+
+    if body.cross_world_mode:
+        if body.cross_world_mode not in valid_cw_modes:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid cross_world_mode '{body.cross_world_mode}'"
+                f" — valid: {valid_cw_modes}",
+            )
+        cross_world["mode"] = body.cross_world_mode
+
+    gw["real_internet"] = real_internet
+    gw["cross_world"] = cross_world
+    state.world_spec["gateway_portal"] = gw
+    state.save()
+
+    return {"status": "updated", "gateway_portal": gw}
+
+
+# ─────────────────────────────────────────────
 # PKI
 # ─────────────────────────────────────────────
 
@@ -431,6 +739,69 @@ async def list_certs(user: dict = Depends(require_auth)) -> dict[str, Any]:
         "step_ca_ip": step_ca_ip,
         "issued_certs": certs,
     }
+
+
+@router.get("/pki/intermediate-ca-cert")
+async def get_intermediate_ca_cert(user: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Return the intermediate CA certificate PEM, if intermediate CA is enabled.
+
+    Clients that need to build a full trust chain should fetch this cert and
+    add it alongside the root CA cert (available in GET /world as ca_cert_present).
+    """
+    state = RuntimeState.load()
+    if not state.intermediate_ca_cert:
+        raise HTTPException(
+            status_code=404,
+            detail="Intermediate CA certificate not available; ensure pki.intermediate_ca_enabled is true and PKI phase has completed",
+        )
+    return {
+        "intermediate_ca_cert": state.intermediate_ca_cert,
+        "available": True,
+    }
+
+
+class PKIRotationPolicyUpdateRequest(BaseModel):
+    enabled: bool | None = None
+    default_interval_hours: int | None = None
+    default_warning_days: int | None = None
+    cert_type_overrides: dict[str, Any] | None = None
+
+
+@router.put("/pki/rotation-policy")
+async def update_pki_rotation_policy(
+    body: PKIRotationPolicyUpdateRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Update PKI certificate rotation policy in the running spec.
+
+    Only fields provided (non-None) are updated; omitted fields are left as-is.
+    Changes are picked up by the rotation worker on its next iteration without restart.
+    """
+    state = RuntimeState.load()
+
+    if not state.world_spec:
+        raise HTTPException(status_code=409, detail="No world spec loaded")
+
+    pki = state.world_spec.get("pki") or {}
+    policy = pki.get("rotation_policy") or {}
+
+    if body.enabled is not None:
+        policy["enabled"] = body.enabled
+    if body.default_interval_hours is not None:
+        if body.default_interval_hours < 1:
+            raise HTTPException(status_code=422, detail="default_interval_hours must be >= 1")
+        policy["default_interval_hours"] = body.default_interval_hours
+    if body.default_warning_days is not None:
+        if body.default_warning_days < 1:
+            raise HTTPException(status_code=422, detail="default_warning_days must be >= 1")
+        policy["default_warning_days"] = body.default_warning_days
+    if body.cert_type_overrides is not None:
+        policy["cert_type_overrides"] = body.cert_type_overrides
+
+    pki["rotation_policy"] = policy
+    state.world_spec["pki"] = pki
+    state.save()
+
+    return {"status": "updated", "rotation_policy": policy}
 
 
 # ─────────────────────────────────────────────
@@ -462,14 +833,6 @@ async def list_realms(user: dict = Depends(require_auth)) -> dict[str, Any]:
 # Event queue / DLQ
 # ─────────────────────────────────────────────
 
-KNOWN_QUEUES = [
-    "dns_updates",
-    "oidc_provisioning",
-    "and_provisioning",
-    "mail_provisioning",
-    "app_deployments",
-]
-
 
 @router.get("/queues")
 async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
@@ -479,7 +842,7 @@ async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
     try:
         db = await get_db()
         queue_stats: list[dict[str, Any]] = []
-        for q in KNOWN_QUEUES:
+        for q in PRIMARY_QUEUES:
             try:
                 result = await db.rpc("pgmq_metrics", {"queue_name": q}).execute()
                 metrics = result.data[0] if result.data else {}
@@ -487,7 +850,7 @@ async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
                 metrics = {}
 
             try:
-                dlq_result = await db.rpc("pgmq_metrics", {"queue_name": f"{q}_dlq"}).execute()
+                dlq_result = await db.rpc("pgmq_metrics", {"queue_name": dlq_for(q)}).execute()
                 dlq_metrics = dlq_result.data[0] if dlq_result.data else {}
             except Exception:
                 dlq_metrics = {}
@@ -497,7 +860,7 @@ async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
                     "queue": q,
                     "depth": metrics.get("queue_length", 0),
                     "oldest_msg_age_sec": metrics.get("oldest_msg_age_sec"),
-                    "dlq": f"{q}_dlq",
+                    "dlq": dlq_for(q),
                     "dlq_depth": dlq_metrics.get("queue_length", 0),
                 }
             )
@@ -512,8 +875,13 @@ async def replay_dlq(queue_name: str, user: dict = Depends(require_auth)) -> dic
     """Move all messages from a DLQ back to the main queue for retry."""
     from netengine.core.pgmq_client import PGMQClient
 
+    try:
+        queue = Queue(queue_name)
+        dlq = dlq_for(queue)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown queue: {queue_name}") from exc
+
     client = PGMQClient()
-    dlq = f"{queue_name}_dlq"
     replayed = 0
     errors: list[str] = []
     while True:
@@ -528,7 +896,7 @@ async def replay_dlq(queue_name: str, user: dict = Depends(require_auth)) -> dic
 
             envelope = EventEnvelope(**_json.loads(msg["message"]))
             envelope.retry_count = 0  # reset retry counter
-            await client.send(queue_name, envelope)
+            await client.send(queue, envelope)
             await client.delete(dlq, msg["msg_id"])
             replayed += 1
         except Exception as exc:
@@ -705,3 +1073,19 @@ async def import_world(body: ImportRequest, user: dict = Depends(require_admin))
         state.world_services_output = _sanitize_export_value(body.world_services_output)
     state.save()
     return {"status": "imported", "phases_restored": phases_restored}
+
+
+# ─────────────────────────────────────────────
+# Prometheus metrics scrape endpoint
+# ─────────────────────────────────────────────
+
+
+@router.get("/metrics")
+async def prometheus_metrics() -> Any:
+    """Expose Prometheus metrics for scraping."""
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+    from starlette.responses import Response
+
+    from netengine.monitoring.metrics import REGISTRY
+
+    return Response(content=generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)

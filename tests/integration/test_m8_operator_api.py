@@ -687,3 +687,176 @@ class TestIdentityRealmsRoute:
         data = resp.json()
         assert data["platform_realm"]["realm"] == "platform"
         assert data["inworld_realm"]["realm"] == "inworld"
+
+
+# ─────────────────────────────────────────────
+# New targeted PUT endpoints
+# ─────────────────────────────────────────────
+
+
+def _make_world_spec(tmp_path, monkeypatch) -> tuple:
+    """Return (client, state) with a minimal world_spec pre-loaded."""
+    monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
+    monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
+    spec = _load_example("minimal.yaml")
+    state = RuntimeState()
+    state.world_spec = spec.model_dump()
+    state.save()
+    from netengine.api.app import app
+
+    client = TestClient(app)
+    return client, state
+
+
+AUTH = {"X-Bootstrap-Secret": "test-secret"}
+
+
+class TestUpdateAndProfile:
+    def test_updates_profile(self, tmp_path, monkeypatch):
+        client, state = _make_world_spec(tmp_path, monkeypatch)
+        # Seed an AND instance in state
+        state2 = RuntimeState.load()
+        state2.ands_output = {
+            "instances": [{"and_name": "acme-and", "org": "acme", "profile": "business"}]
+        }
+        # Ensure the target profile exists in world_spec
+        state2.world_spec["ands"]["profiles"]["business"] = {"dhcp": True}
+        state2.save()
+
+        resp = client.put(
+            "/api/v1/ands/acme-and/profile",
+            json={"profile": "business"},
+            headers=AUTH,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["profile"] == "business"
+
+    def test_404_on_missing_and(self, tmp_path, monkeypatch):
+        client, _ = _make_world_spec(tmp_path, monkeypatch)
+        resp = client.put(
+            "/api/v1/ands/nonexistent/profile",
+            json={"profile": "business"},
+            headers=AUTH,
+        )
+        assert resp.status_code == 404
+
+    def test_422_on_unknown_profile(self, tmp_path, monkeypatch):
+        client, state = _make_world_spec(tmp_path, monkeypatch)
+        state2 = RuntimeState.load()
+        state2.ands_output = {
+            "instances": [{"and_name": "acme-and", "org": "acme", "profile": "business"}]
+        }
+        state2.save()
+        resp = client.put(
+            "/api/v1/ands/acme-and/profile",
+            json={"profile": "unknown-profile"},
+            headers=AUTH,
+        )
+        assert resp.status_code == 422
+
+    def test_409_without_world_spec(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
+        from netengine.api.app import app
+
+        client = TestClient(app)
+        resp = client.put(
+            "/api/v1/ands/acme-and/profile", json={"profile": "business"}, headers=AUTH
+        )
+        assert resp.status_code == 409
+
+
+class TestUpdateService:
+    def test_disables_mail_service(self, tmp_path, monkeypatch):
+        client, _ = _make_world_spec(tmp_path, monkeypatch)
+        resp = client.put("/api/v1/services/mail", json={"enabled": False}, headers=AUTH)
+        assert resp.status_code == 200
+        assert resp.json()["enabled"] is False
+
+        state = RuntimeState.load()
+        assert state.world_spec["world_services"]["mail"]["enabled"] is False
+
+    def test_enables_storage_service(self, tmp_path, monkeypatch):
+        client, _ = _make_world_spec(tmp_path, monkeypatch)
+        resp = client.put("/api/v1/services/storage", json={"enabled": True}, headers=AUTH)
+        assert resp.status_code == 200
+
+    def test_404_on_unknown_service(self, tmp_path, monkeypatch):
+        client, _ = _make_world_spec(tmp_path, monkeypatch)
+        resp = client.put("/api/v1/services/nosuchservice", json={"enabled": True}, headers=AUTH)
+        assert resp.status_code == 404
+
+
+class TestUpdateGateway:
+    def test_updates_real_internet_mode(self, tmp_path, monkeypatch):
+        client, _ = _make_world_spec(tmp_path, monkeypatch)
+        resp = client.put("/api/v1/gateway", json={"real_internet_mode": "shadowed"}, headers=AUTH)
+        assert resp.status_code == 200
+        state = RuntimeState.load()
+        assert state.world_spec["gateway_portal"]["real_internet"]["mode"] == "shadowed"
+
+    def test_422_on_invalid_real_internet_mode(self, tmp_path, monkeypatch):
+        client, _ = _make_world_spec(tmp_path, monkeypatch)
+        resp = client.put("/api/v1/gateway", json={"real_internet_mode": "invalid"}, headers=AUTH)
+        assert resp.status_code == 422
+
+    def test_updates_cross_world_mode(self, tmp_path, monkeypatch):
+        client, _ = _make_world_spec(tmp_path, monkeypatch)
+        resp = client.put("/api/v1/gateway", json={"cross_world_mode": "peered"}, headers=AUTH)
+        assert resp.status_code == 200
+        state = RuntimeState.load()
+        assert state.world_spec["gateway_portal"]["cross_world"]["mode"] == "peered"
+
+    def test_422_on_invalid_cross_world_mode(self, tmp_path, monkeypatch):
+        client, _ = _make_world_spec(tmp_path, monkeypatch)
+        resp = client.put("/api/v1/gateway", json={"cross_world_mode": "bad"}, headers=AUTH)
+        assert resp.status_code == 422
+
+    def test_empty_body_is_noop(self, tmp_path, monkeypatch):
+        client, _ = _make_world_spec(tmp_path, monkeypatch)
+        resp = client.put("/api/v1/gateway", json={}, headers=AUTH)
+        assert resp.status_code == 200
+
+
+class TestUpdatePKIRotationPolicy:
+    def test_updates_interval(self, tmp_path, monkeypatch):
+        client, _ = _make_world_spec(tmp_path, monkeypatch)
+        resp = client.put(
+            "/api/v1/pki/rotation-policy", json={"default_interval_hours": 6}, headers=AUTH
+        )
+        assert resp.status_code == 200
+        state = RuntimeState.load()
+        assert state.world_spec["pki"]["rotation_policy"]["default_interval_hours"] == 6
+
+    def test_disables_rotation(self, tmp_path, monkeypatch):
+        client, _ = _make_world_spec(tmp_path, monkeypatch)
+        resp = client.put("/api/v1/pki/rotation-policy", json={"enabled": False}, headers=AUTH)
+        assert resp.status_code == 200
+        state = RuntimeState.load()
+        assert state.world_spec["pki"]["rotation_policy"]["enabled"] is False
+
+    def test_422_on_zero_interval(self, tmp_path, monkeypatch):
+        client, _ = _make_world_spec(tmp_path, monkeypatch)
+        resp = client.put(
+            "/api/v1/pki/rotation-policy", json={"default_interval_hours": 0}, headers=AUTH
+        )
+        assert resp.status_code == 422
+
+    def test_422_on_zero_warning_days(self, tmp_path, monkeypatch):
+        client, _ = _make_world_spec(tmp_path, monkeypatch)
+        resp = client.put(
+            "/api/v1/pki/rotation-policy", json={"default_warning_days": 0}, headers=AUTH
+        )
+        assert resp.status_code == 422
+
+    def test_updates_cert_type_overrides(self, tmp_path, monkeypatch):
+        client, _ = _make_world_spec(tmp_path, monkeypatch)
+        overrides = {"app": {"rotation_interval_hours": 2}}
+        resp = client.put(
+            "/api/v1/pki/rotation-policy",
+            json={"cert_type_overrides": overrides},
+            headers=AUTH,
+        )
+        assert resp.status_code == 200
+        state = RuntimeState.load()
+        assert state.world_spec["pki"]["rotation_policy"]["cert_type_overrides"] == overrides

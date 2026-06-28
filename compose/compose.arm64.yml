@@ -1,0 +1,171 @@
+version: '3.8'
+
+# ARM64 architecture support
+# Use: docker compose -f docker-compose.yml -f compose/compose.arm64.yml up -d
+# For deployment on ARM64 systems (Apple Silicon, AWS Graviton, etc.)
+# Override images with ARM64-native or multi-arch variants
+
+services:
+  # ARM64-optimized Python runtime
+  python-arm64:
+    image: python:3.13-alpine-arm64v8
+    container_name: netengine_python_arm64
+    command: python --version && sleep infinity
+    networks:
+      - arm64-test
+    restart: unless-stopped
+
+  # ARM64-optimized Node.js runtime
+  node-arm64:
+    image: node:20-alpine-arm64v8
+    container_name: netengine_node_arm64
+    command: node --version && sleep infinity
+    networks:
+      - arm64-test
+    restart: unless-stopped
+
+  # ARM64-optimized PostgreSQL
+  postgres-arm64:
+    image: postgres:15-alpine-arm64v8
+    container_name: netengine_postgres_arm64
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: arm64_test_password
+      POSTGRES_DB: netengine_arm64
+    ports:
+      - "5442:5432"
+    volumes:
+      - postgres_arm64_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - arm64-test
+    restart: unless-stopped
+
+  # ARM64-optimized CoreDNS
+  coredns-arm64:
+    image: coredns/coredns:latest-arm64
+    container_name: netengine_coredns_arm64
+    command: -conf /etc/coredns/Corefile
+    ports:
+      - "5359:53/udp"
+      - "5359:53/tcp"
+    volumes:
+      - ./coredns-arm64.conf:/etc/coredns/Corefile
+      - coredns_arm64_data:/root/zones
+    healthcheck:
+      test: ["CMD-SHELL", "dig @localhost -p 53 arm64.local || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - arm64-test
+    restart: unless-stopped
+
+  # ARM64-optimized Alpine Linux utilities
+  alpine-arm64:
+    image: alpine:latest-arm64v8
+    container_name: netengine_alpine_arm64
+    command: |
+      sh -c "
+        apk add --no-cache curl jq netcat-openbsd &&
+        uname -m &&
+        echo 'ARM64 Alpine environment ready' &&
+        sleep infinity
+      "
+    networks:
+      - arm64-test
+    restart: unless-stopped
+
+  # ARM64 compatibility checker
+  arm64-compat-check:
+    image: python:3.13-alpine-arm64v8
+    container_name: netengine_arm64_compat_check
+    command: |
+      sh -c "
+        pip install psycopg2-binary &&
+        python -c '
+import platform
+import sys
+
+print(f\"Python: {sys.version}\")
+print(f\"Platform: {platform.platform()}\")
+print(f\"Architecture: {platform.machine()}\")
+
+# Check for ARM64
+if platform.machine() in [\"aarch64\", \"arm64\"]:
+    print(\"✓ ARM64 environment detected\")
+else:
+    print(f\"✗ Non-ARM64 architecture: {platform.machine()}\")
+    sys.exit(1)
+
+# Import key dependencies
+try:
+    import psycopg2
+    print(\"✓ psycopg2 available\")
+except ImportError:
+    print(\"✗ psycopg2 not available\")
+
+print(\"\\nARM64 compatibility check complete\")
+' &&
+        sleep infinity
+      "
+    depends_on:
+      postgres-arm64:
+        condition: service_healthy
+    environment:
+      # Connection to ARM64 Postgres
+      NETENGINE_DB_URL: postgresql://netengine:arm64_test_password@postgres-arm64:5432/netengine_arm64
+    networks:
+      - arm64-test
+    restart: unless-stopped
+
+  # ARM64 performance benchmark
+  arm64-benchmark:
+    image: python:3.13-alpine-arm64v8
+    container_name: netengine_arm64_benchmark
+    command: |
+      sh -c "
+        python -c '
+import time
+import hashlib
+
+print(\"Running ARM64 performance benchmarks...\")
+
+# CPU benchmark: hashing
+iterations = 100000
+start = time.time()
+for i in range(iterations):
+    hashlib.sha256(f\"test_{i}\".encode()).hexdigest()
+elapsed = time.time() - start
+print(f\"SHA256 hashing: {iterations} ops in {elapsed:.2f}s ({iterations/elapsed:.0f} ops/s)\")
+
+# Memory benchmark
+data = []
+for i in range(10000):
+    data.append([j for j in range(100)])
+print(f\"Memory test: allocated {len(data)} arrays\")
+
+print(\"\\nARM64 benchmarks complete\")
+' &&
+        sleep infinity
+      "
+    networks:
+      - arm64-test
+    restart: unless-stopped
+
+volumes:
+  postgres_arm64_data:
+  coredns_arm64_data:
+
+networks:
+  arm64-test:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.41.0.0/16

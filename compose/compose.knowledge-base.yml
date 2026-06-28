@@ -1,0 +1,133 @@
+version: "3.8"
+
+# Knowledge base & documentation platform for in-world
+# Wiki, documentation, FAQ system
+# Available at: wiki.platform.internal, docs.platform.internal
+
+services:
+  # MediaWiki - full-featured wiki
+  mediawiki-db:
+    image: postgres:15
+    container_name: netengine_mediawiki_db
+    environment:
+      POSTGRES_USER: mediawiki
+      POSTGRES_PASSWORD: ${MEDIAWIKI_DB_PASSWORD:-mediawiki_dev}
+      POSTGRES_DB: mediawiki
+    volumes:
+      - mediawiki_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mediawiki"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mediawiki:
+    image: mediawiki:latest
+    container_name: netengine_mediawiki
+    ports:
+      - "8110:80"
+    environment:
+      MEDIAWIKI_SITE_NAME: "NetEngine World"
+      MEDIAWIKI_SITE_LANG: en
+      MEDIAWIKI_ADMIN_USER: ${MEDIAWIKI_ADMIN_USER:-admin}
+      MEDIAWIKI_ADMIN_PASS: ${MEDIAWIKI_ADMIN_PASS:-changeme}
+      MEDIAWIKI_DB_TYPE: postgres
+      MEDIAWIKI_DB_SERVER: mediawiki-db
+      MEDIAWIKI_DB_USER: mediawiki
+      MEDIAWIKI_DB_PASSWORD: ${MEDIAWIKI_DB_PASSWORD:-mediawiki_dev}
+      MEDIAWIKI_DB_NAME: mediawiki
+      MEDIAWIKI_SHARED_DB: false
+      MEDIAWIKI_SECRET_KEY: ${MEDIAWIKI_SECRET_KEY:-change-me-secret}
+      MEDIAWIKI_UPGRADE_KEY: ${MEDIAWIKI_UPGRADE_KEY:-change-me}
+    volumes:
+      - mediawiki_data:/var/www/html
+      - ./compose/mediawiki-settings.php:/mediawiki-settings.php:ro
+    depends_on:
+      mediawiki-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost/w/api.php"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Sphinx search engine for wiki
+  sphinx:
+    image: sphinx:latest
+    container_name: netengine_sphinx
+    ports:
+      - "9312:9312"
+    volumes:
+      - ./compose/sphinx.conf:/etc/sphinx/sphinx.conf:ro
+      - sphinx_data:/var/lib/sphinx
+    command:
+      - searchd
+      - --nodetach
+      - --logdebug
+
+  # Documentation generator (MkDocs)
+  mkdocs:
+    image: python:3.13-slim
+    container_name: netengine_mkdocs
+    ports:
+      - "8111:8000"
+    volumes:
+      - ./docs:/docs:ro
+      - ./compose/mkdocs.yml:/docs/mkdocs.yml:ro
+    working_dir: /docs
+    entrypoint: bash
+    command:
+      - -c
+      - "pip install -q mkdocs && mkdocs serve -a 0.0.0.0:8000"
+    profiles:
+      - mkdocs
+
+  # Confluence alternative (Bookstack)
+  bookstack:
+    image: solidnerd/bookstack:latest
+    container_name: netengine_bookstack
+    ports:
+      - "8112:80"
+    environment:
+      DB_HOST: mediawiki-db
+      DB_DATABASE: bookstack
+      DB_USERNAME: bookstack
+      DB_PASSWORD: ${BOOKSTACK_DB_PASSWORD:-bookstack_dev}
+      APP_DEBUG: "false"
+      APP_URL: http://bookstack.platform.internal
+    volumes:
+      - bookstack_data:/var/www/bookstack/storage/uploads
+      - bookstack_config:/var/www/bookstack/storage
+    depends_on:
+      mediawiki-db:
+        condition: service_healthy
+    profiles:
+      - bookstack
+
+  # Full-text search indexer
+  knowledge-indexer:
+    image: python:3.13-slim
+    container_name: netengine_knowledge_indexer
+    environment:
+      MEDIAWIKI_API_URL: http://mediawiki/w/api.php
+      SPHINX_HOST: sphinx
+      SPHINX_PORT: 9312
+      INDEX_INTERVAL: "3600"
+    volumes:
+      - ./compose/knowledge-indexer.py:/scripts/indexer.py:ro
+    working_dir: /scripts
+    entrypoint: python
+    command:
+      - indexer.py
+    depends_on:
+      - mediawiki
+      - sphinx
+    profiles:
+      - knowledge-indexer
+
+volumes:
+  mediawiki_db_data:
+  mediawiki_data:
+  sphinx_data:
+  bookstack_data:
+  bookstack_config:

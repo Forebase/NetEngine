@@ -4,7 +4,7 @@ import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from netengine.logging import get_logger
 
@@ -62,6 +62,8 @@ class RuntimeState:
     world_spec: Optional[Dict[str, Any]] = None
     bootstrap_admin_password: Optional[str] = None
     platform_client_id: Optional[str] = None
+    platform_client_auth_id: Optional[str] = None
+    platform_client_secret: Optional[str] = None
 
     # Drift detection and self-healing
     drift_history: list[Dict[str, Any]] = field(default_factory=list)
@@ -70,6 +72,13 @@ class RuntimeState:
     # PKI certificate rotation tracking
     issued_certificates: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     pki_rotation_state: Dict[str, Any] = field(default_factory=dict)
+
+    # Extended PKI state
+    intermediate_ca_cert: Optional[str] = None
+    dnssec_output: Optional[Dict[str, Any]] = None
+
+    # Gateway portal state
+    gateway_portal_output: Optional[Dict[str, Any]] = None
 
     @classmethod
     def load(cls) -> "RuntimeState":

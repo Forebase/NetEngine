@@ -1,6 +1,7 @@
 from typing import Any, List
 
 from netengine.core.pgmq_client import PGMQClient
+from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 
 
@@ -36,5 +37,47 @@ class WorldRegistryHandler:
             emitted_by="world_registry_handler",
             payload={"org_name": name, "capabilities": capabilities, "and_profile": and_profile},
         )
-        await self.pgmq.send("oidc_provisioning", event)
-        await self.pgmq.send("and_provisioning", event)
+        await self.pgmq.send(Queue.OIDC_PROVISIONING, event)
+        await self.pgmq.send(Queue.AND_PROVISIONING, event)
+
+    async def list_orgs(self) -> List[Any]:
+        """Return all orgs in the world registry."""
+        db = await self._get_db()
+        result = await db.table("world_registry").select("*").execute()
+        return result.data or []
+
+    async def get_org(self, name: str) -> Any:
+        """Return a single org by name, or None if not found."""
+        db = await self._get_db()
+        result = await db.table("world_registry").select("*").eq("org_name", name).execute()
+        return result.data[0] if result.data else None
+
+    async def update_org(self, name: str, capabilities: List[str], and_profile: str) -> None:
+        """Update an org's capabilities and AND profile."""
+        db = await self._get_db()
+        await db.table("world_registry").update(
+            {"capabilities": capabilities, "and_profile": and_profile}
+        ).eq("org_name", name).execute()
+        event = EventEnvelope.create(
+            event_type="org.updated",
+            emitted_by="world_registry_handler",
+            payload={"org_name": name, "capabilities": capabilities, "and_profile": and_profile},
+        )
+        await self.pgmq.send(Queue.OIDC_PROVISIONING, event)
+        await self.pgmq.send(Queue.AND_PROVISIONING, event)
+
+    async def remove_org(self, name: str) -> bool:
+        """Remove an org from the world registry. Returns True if it existed."""
+        db = await self._get_db()
+        existing = await self.get_org(name)
+        if not existing:
+            return False
+        await db.table("world_registry").delete().eq("org_name", name).execute()
+        event = EventEnvelope.create(
+            event_type="org.removed",
+            emitted_by="world_registry_handler",
+            payload={"org_name": name},
+        )
+        await self.pgmq.send(Queue.OIDC_PROVISIONING, event)
+        await self.pgmq.send(Queue.AND_PROVISIONING, event)
+        return True

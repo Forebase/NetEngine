@@ -1,0 +1,92 @@
+version: "3.8"
+
+# Backup & disaster recovery testing
+# Test backup strategies, restore procedures, point-in-time recovery
+# Usage: docker compose -f docker-compose.yml -f compose/compose.backup-recovery.yml up -d
+
+services:
+  # S3-compatible backup storage
+  minio:
+    image: minio/minio:latest
+    container_name: netengine_minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # WAL archival service
+  wal-archiver:
+    image: postgres:15
+    container_name: netengine_wal_archiver
+    environment:
+      PGUSER: netengine
+      PGPASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      PGHOST: postgres
+      PGDATABASE: netengine
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: ${MINIO_PASSWORD:-minioadmin}
+      AWS_S3_ENDPOINT: http://minio:9000
+      AWS_S3_BUCKET: netengine-backups
+    volumes:
+      - ./compose/wal-archive.sh:/scripts/archive.sh:ro
+    entrypoint: /bin/bash
+    command:
+      - /scripts/archive.sh
+    depends_on:
+      - postgres
+      - minio
+    profiles:
+      - backup
+
+  # Point-in-time recovery tester
+  pitr-tester:
+    image: postgres:15
+    container_name: netengine_pitr
+    environment:
+      PGUSER: netengine
+      PGPASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      PGHOST: postgres
+      PGDATABASE: netengine
+    volumes:
+      - ./compose/pitr-test.sql:/pitr-test.sql:ro
+    entrypoint: sleep
+    command:
+      - "infinity"
+    depends_on:
+      - postgres
+    profiles:
+      - backup
+
+  # Backup validator
+  backup-validator:
+    image: postgres:15
+    container_name: netengine_backup_validator
+    environment:
+      PGUSER: netengine
+      PGPASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      BACKUP_SOURCE: "s3://netengine-backups"
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: ${MINIO_PASSWORD:-minioadmin}
+      AWS_S3_ENDPOINT: http://minio:9000
+    volumes:
+      - ./compose/validate-backup.sh:/scripts/validate.sh:ro
+    entrypoint: /bin/bash
+    command:
+      - /scripts/validate.sh
+    depends_on:
+      - minio
+    profiles:
+      - backup
+
+volumes:
+  minio_data:

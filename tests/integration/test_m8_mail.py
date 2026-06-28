@@ -164,7 +164,7 @@ class TestM8PostfixDeployment:
         world_services = WorldServicesPhase(mail=mail_config, storage=storage_config)
         spec = MagicMock()
         spec.world_services = world_services
-        spec.world_registry.initial_orgs = []
+        spec.world_registry.organizations = []
         spec.identity_inworld.org_users = []
 
         phase_context = PhaseContext(
@@ -207,7 +207,7 @@ class TestM8PostfixDeployment:
         world_services = WorldServicesPhase(mail=mail_config, storage=storage_config)
         spec = MagicMock()
         spec.world_services = world_services
-        spec.world_registry.initial_orgs = []
+        spec.world_registry.organizations = []
         spec.identity_inworld.org_users = []
 
         phase_context = PhaseContext(
@@ -365,7 +365,7 @@ class TestM8MailboxProvisioning:
         world_services = WorldServicesPhase(mail=mail_config, storage=storage_config)
         spec = MagicMock()
         spec.world_services = world_services
-        spec.world_registry.initial_orgs = []
+        spec.world_registry.organizations = []
         spec.identity_inworld.org_users = [org_users]
 
         phase_context = PhaseContext(
@@ -512,7 +512,7 @@ class TestM8OutputStructure:
         world_services = WorldServicesPhase(mail=mail_config, storage=storage_config)
         spec = MagicMock()
         spec.world_services = world_services
-        spec.world_registry.initial_orgs = []
+        spec.world_registry.organizations = []
         spec.identity_inworld.org_users = []
 
         phase_context = PhaseContext(

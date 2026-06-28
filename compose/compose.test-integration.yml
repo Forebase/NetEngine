@@ -1,0 +1,134 @@
+version: '3.8'
+
+# Full integration test environment: Postgres + pgmq + Keycloak + CoreDNS stub
+# Use: docker compose -f docker-compose.yml -f compose/compose.test-integration.yml up -d
+# This provides a complete test harness for end-to-end integration testing
+
+services:
+  postgres-integration:
+    image: postgres:15
+    container_name: netengine_postgres_integration
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: integration_test_password
+      POSTGRES_DB: netengine_integration
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5436:5432"
+    volumes:
+      - postgres_integration_data:/var/lib/postgresql/data
+      - ./postgres-audit-setup.sql:/docker-entrypoint-initdb.d/01-audit-setup.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine -d netengine_integration"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - netengine-integration
+    restart: unless-stopped
+
+  pgmq-setup-integration:
+    image: postgres:15
+    container_name: netengine_pgmq_setup_integration
+    depends_on:
+      postgres-integration:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: integration_test_password
+    command: |
+      sh -c "
+        psql -h postgres-integration -U netengine -d netengine_integration -f /migrations/001_initial.sql
+      "
+    volumes:
+      - ../migrations/001_initial.sql:/migrations/001_initial.sql:ro
+    networks:
+      - netengine-integration
+    restart: on-failure
+
+  keycloak-integration:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: netengine_keycloak_integration
+    depends_on:
+      postgres-integration:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres-integration:5432/netengine_integration_keycloak
+      KC_DB_USERNAME: netengine
+      KC_DB_PASSWORD: integration_test_password
+      KC_HOSTNAME: keycloak.platform.internal
+      KC_HTTP_ENABLED: "true"
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: integration_test_password
+      KC_PROXY: edge
+    ports:
+      - "8183:8080"
+    volumes:
+      - keycloak_integration_data:/opt/keycloak/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - netengine-integration
+    restart: unless-stopped
+
+  coredns-integration:
+    image: coredns/coredns:latest
+    container_name: netengine_coredns_integration
+    command: -conf /etc/coredns/Corefile
+    ports:
+      - "5354:53/udp"
+      - "5354:53/tcp"
+    volumes:
+      - ./coredns-integration.conf:/etc/coredns/Corefile
+      - coredns_integration_data:/root/zones
+    healthcheck:
+      test: ["CMD-SHELL", "dig @localhost -p 53 platform.internal || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - netengine-integration
+    restart: unless-stopped
+
+  # Test utilities container for running integration tests
+  test-runner:
+    image: python:3.13
+    container_name: netengine_test_runner_integration
+    depends_on:
+      postgres-integration:
+        condition: service_healthy
+      keycloak-integration:
+        condition: service_healthy
+      coredns-integration:
+        condition: service_healthy
+    environment:
+      NETENGINE_DB_URL: postgresql://netengine:integration_test_password@postgres-integration:5432/netengine_integration
+      NETENGINE_KEYCLOAK_URL: http://keycloak-integration:8080
+      COREDNS_PORT: 53
+      COREDNS_HOST: coredns-integration
+      NETENGINE_MOCK: "true"
+    volumes:
+      - ../../:/workspace
+    working_dir: /workspace
+    command: tail -f /dev/null  # Stay alive for manual test execution
+    networks:
+      - netengine-integration
+    restart: unless-stopped
+
+volumes:
+  postgres_integration_data:
+  keycloak_integration_data:
+  coredns_integration_data:
+
+networks:
+  netengine-integration:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.0.0/16

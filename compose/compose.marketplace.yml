@@ -1,0 +1,162 @@
+version: "3.8"
+
+# In-world application marketplace & package repository
+# Available at: marketplace.platform.internal
+
+services:
+  # Marketplace database
+  marketplace-db:
+    image: postgres:15
+    container_name: netengine_marketplace_db
+    environment:
+      POSTGRES_USER: marketplace
+      POSTGRES_PASSWORD: ${MARKETPLACE_DB_PASSWORD:-marketplace_dev}
+      POSTGRES_DB: marketplace
+    ports:
+      - "5443:5432"
+    volumes:
+      - ./compose/marketplace-schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+      - marketplace_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marketplace"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Package storage (S3-compatible)
+  marketplace-storage:
+    image: minio/minio:latest
+    container_name: netengine_marketplace_storage
+    environment:
+      MINIO_ROOT_USER: marketplace
+      MINIO_ROOT_PASSWORD: ${MARKETPLACE_STORAGE_PASSWORD:-marketplace_dev}
+    ports:
+      - "9002:9000"
+      - "9003:9001"  # Console
+    volumes:
+      - marketplace_storage_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Marketplace API server
+  marketplace-api:
+    image: python:3.13-slim
+    container_name: netengine_marketplace_api
+    environment:
+      MARKETPLACE_DB_URL: postgresql://marketplace:${MARKETPLACE_DB_PASSWORD:-marketplace_dev}@marketplace-db:5432/marketplace
+      MARKETPLACE_STORAGE_URL: http://marketplace-storage:9000
+      MARKETPLACE_STORAGE_ACCESS_KEY: marketplace
+      MARKETPLACE_STORAGE_SECRET_KEY: ${MARKETPLACE_STORAGE_PASSWORD:-marketplace_dev}
+      KEYCLOAK_URL: http://keycloak:8180
+      API_PORT: 8092
+    ports:
+      - "8092:8092"
+    volumes:
+      - ./compose/marketplace-api.py:/app/api.py:ro
+      - marketplace_data:/app/data
+    working_dir: /app
+    entrypoint: python
+    command:
+      - api.py
+    depends_on:
+      - marketplace-db
+      - marketplace-storage
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8092/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - marketplace
+
+  # Marketplace web UI
+  marketplace-ui:
+    image: node:18-alpine
+    container_name: netengine_marketplace_ui
+    ports:
+      - "3402:3000"
+    environment:
+      REACT_APP_API_URL: http://marketplace-api:8092
+      REACT_APP_STORAGE_URL: http://marketplace-storage:9000
+      REACT_APP_KEYCLOAK_URL: http://keycloak:8180
+    volumes:
+      - ./compose/marketplace-ui:/app:ro
+    working_dir: /app
+    command:
+      - npm
+      - start
+    depends_on:
+      - marketplace-api
+    profiles:
+      - marketplace-ui
+
+  # Package registry (npm-like interface)
+  npm-registry:
+    image: verdaccio/verdaccio:latest
+    container_name: netengine_npm_registry
+    ports:
+      - "4873:4873"
+    volumes:
+      - ./compose/verdaccio-config.yaml:/verdaccio/conf/config.yaml:ro
+      - npm_registry_data:/verdaccio/storage
+    environment:
+      VERDACCIO_PORT: 4873
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4873/-/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - npm-registry
+
+  # Helm chart repository (for Kubernetes apps)
+  helm-registry:
+    image: chartmuseum/chartmuseum:latest
+    container_name: netengine_helm_registry
+    ports:
+      - "8080:8080"
+    environment:
+      DEBUG: "true"
+      STORAGE: local
+      STORAGE_LOCAL_ROOTDIR: /charts
+      CHARTMUSEUM_PORT: 8080
+    volumes:
+      - helm_registry_data:/charts
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - helm-registry
+
+  # Docker image registry (alternative to Docker Hub)
+  docker-registry:
+    image: registry:latest
+    container_name: netengine_docker_registry
+    ports:
+      - "5000:5000"
+    environment:
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+    volumes:
+      - docker_registry_data:/var/lib/registry
+      - ./compose/registry-config.yml:/etc/docker/registry/config.yml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/v2/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - docker-registry
+
+volumes:
+  marketplace_db_data:
+  marketplace_storage_data:
+  marketplace_data:
+  npm_registry_data:
+  helm_registry_data:
+  docker_registry_data:

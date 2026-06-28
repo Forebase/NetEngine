@@ -23,7 +23,7 @@ M1 implements Phase 0 (Substrate) and Phases 1-2 (DNS) handler infrastructure fo
 
 2. **Container Network Creation**
    - Creates platform network (172.20.0.0/16 by default)
-   - Creates core network (10.0.0.0/8 by default)
+   - Creates core network (10.0.0.0/24 by default)
    - Configurable via spec.substrate.networks
    - Returns network IDs, types, subnets
 
@@ -442,7 +442,7 @@ print(context.runtime_state.dns_output)
 
 5. **Network Isolation**
    - platform network (172.20.0.0/16): Operator/management plane
-   - core network (10.0.0.0/8): Org/workload plane
+   - core network (10.0.0.0/24): Org/workload plane
    - Gateway boundary enforced in Phase 7 (AND policies)
 
 ---

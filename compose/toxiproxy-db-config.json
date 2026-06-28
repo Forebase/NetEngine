@@ -1,0 +1,12 @@
+{
+  "version": "2.4.0",
+  "proxies": [
+    {
+      "name": "postgres_chaos",
+      "enabled": true,
+      "upstream": "postgres-chaos-primary:5432",
+      "listen": "[::]:5432",
+      "toxics": []
+    }
+  ]
+}

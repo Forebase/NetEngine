@@ -12,11 +12,12 @@ import asyncio
 import json
 import secrets
 import ssl
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 import aiohttp
 
+from netengine.events.queues import Queue, queue_for_event_type
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -82,7 +83,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
                 "Ensure Phase 1-2 have run and created zones."
             )
 
-        context.runtime_state.started_at = datetime.utcnow()
+        context.runtime_state.started_at = datetime.now(UTC)
 
         try:
             inworld_output: dict[str, Any] = {}
@@ -139,10 +140,10 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
 
             inworld_output["realms_created"] = realms_created
             inworld_output["credentials_stored"] = credentials_stored
-            inworld_output["deployed_at"] = datetime.utcnow().isoformat()
+            inworld_output["deployed_at"] = datetime.now(UTC).isoformat()
 
             context.runtime_state.identity_inworld_output = inworld_output
-            context.runtime_state.completed_at = datetime.utcnow()
+            context.runtime_state.completed_at = datetime.now(UTC)
 
             logger.info(f"Phase 6 complete: {len(realms_created)} realms created")
 
@@ -162,7 +163,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
 
         except Exception as e:
             context.runtime_state.last_error = str(e)
-            context.runtime_state.last_error_at = datetime.utcnow()
+            context.runtime_state.last_error_at = datetime.now(UTC)
             logger.error(f"Phase 6 setup failed: {e}")
             raise
 
@@ -295,7 +296,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
         expiry = pki.extract_cert_expiry(cert)
         context.runtime_state.issued_certificates[canonical_name] = {
             "cert_type": "inworld_identity",
-            "issued_at": datetime.utcnow().isoformat(),
+            "issued_at": datetime.now(UTC).isoformat(),
             "expires_at": expiry.isoformat(),
             "sans": [canonical_name],
             "rotated_at": None,
@@ -358,8 +359,8 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
 
-        start = datetime.utcnow()
-        while (datetime.utcnow() - start).total_seconds() < timeout:
+        start = datetime.now(UTC)
+        while (datetime.now(UTC) - start).total_seconds() < timeout:
             try:
                 client_timeout = aiohttp.ClientTimeout(total=5)
                 async with aiohttp.ClientSession(
@@ -434,7 +435,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
                     "client_id": client_id,
                     "client_secret": client_secret,
                     "realm_name": realm_name,
-                    "created_at": datetime.utcnow().isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                 }
             ).execute()
             logger.info(f"Stored OIDC credentials for {org_name}")
@@ -474,7 +475,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
 
         while True:
             try:
-                msg = await context.pgmq_client.receive("inworld_admissions")
+                msg = await context.pgmq_client.receive(Queue.INWORLD_ADMISSIONS)
                 if not msg:
                     await asyncio.sleep(1)
                     continue
@@ -484,7 +485,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
 
                     if envelope.event_type != "org.admitted":
                         # Skip non-admission events
-                        await context.pgmq_client.delete("inworld_admissions", msg["msg_id"])
+                        await context.pgmq_client.delete(Queue.INWORLD_ADMISSIONS, msg["msg_id"])
                         continue
 
                     payload = envelope.payload
@@ -492,7 +493,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
 
                     if not org_name:
                         logger.warning("org.admitted event missing org_name")
-                        await context.pgmq_client.delete("inworld_admissions", msg["msg_id"])
+                        await context.pgmq_client.delete(Queue.INWORLD_ADMISSIONS, msg["msg_id"])
                         continue
 
                     logger.info(f"Processing org admission: {org_name}")
@@ -508,13 +509,13 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
                     logger.info(f"Provisioned in-world realm for org {org_name}")
 
                     # Mark message as processed
-                    await context.pgmq_client.delete("inworld_admissions", msg["msg_id"])
+                    await context.pgmq_client.delete(Queue.INWORLD_ADMISSIONS, msg["msg_id"])
 
                 except Exception as e:
                     logger.error(f"Failed to process org admission event: {e}")
                     # Archive to DLQ for manual review
                     await context.pgmq_client.archive_to_dlq(
-                        "inworld_admissions", msg["msg_id"], str(e)
+                        Queue.INWORLD_ADMISSIONS, msg["msg_id"], str(e)
                     )
 
             except Exception as e:
@@ -557,7 +558,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
         # Queue to pgmq for downstream processing (M7+)
         if context.pgmq_client is not None:
             try:
-                await context.pgmq_client.send(event)
+                await context.pgmq_client.send(queue_for_event_type(event_type), event)
                 context.logger.debug(f"Event queued to pgmq: {event_type}")
             except Exception as e:
                 context.logger.warning(f"Failed to queue event to pgmq: {e}")

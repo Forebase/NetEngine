@@ -12,11 +12,12 @@ Responsibilities:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from netengine.errors import DNSError
+from netengine.events.queues import queue_for_event_type
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -73,7 +74,7 @@ class DNSHandler(BasePhaseHandler):
                 "Ensure Phase 0 has run and created networks."
             )
 
-        context.runtime_state.started_at = datetime.utcnow()
+        context.runtime_state.started_at = datetime.now(UTC)
 
         try:
             dns_output: dict[str, Any] = {}
@@ -108,7 +109,7 @@ class DNSHandler(BasePhaseHandler):
                 container_id = await self._deploy_coredns(context, zone_dir)
                 dns_output["coredns_container_id"] = container_id
                 # Brief pause for CoreDNS to bind port 53
-                await asyncio.sleep(2)
+                await asyncio.sleep(3)
 
             # Verify DNS service
             dns_healthy = await self._verify_dns_service(context, dns_output)
@@ -116,12 +117,12 @@ class DNSHandler(BasePhaseHandler):
             if not dns_healthy:
                 raise DNSError("DNS service verification failed")
 
-            dns_output["deployed_at"] = datetime.utcnow().isoformat()
+            dns_output["deployed_at"] = datetime.now(UTC).isoformat()
 
             context.runtime_state.dns_output = dns_output
             context.runtime_state.phase_completed["1"] = True
             context.runtime_state.phase_completed["2"] = True
-            context.runtime_state.completed_at = datetime.utcnow()
+            context.runtime_state.completed_at = datetime.now(UTC)
 
             logger.info("Phases 1-2: DNS setup complete")
 
@@ -138,7 +139,7 @@ class DNSHandler(BasePhaseHandler):
 
         except Exception as e:
             context.runtime_state.last_error = str(e)
-            context.runtime_state.last_error_at = datetime.utcnow()
+            context.runtime_state.last_error_at = datetime.now(UTC)
             logger.error(f"Phases 1-2 DNS setup failed: {e}")
             raise
 
@@ -235,7 +236,7 @@ class DNSHandler(BasePhaseHandler):
             "soa_primary_ns": root_config.soa_primary_ns,
             "soa_email": root_config.soa_email,
             "serial_policy": root_config.serial_policy.value,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
 
     async def _setup_platform_zone(
@@ -266,7 +267,7 @@ class DNSHandler(BasePhaseHandler):
             "type": platform_config.type,
             "listen_ip": platform_config.listen_ip,
             "ns_server": "ns.platform.internal",
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
 
     # ─────────────────────────────────────────────
@@ -306,7 +307,7 @@ class DNSHandler(BasePhaseHandler):
                 "listen_ip": tld_config.listen_ip,
                 "description": tld_config.description,
                 "ns_server": f"ns{tld_config.listen_ip.split('.')[-1]}.internal",
-                "deployed_at": datetime.utcnow().isoformat(),
+                "deployed_at": datetime.now(UTC).isoformat(),
             }
 
         return tlds_output
@@ -461,21 +462,39 @@ class DNSHandler(BasePhaseHandler):
                 logger.info(f"Pulling {COREDNS_IMAGE}...")
                 client.images.pull(COREDNS_IMAGE)
 
-            # Listen IP comes from the root zone config
-            root_listen_ip = context.runtime_state.dns_output.get(  # type: ignore[union-attr]
-                "root_zone", {}
-            ).get("listen_ip", "10.0.0.2")
+            # Listen IP comes from the spec (dns_output not yet set at deploy time)
+            root_listen_ip = context.spec.dns.root.listen_ip
 
-            container = client.containers.run(
+            # Create container directly on the core network with the static IP.
+            # Docker v1.48+ rejects connecting a container that is already in
+            # "none" (private) mode to a second network, so we use the low-level
+            # API to attach to core with the desired IP at creation time.
+            networking_config = client.api.create_networking_config(
+                {"core": client.api.create_endpoint_config(ipv4_address=root_listen_ip)}
+            )
+            response = client.api.create_container(
                 image=COREDNS_IMAGE,
                 name=COREDNS_CONTAINER_NAME,
                 command=["-conf", "/etc/coredns/Corefile"],
-                volumes={str(zone_dir): {"bind": "/etc/coredns", "mode": "ro"}},
-                ports={"53/udp": (root_listen_ip, 53), "53/tcp": (root_listen_ip, 53)},
-                detach=True,
-                restart_policy={"Name": "unless-stopped"},
+                host_config=client.api.create_host_config(
+                    binds={str(zone_dir): {"bind": "/etc/coredns", "mode": "rw"}},
+                    restart_policy={"Name": "unless-stopped"},
+                ),
+                networking_config=networking_config,
             )
-            return container.id
+            client.api.start(response["Id"])
+
+            # Give CoreDNS a moment to fail fast (e.g. bad Corefile)
+            import time
+
+            time.sleep(1)
+            status = client.api.inspect_container(response["Id"])
+            if not status["State"]["Running"]:
+                logs = client.api.logs(response["Id"], stdout=True, stderr=True, tail=50).decode(
+                    "utf-8", errors="replace"
+                )
+                raise RuntimeError(f"CoreDNS exited immediately after start. Logs:\n{logs}")
+            return response["Id"]
 
         container_id: str = await asyncio.to_thread(_sync)
         logger.info(f"CoreDNS container: {container_id[:12]}")
@@ -497,25 +516,25 @@ class DNSHandler(BasePhaseHandler):
 
         soa_email_addr = root_zone["soa_email"].replace("@", ".")
         soa_record = (
-            f"{root_zone['name']}. SOA {root_zone['soa_primary_ns']}. "
+            f"{root_zone['name']}. 3600 IN SOA {root_zone['soa_primary_ns']}. "
             f"{soa_email_addr}. {serial} 3600 1800 604800 86400"
         )
 
         lines = [
+            "$TTL 3600",
             f"; Root zone: {root_zone['name']}",
-            f"; Generated: {datetime.utcnow().isoformat()}",
+            f"; Generated: {datetime.now(UTC).isoformat()}",
             soa_record,
-            f"{root_zone['name']}. NS ns.root.internal.",
+            f"{root_zone['name']}. 3600 IN NS ns.root.internal.",
             "",
             "; Delegation to platform zone",
-            f"platform.internal. NS {platform_zone['ns_server']}.",
-            f"platform.internal. A {platform_zone['listen_ip']}",
+            f"platform.internal. 3600 IN NS {platform_zone['ns_server']}.",
+            f"platform.internal. 3600 IN A {platform_zone['listen_ip']}",
             "",
-            "; L1 service records (auth.internal, etc. — may be delegated to platform zone)",
-            "; These can be updated by M4+ phases",
-            f"auth.internal. A {platform_zone['listen_ip']}",
-            f"ca.internal. A {platform_zone['listen_ip']}",
-            f"registry.internal. A {platform_zone['listen_ip']}",
+            "; L1 service records",
+            f"auth.internal. 3600 IN A {platform_zone['listen_ip']}",
+            f"ca.internal. 3600 IN A {platform_zone['listen_ip']}",
+            f"registry.internal. 3600 IN A {platform_zone['listen_ip']}",
             "",
         ]
 
@@ -537,7 +556,7 @@ class DNSHandler(BasePhaseHandler):
     ) -> str:
         """Generate platform zone file with L1 service records."""
         platform_soa = (
-            f"{platform_zone['name']}. SOA {root_zone['soa_primary_ns']}. "
+            f"{platform_zone['name']}. 3600 IN SOA {root_zone['soa_primary_ns']}. "
             f"root.internal. 1 3600 1800 604800 86400"
         )
 
@@ -546,16 +565,17 @@ class DNSHandler(BasePhaseHandler):
         registry_ip = context.spec.world_registry.listen_ip
 
         lines = [
+            "$TTL 3600",
             f"; Platform zone: {platform_zone['name']}",
-            f"; Generated: {datetime.utcnow().isoformat()}",
+            f"; Generated: {datetime.now(UTC).isoformat()}",
             platform_soa,
-            f"{platform_zone['name']}. NS {platform_zone['ns_server']}.",
-            f"{platform_zone['ns_server']}. A {platform_zone['listen_ip']}",
+            f"{platform_zone['name']}. 3600 IN NS {platform_zone['ns_server']}.",
+            f"{platform_zone['ns_server']}. 3600 IN A {platform_zone['listen_ip']}",
             "",
             "; L1 service records (populated by M4+ handlers)",
-            f"auth.{platform_zone['name']}. A {auth_ip}",
-            f"ca.{platform_zone['name']}. A {ca_ip}",
-            f"registry.{platform_zone['name']}. A {registry_ip}",
+            f"auth.{platform_zone['name']}. 3600 IN A {auth_ip}",
+            f"ca.{platform_zone['name']}. 3600 IN A {ca_ip}",
+            f"registry.{platform_zone['name']}. 3600 IN A {registry_ip}",
             "",
         ]
 
@@ -569,16 +589,17 @@ class DNSHandler(BasePhaseHandler):
         TLD zones start empty; populated by domain registry (Phase 5b) and org operations.
         """
         tld_soa = (
-            f"{tld_name}. SOA {root_zone['soa_primary_ns']}. "
+            f"{tld_name}. 3600 IN SOA {root_zone['soa_primary_ns']}. "
             f"root.internal. 1 3600 1800 604800 86400"
         )
 
         lines = [
+            "$TTL 3600",
             f"; TLD zone: {tld_name}",
-            f"; Generated: {datetime.utcnow().isoformat()}",
+            f"; Generated: {datetime.now(UTC).isoformat()}",
             tld_soa,
-            f"{tld_name}. NS {tld_config['ns_server']}.",
-            f"{tld_config['ns_server']}. A {tld_config['listen_ip']}",
+            f"{tld_name}. 3600 IN NS {tld_config['ns_server']}.",
+            f"{tld_config['ns_server']}. 3600 IN A {tld_config['listen_ip']}",
             "",
             "; Domain records (populated by domain registry and orgs)",
             "",
@@ -600,7 +621,7 @@ class DNSHandler(BasePhaseHandler):
             Serial number as string
         """
         if policy == "timestamp":
-            return str(int(datetime.utcnow().timestamp()))
+            return str(int(datetime.now(UTC).timestamp()))
         else:
             # Fallback for unknown policy
             return "1"
@@ -637,15 +658,30 @@ class DNSHandler(BasePhaseHandler):
                 logger.info("DNS service verification passed (mock mode)")
                 return True
 
-            # Real mode: query the root zone for its SOA record
+            # Real mode: query the root zone for its SOA record, with retries.
             root_ip = dns_output["root_zone"].get("listen_ip", "10.0.0.2")
             root_zone_name = dns_output["root_zone"].get("name", "root.internal")
-            verified = await self._query_soa(root_ip, root_zone_name, logger)
-            if verified:
-                logger.info(f"DNS SOA query confirmed at {root_ip}")
-            else:
-                logger.error(f"DNS SOA query failed for {root_zone_name} at {root_ip}")
-            return verified
+
+            for attempt in range(1, 7):
+                verified = await self._query_soa(root_ip, root_zone_name, logger)
+                if verified:
+                    logger.info(f"DNS SOA query confirmed at {root_ip} (attempt {attempt})")
+                    return True
+                if attempt < 6:
+                    logger.warning(f"SOA query attempt {attempt}/6 failed; retrying in 2s...")
+                    await asyncio.sleep(2)
+
+            # All retries exhausted — capture CoreDNS container logs for diagnosis.
+            logger.error(f"DNS SOA query failed for {root_zone_name} at {root_ip} (6 attempts)")
+            try:
+                client = context.docker_client.client  # type: ignore[union-attr]
+                container = client.containers.get(COREDNS_CONTAINER_NAME)
+                coredns_logs = container.logs(tail=80).decode("utf-8", errors="replace")
+                logger.error(f"CoreDNS container status: {container.status}")
+                logger.error(f"CoreDNS logs (last 80 lines):\n{coredns_logs}")
+            except Exception as log_err:
+                logger.error(f"Could not retrieve CoreDNS logs: {log_err}")
+            return False
 
         except Exception as e:
             logger.error(f"DNS verification failed: {e}")
@@ -724,7 +760,7 @@ class DNSHandler(BasePhaseHandler):
         # Queue to pgmq for M4+ event processing
         if context.pgmq_client is not None:
             try:
-                await context.pgmq_client.send(event)
+                await context.pgmq_client.send(queue_for_event_type(event_type), event)
                 context.logger.debug(f"Event queued to pgmq: {event_type}")
             except Exception as e:
                 context.logger.warning(f"Failed to queue event to pgmq: {e}")

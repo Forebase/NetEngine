@@ -23,6 +23,8 @@ asyncpg = "^0.30"
 supabase = "^2.0"
 fastapi = ">=0.115"
 omegaconf = "^2.3"
+prometheus-client = "^0.25.0"
+cryptography = "^49.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4"
@@ -34,6 +36,7 @@ black = "^24.1"
 isort = "^5.13"
 flake8 = "^6.1"
 pre-commit = "^3.5"
+httpx = "^0.28.1"
 
 [tool.mypy]
 strict = true
@@ -42,7 +45,6 @@ exclude = [
     "netengine/api/",
     "netengine/cli/",
     "netengine/phases/",
-    "netengine/core/orchestrator\\.py",
     "netengine/core/pgmq_client\\.py",
     "netengine/handlers/substrate\\.py",
     "netengine/handlers/dns\\.py",
@@ -83,35 +85,6 @@ addopts = "-v --strict-markers --tb=short"
 markers = [
     "unit: Unit tests",
     "integration: Integration tests (requires Docker)",
-    "slow: Slow tests",
-]
-
-[tool.flake8]
-max-line-length = 100
-extend-ignore = ["E203", "W503"]
-exclude = [
-    "tests",
-    "netengine/phases",
-    "netengine/utils",
-    "netengine/api",
-    "netengine/cli",
-    "netengine/core/orchestrator.py",
-    "netengine/core/pgmq_client.py",
-    "netengine/core/supabase_client.py",
-    "netengine/handlers/substrate.py",
-    "netengine/handlers/dns.py",
-    "netengine/handlers/pki_handler.py",
-    "netengine/handlers/phase_pki.py",
-    "netengine/handlers/oidc_handler.py",
-    "netengine/handlers/gateway_handler.py",
-    "netengine/handlers/docker_handler.py",
-    "netengine/handlers/and_handler.py",
-    "netengine/handlers/domain_registry_handler.py",
-    "netengine/handlers/mail_handler.py",
-    "netengine/handlers/minio_handler.py",
-    "netengine/handlers/app_handler.py",
-    "netengine/handlers/whois_server.py",
-    "netengine/handlers/world_registry_handler.py",
-    "netengine/logging/middleware.py",
-    "netengine/logging/sinks.py",
+    "slow: Slow tests (image pulls, Keycloak startup, etc.)",
+    "e2e: Full-stack tests against live Docker infrastructure (--run-e2e to enable)",
 ]

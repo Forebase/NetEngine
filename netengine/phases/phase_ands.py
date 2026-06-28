@@ -12,9 +12,10 @@ Responsibilities:
 import asyncio
 import ipaddress
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Optional
 
+from netengine.events.queues import Queue, queue_for_event_type
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -64,7 +65,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
                 "Ensure address pools are created."
             )
 
-        context.runtime_state.started_at = datetime.utcnow()
+        context.runtime_state.started_at = datetime.now(UTC)
 
         try:
             ands_output: dict[str, Any] = {}
@@ -120,10 +121,10 @@ class ANDsPhaseHandler(BasePhaseHandler):
             ands_output["ands_provisioned"] = ands_provisioned
             ands_output["address_allocations"] = address_allocations
             ands_output["profiles_used"] = list(profiles_used)
-            ands_output["deployed_at"] = datetime.utcnow().isoformat()
+            ands_output["deployed_at"] = datetime.now(UTC).isoformat()
 
             context.runtime_state.ands_output = ands_output
-            context.runtime_state.completed_at = datetime.utcnow()
+            context.runtime_state.completed_at = datetime.now(UTC)
 
             logger.info(f"Phase 7 complete: {len(ands_provisioned)} ANDs provisioned")
 
@@ -146,7 +147,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
 
         except Exception as e:
             context.runtime_state.last_error = str(e)
-            context.runtime_state.last_error_at = datetime.utcnow()
+            context.runtime_state.last_error_at = datetime.now(UTC)
             logger.error(f"Phase 7 setup failed: {e}")
             raise
 
@@ -294,7 +295,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
             "gateway_ip": gateway_ip,
             "bridge_name": bridge_name,
             "dns_suffix": dns_suffix,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
 
         try:
@@ -346,7 +347,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
 
         while True:
             try:
-                msg = await context.pgmq_client.receive("and_admissions")
+                msg = await context.pgmq_client.receive(Queue.AND_ADMISSIONS)
                 if not msg:
                     await asyncio.sleep(1)
                     continue
@@ -355,7 +356,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
                     envelope = EventEnvelope(**json.loads(msg["message"]))
 
                     if envelope.event_type != "org.admitted":
-                        await context.pgmq_client.delete("and_admissions", msg["msg_id"])
+                        await context.pgmq_client.delete(Queue.AND_ADMISSIONS, msg["msg_id"])
                         continue
 
                     payload = envelope.payload
@@ -364,7 +365,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
 
                     if not org_name:
                         logger.warning("org.admitted event missing org_name")
-                        await context.pgmq_client.delete("and_admissions", msg["msg_id"])
+                        await context.pgmq_client.delete(Queue.AND_ADMISSIONS, msg["msg_id"])
                         continue
 
                     logger.info(f"Auto-provisioning AND for org: {org_name}")
@@ -379,13 +380,13 @@ class ANDsPhaseHandler(BasePhaseHandler):
                     and_instance = SyntheticAND(org_name, and_profile)
                     await self._provision_and(context, docker, gateway, and_instance, ands_spec)
                     logger.info(f"Auto-provisioned AND for org {org_name}")
-                    await context.pgmq_client.delete("and_admissions", msg["msg_id"])
+                    await context.pgmq_client.delete(Queue.AND_ADMISSIONS, msg["msg_id"])
 
                 except Exception as e:
                     logger.error(f"Failed to process org admission event: {e}")
                     try:
                         await context.pgmq_client.archive_to_dlq(
-                            "and_admissions", msg["msg_id"], str(e)
+                            Queue.AND_ADMISSIONS, msg["msg_id"], str(e)
                         )
                     except Exception as dlq_err:
                         logger.error(f"Failed to archive to DLQ: {dlq_err}")
@@ -424,7 +425,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
 
         if context.pgmq_client is not None:
             try:
-                await context.pgmq_client.send(event)
+                await context.pgmq_client.send(queue_for_event_type(event_type), event)
                 context.logger.debug(f"Event queued to pgmq: {event_type}")
             except Exception as e:
                 context.logger.warning(f"Failed to queue event to pgmq: {e}")

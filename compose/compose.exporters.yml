@@ -1,0 +1,100 @@
+version: "3.8"
+
+# Metrics exporters for comprehensive observability
+# Scrapes metrics from all services for Prometheus
+# Usage: docker compose -f docker-compose.yml -f compose/compose.observability.yml -f compose/compose.exporters.yml up -d
+
+services:
+  # Postgres metrics exporter
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: netengine_postgres_exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://netengine:${POSTGRES_PASSWORD:-dev_password}@postgres:5432/netengine?sslmode=disable"
+    ports:
+      - "9187:9187"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9187/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Docker daemon metrics exporter
+  docker-exporter:
+    image: prometheuscommunity/docker-exporter:latest
+    container_name: netengine_docker_exporter
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+    ports:
+      - "9323:9323"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9323/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Host system metrics exporter
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: netengine_node_exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /:/rootfs:ro
+      - /sys:/sys:ro
+      - /proc:/proc:ro
+    command:
+      - --path.procfs=/proc
+      - --path.sysfs=/sys
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9100/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Keycloak metrics exporter (if metrics endpoint exposed)
+  keycloak-metrics:
+    image: curlimages/curl:latest
+    container_name: netengine_keycloak_metrics
+    entrypoint: sleep
+    command:
+      - "infinity"
+    depends_on:
+      - keycloak
+    profiles:
+      - keycloak-metrics
+
+  # CoreDNS metrics (if running)
+  coredns-exporter:
+    image: nicolaka/netshoot:latest
+    container_name: netengine_coredns_metrics
+    entrypoint: sleep
+    command:
+      - "infinity"
+    profiles:
+      - coredns-metrics
+
+  # Custom NetEngine metrics collector
+  netengine-metrics:
+    image: curlimages/curl:latest
+    container_name: netengine_metrics_collector
+    environment:
+      NETENGINE_API_URL: http://netengine_api:8080
+      METRICS_PORT: 9555
+    volumes:
+      - ./compose/netengine-metrics.py:/scripts/collector.py:ro
+    entrypoint: python3
+    command:
+      - /scripts/collector.py
+    ports:
+      - "9555:9555"
+    depends_on:
+      - netengine_api
+    profiles:
+      - netengine-metrics
