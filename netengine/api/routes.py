@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from netengine.api.auth import require_admin, require_auth
 from netengine.core.reload import ReloadResult, apply_reload, check_immutability, compute_diff
 from netengine.core.state import RuntimeState
-from netengine.events.queues import PRIMARY_QUEUES
+from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import SpecLoadError, load_spec
@@ -780,7 +780,7 @@ async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
                 metrics = {}
 
             try:
-                dlq_result = await db.rpc("pgmq_metrics", {"queue_name": f"{q}_dlq"}).execute()
+                dlq_result = await db.rpc("pgmq_metrics", {"queue_name": dlq_for(q)}).execute()
                 dlq_metrics = dlq_result.data[0] if dlq_result.data else {}
             except Exception:
                 dlq_metrics = {}
@@ -790,7 +790,7 @@ async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
                     "queue": q,
                     "depth": metrics.get("queue_length", 0),
                     "oldest_msg_age_sec": metrics.get("oldest_msg_age_sec"),
-                    "dlq": f"{q}_dlq",  # DLQ name follows convention: {queue}_dlq
+                    "dlq": dlq_for(q),
                     "dlq_depth": dlq_metrics.get("queue_length", 0),
                 }
             )
@@ -805,8 +805,13 @@ async def replay_dlq(queue_name: str, user: dict = Depends(require_auth)) -> dic
     """Move all messages from a DLQ back to the main queue for retry."""
     from netengine.core.pgmq_client import PGMQClient
 
+    try:
+        queue = Queue(queue_name)
+        dlq = dlq_for(queue)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown queue: {queue_name}") from exc
+
     client = PGMQClient()
-    dlq = f"{queue_name}_dlq"
     replayed = 0
     errors: list[str] = []
     while True:
@@ -821,7 +826,7 @@ async def replay_dlq(queue_name: str, user: dict = Depends(require_auth)) -> dic
 
             envelope = EventEnvelope(**_json.loads(msg["message"]))
             envelope.retry_count = 0  # reset retry counter
-            await client.send(queue_name, envelope)
+            await client.send(queue, envelope)
             await client.delete(dlq, msg["msg_id"])
             replayed += 1
         except Exception as exc:
