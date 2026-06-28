@@ -108,6 +108,27 @@ poetry run netengine up spec.yaml --set metadata.name=my-world
 
 ---
 
+
+## Operator migration guidance
+
+Alpha migrations are forward-only unless a migration file includes explicit manual rollback notes. Inspect applied migrations with:
+
+```bash
+psql "$NETENGINE_DB_URL" -c "SELECT version, dirty FROM schema_migrations;"
+psql "$NETENGINE_DB_URL" -c "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1;"
+```
+
+The second command identifies the last applied migration. If a migration fails, stop writers, capture the error and current `schema_migrations` state, inspect partially-created objects, and follow that migration's manual recovery notes before retrying. Without explicit rollback notes, restore from backup or rebuild only if the database is disposable. Wiping and reapplying migrations is acceptable for local/dev/CI alpha databases with no durable data; it is unsafe for shared, persistent, staging, production, or customer-like environments without an approved backup/restore plan.
+
+pgmq queue additions should be treated as forward schema changes and should create both the queue and matching `*_dlq` queue. Prefer migrations over manual changes. If a queue must be created manually during alpha recovery, first inspect existing queues and then create both queues explicitly; remove queues only in disposable environments or after confirming no pending/audit messages are needed:
+
+```bash
+psql "$NETENGINE_DB_URL" -c "SELECT queue_name FROM pgmq.list_queues() ORDER BY queue_name;"
+psql "$NETENGINE_DB_URL" -c "SELECT pgmq.create('new_queue'); SELECT pgmq.create('new_queue_dlq');"
+```
+
+See `docs/runbook.md` for the full rollback and recovery procedure.
+
 ## Architecture
 
 ```

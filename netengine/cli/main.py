@@ -60,21 +60,8 @@ def _db_url_from_env() -> str | None:
 
 
 async def _run_migrations(db_url: str) -> None:
-    """Apply pending SQL migrations against the given Postgres URL."""
-    service = MigrationService(db_url, MIGRATIONS_DIR)
-    applied = await service.apply_pending()
-    if applied:
-        logger.info(f"Applied {len(applied)} migration(s)")
-    else:
-        logger.info("No pending migrations")
-
-
-def _require_db_url() -> str:
-    db_url = _db_url_from_env()
-    if not db_url:
-        click.echo("Database URL is required: set NETENGINE_DB_URL or DATABASE_URL.", err=True)
-        sys.exit(2)
-    return db_url
+    """Run all SQL migration files in order against the given Postgres URL."""
+    from netengine.utils.migration_service import MigrationService
 
 
 def _print_migration_status(status: MigrationStatus) -> None:
@@ -107,6 +94,8 @@ def _print_migration_status(status: MigrationStatus) -> None:
         click.echo(f"    Missing queues: {', '.join(status.missing_queues)}")
     else:
         click.echo("    Missing queues: none")
+    service = MigrationService(db_url, MIGRATIONS_DIR, logger.info)
+    await service.apply()
 
 
 @click.group()

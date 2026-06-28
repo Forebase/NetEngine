@@ -188,6 +188,56 @@ psql $NETENGINE_DB_URL -f migrations/001_initial.sql
 
 Then re-run `netengine up`.
 
+
+### Migration rollback and recovery (alpha)
+
+Alpha database migrations are **forward-only** unless the specific migration file includes explicit manual rollback notes. Do not assume a migration can be automatically reversed, and do not delete rows from `schema_migrations` as a rollback mechanism unless a migration's notes specifically instruct you to do so.
+
+Use `psql` to inspect applied migrations:
+
+```bash
+psql "$NETENGINE_DB_URL" -c "SELECT version, dirty FROM schema_migrations;"
+```
+
+The last applied migration is the highest recorded migration version. If your local migration runner stores timestamps or filenames instead of integer versions, order by the recorded version/name exactly as stored by the runner:
+
+```bash
+psql "$NETENGINE_DB_URL" -c "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1;"
+```
+
+If a migration fails:
+
+1. Stop NetEngine processes that may write to the database.
+2. Capture the failing migration version, `psql` output, and relevant application logs.
+3. Inspect `schema_migrations` and the partially-created database objects before retrying.
+4. If the database is marked dirty, fix the underlying SQL/object state first; then follow the migration's explicit manual recovery notes before re-running migrations.
+5. If there are no rollback/recovery notes, restore from a known-good backup or rebuild an expendable environment rather than hand-editing production data.
+
+Wiping and reapplying migrations is acceptable only for disposable local/dev databases, CI databases, or alpha environments where you have confirmed that no durable world/operator data needs to be preserved. It is unsafe for shared, persistent, staging, production, or customer-like environments unless you have an approved backup/restore plan and explicit operator sign-off.
+
+For local-only rebuilds, a full schema wipe is the cleanest reset:
+
+```bash
+psql "$NETENGINE_DB_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+poetry run python -m netengine.utils.run_migrations
+```
+
+#### pgmq queue migration notes
+
+Queue additions are schema changes. Prefer adding new pgmq queues in a forward migration with both the primary queue and its dead-letter queue, and keep the migration queue list aligned with `netengine.events.queues.Queue`. Before adding a queue manually, verify whether the migration already created it:
+
+```bash
+psql "$NETENGINE_DB_URL" -c "SELECT queue_name FROM pgmq.list_queues() ORDER BY queue_name;"
+```
+
+If an alpha migration fails because a pgmq queue is missing and the environment is otherwise recoverable, manually creating the queue can be an acceptable forward fix:
+
+```bash
+psql "$NETENGINE_DB_URL" -c "SELECT pgmq.create('new_queue'); SELECT pgmq.create('new_queue_dlq');"
+```
+
+Manual removal is riskier: pgmq queue tables can contain pending, delayed, or archived operational messages. Only drop/remove queues in disposable environments, or after confirming the queue is unused and draining/archiving any messages required for audit or replay. Never remove a queue just to make `schema_migrations` look rolled back.
+
 ### `SpecLoadError: Spec validation failed`
 
 The YAML spec has a field that failed Pydantic validation. The error message
