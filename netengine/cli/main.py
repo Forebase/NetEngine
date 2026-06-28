@@ -201,6 +201,12 @@ async def _migrate_status(*, exit_on_unhealthy: bool) -> None:
     help="Skip running database migrations on startup.",
 )
 @click.option(
+    "--allow-migration-failure",
+    is_flag=True,
+    default=False,
+    help="Continue booting if database migrations fail (development escape hatch).",
+)
+@click.option(
     "--env", "environment", help="Merge spec.{ENV}.yaml next to SPEC_FILE before booting."
 )
 @click.option(
@@ -215,11 +221,22 @@ def up(
     up_to: int,
     mock: bool,
     skip_migrations: bool,
+    allow_migration_failure: bool,
     environment: str | None,
     set_values: tuple[str, ...],
 ) -> None:
     """Boot a world from SPEC_FILE."""
-    asyncio.run(_up(spec_file, up_to, mock, skip_migrations, environment, set_values))
+    asyncio.run(
+        _up(
+            spec_file,
+            up_to,
+            mock,
+            skip_migrations,
+            allow_migration_failure,
+            environment,
+            set_values,
+        )
+    )
 
 
 async def _up(
@@ -227,6 +244,7 @@ async def _up(
     up_to: int,
     mock: bool,
     skip_migrations: bool,
+    allow_migration_failure: bool = False,
     environment: str | None = None,
     set_values: tuple[str, ...] = (),
 ) -> None:
@@ -249,7 +267,13 @@ async def _up(
             try:
                 await _run_migrations(db_url)
             except Exception as exc:
-                logger.warning(f"Migrations failed (continuing anyway): {exc}")
+                if allow_migration_failure:
+                    logger.warning(f"Migrations failed (continuing anyway): {exc}")
+                else:
+                    message = f"Migrations failed: {exc}"
+                    logger.error(message)
+                    click.echo(message, err=True)
+                    sys.exit(1)
 
     orchestrator = Orchestrator(spec, mock_mode=mock)
     click.echo(f"Booting world from {spec_file} (phases 0–{up_to})…")
