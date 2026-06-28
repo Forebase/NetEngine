@@ -453,4 +453,4 @@ To add a new compose file:
 
 ---
 
-See `COMPOSE_BRAINSTORM.md` for future compose variants and design ideas.
+See `docs/compose-brainstorm.md` for future compose variants and design ideas.

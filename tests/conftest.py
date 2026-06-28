@@ -71,6 +71,13 @@ def dev_sandbox_spec() -> NetEngineSpec:
     return load_spec(examples_dir / "dev-sandbox.yaml")
 
 
+@pytest.fixture
+def m3_spec() -> NetEngineSpec:
+    """Full valid spec for M3 orchestrator tests."""
+    examples_dir = _get_examples_dir()
+    return load_spec(examples_dir / "minimal.yaml")
+
+
 # ─────────────────────────────────────────────
 # Runtime State Fixtures
 # ─────────────────────────────────────────────
