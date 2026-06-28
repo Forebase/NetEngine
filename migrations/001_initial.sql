@@ -59,6 +59,16 @@ SELECT pgmq.create('oidc_provisioning');
 SELECT pgmq.create('oidc_provisioning_dlq');
 SELECT pgmq.create('and_provisioning');
 SELECT pgmq.create('and_provisioning_dlq');
+SELECT pgmq.create('inworld_admissions');
+SELECT pgmq.create('inworld_admissions_dlq');
+SELECT pgmq.create('services_admissions');
+SELECT pgmq.create('services_admissions_dlq');
+SELECT pgmq.create('and_admissions');
+SELECT pgmq.create('and_admissions_dlq');
+SELECT pgmq.create('pki_cert_rotation_events');
+SELECT pgmq.create('pki_cert_rotation_events_dlq');
+SELECT pgmq.create('drift_events');
+SELECT pgmq.create('drift_events_dlq');
 SELECT pgmq.create('world_health');
 SELECT pgmq.create('world_health_dlq');
 
