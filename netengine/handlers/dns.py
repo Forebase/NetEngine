@@ -515,25 +515,25 @@ class DNSHandler(BasePhaseHandler):
 
         soa_email_addr = root_zone["soa_email"].replace("@", ".")
         soa_record = (
-            f"{root_zone['name']}. SOA {root_zone['soa_primary_ns']}. "
+            f"{root_zone['name']}. 3600 IN SOA {root_zone['soa_primary_ns']}. "
             f"{soa_email_addr}. {serial} 3600 1800 604800 86400"
         )
 
         lines = [
+            "$TTL 3600",
             f"; Root zone: {root_zone['name']}",
             f"; Generated: {datetime.utcnow().isoformat()}",
             soa_record,
-            f"{root_zone['name']}. NS ns.root.internal.",
+            f"{root_zone['name']}. 3600 IN NS ns.root.internal.",
             "",
             "; Delegation to platform zone",
-            f"platform.internal. NS {platform_zone['ns_server']}.",
-            f"platform.internal. A {platform_zone['listen_ip']}",
+            f"platform.internal. 3600 IN NS {platform_zone['ns_server']}.",
+            f"platform.internal. 3600 IN A {platform_zone['listen_ip']}",
             "",
-            "; L1 service records (auth.internal, etc. — may be delegated to platform zone)",
-            "; These can be updated by M4+ phases",
-            f"auth.internal. A {platform_zone['listen_ip']}",
-            f"ca.internal. A {platform_zone['listen_ip']}",
-            f"registry.internal. A {platform_zone['listen_ip']}",
+            "; L1 service records",
+            f"auth.internal. 3600 IN A {platform_zone['listen_ip']}",
+            f"ca.internal. 3600 IN A {platform_zone['listen_ip']}",
+            f"registry.internal. 3600 IN A {platform_zone['listen_ip']}",
             "",
         ]
 
@@ -555,7 +555,7 @@ class DNSHandler(BasePhaseHandler):
     ) -> str:
         """Generate platform zone file with L1 service records."""
         platform_soa = (
-            f"{platform_zone['name']}. SOA {root_zone['soa_primary_ns']}. "
+            f"{platform_zone['name']}. 3600 IN SOA {root_zone['soa_primary_ns']}. "
             f"root.internal. 1 3600 1800 604800 86400"
         )
 
@@ -564,16 +564,17 @@ class DNSHandler(BasePhaseHandler):
         registry_ip = context.spec.world_registry.listen_ip
 
         lines = [
+            "$TTL 3600",
             f"; Platform zone: {platform_zone['name']}",
             f"; Generated: {datetime.utcnow().isoformat()}",
             platform_soa,
-            f"{platform_zone['name']}. NS {platform_zone['ns_server']}.",
-            f"{platform_zone['ns_server']}. A {platform_zone['listen_ip']}",
+            f"{platform_zone['name']}. 3600 IN NS {platform_zone['ns_server']}.",
+            f"{platform_zone['ns_server']}. 3600 IN A {platform_zone['listen_ip']}",
             "",
             "; L1 service records (populated by M4+ handlers)",
-            f"auth.{platform_zone['name']}. A {auth_ip}",
-            f"ca.{platform_zone['name']}. A {ca_ip}",
-            f"registry.{platform_zone['name']}. A {registry_ip}",
+            f"auth.{platform_zone['name']}. 3600 IN A {auth_ip}",
+            f"ca.{platform_zone['name']}. 3600 IN A {ca_ip}",
+            f"registry.{platform_zone['name']}. 3600 IN A {registry_ip}",
             "",
         ]
 
@@ -587,16 +588,17 @@ class DNSHandler(BasePhaseHandler):
         TLD zones start empty; populated by domain registry (Phase 5b) and org operations.
         """
         tld_soa = (
-            f"{tld_name}. SOA {root_zone['soa_primary_ns']}. "
+            f"{tld_name}. 3600 IN SOA {root_zone['soa_primary_ns']}. "
             f"root.internal. 1 3600 1800 604800 86400"
         )
 
         lines = [
+            "$TTL 3600",
             f"; TLD zone: {tld_name}",
             f"; Generated: {datetime.utcnow().isoformat()}",
             tld_soa,
-            f"{tld_name}. NS {tld_config['ns_server']}.",
-            f"{tld_config['ns_server']}. A {tld_config['listen_ip']}",
+            f"{tld_name}. 3600 IN NS {tld_config['ns_server']}.",
+            f"{tld_config['ns_server']}. 3600 IN A {tld_config['listen_ip']}",
             "",
             "; Domain records (populated by domain registry and orgs)",
             "",
