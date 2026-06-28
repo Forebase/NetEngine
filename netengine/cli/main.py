@@ -12,7 +12,7 @@ import yaml
 from netengine.core.migrations import MigrationService, MigrationStatus
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
-from netengine.db.migrations import MigrationRunResult, run_migrations
+from netengine.db.migrations import MIGRATIONS_DIR
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
@@ -107,19 +107,6 @@ def _print_migration_status(status: MigrationStatus) -> None:
         click.echo(f"    Missing queues: {', '.join(status.missing_queues)}")
     else:
         click.echo("    Missing queues: none")
-    from netengine.utils.migrations import apply_migration_files
-
-    migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
-    if not migration_files:
-        logger.info("No migration files found")
-        return
-
-    conn = await asyncpg.connect(db_url)
-    try:
-        applied_count = await apply_migration_files(conn, migration_files)
-        logger.info(f"Applied {applied_count} migration(s)")
-    finally:
-        await conn.close()
 
 
 @click.group()
