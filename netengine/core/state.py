@@ -71,6 +71,13 @@ class RuntimeState:
     issued_certificates: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     pki_rotation_state: Dict[str, Any] = field(default_factory=dict)
 
+    # Extended PKI state
+    intermediate_ca_cert: Optional[str] = None
+    dnssec_output: Optional[Dict[str, Any]] = None
+
+    # Gateway portal state
+    gateway_portal_output: Optional[Dict[str, Any]] = None
+
     @classmethod
     def load(cls) -> "RuntimeState":
         state_file = get_state_file()

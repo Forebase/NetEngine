@@ -63,14 +63,46 @@ class PKIPhaseHandler(BasePhaseHandler):
             ttl=300,
         )
 
-        # 3. Persist outputs
-        context.runtime_state.pki_output = {
+        # 3. Setup optional PKI features
+        pki_output: dict = {
             "ca_ip": pki.ca_ip,
             "ca_dns": pki.ca_dns,
             "container_id": context.runtime_state.step_ca_container_id,
             "bootstrapped": True,
             "deployed_at": datetime.utcnow().isoformat(),
         }
+
+        if spec.pki.crl_enabled:
+            pki_output["crl_url"] = f"https://{pki.ca_ip}/1.0/crl"
+            pki_output["crl_enabled"] = True
+            logger.info(f"CRL endpoint: {pki_output['crl_url']}")
+
+        if spec.pki.ocsp_enabled:
+            pki_output["ocsp_url"] = f"https://{pki.ca_ip}/ocsp"
+            pki_output["ocsp_enabled"] = True
+            logger.info(f"OCSP endpoint: {pki_output['ocsp_url']}")
+
+        if spec.pki.intermediate_ca_enabled:
+            pki_output["intermediate_ca_enabled"] = True
+            if context.runtime_state.intermediate_ca_cert:
+                pki_output["intermediate_ca_cert_available"] = True
+            logger.info("Intermediate CA enabled and tracked in state")
+
+        if spec.pki.dnssec_enabled:
+            dnssec_info = await pki.setup_dnssec(
+                zone="internal",
+                ksk_lifetime_days=spec.pki.dnssec_ksk_lifetime_days,
+                zsk_lifetime_days=spec.pki.dnssec_zsk_lifetime_days,
+            )
+            context.runtime_state.dnssec_output = dnssec_info
+            pki_output["dnssec_enabled"] = True
+            pki_output["dnssec_zone"] = dnssec_info["zone"]
+            pki_output["dnssec_ksk"] = dnssec_info["ksk_name"]
+            pki_output["dnssec_zsk"] = dnssec_info["zsk_name"]
+            logger.info(f"DNSSEC keys generated for zone: {dnssec_info['zone']}")
+
+        # 4. Persist outputs
+        context.runtime_state.pki_output = pki_output
         context.runtime_state.pki_bootstrapped = True
         context.runtime_state.phase_completed["3"] = True
         context.runtime_state.completed_at = datetime.utcnow()
@@ -102,7 +134,12 @@ class PKIPhaseHandler(BasePhaseHandler):
         return context.runtime_state.phase_completed.get("3", False)
 
     def _register_rotation_worker(self, context: PhaseContext, pki: PKIHandler, spec: Any) -> None:
-        """Register certificate rotation worker with ConsumerSupervisor."""
+        """Register certificate rotation worker with ConsumerSupervisor.
+
+        Builds rotation configs for all cert types: the four well-known built-in
+        types (platform_identity, inworld_identity, app, storage) plus any
+        additional types declared in policy.cert_type_overrides.
+        """
         if not context.consumer_supervisor:
             return
 
@@ -111,106 +148,43 @@ class PKIPhaseHandler(BasePhaseHandler):
             context.logger.info("PKI certificate rotation disabled")
             return
 
-        # Build rotation configs from spec (with defaults)
+        # Cert types that receive the graceful-transition rotation callback
+        _callback_types = {"platform_identity", "inworld_identity", "app"}
+
+        # Merge built-in cert types with any extras declared in spec overrides
+        _builtin = ["platform_identity", "inworld_identity", "app", "storage"]
+        _extra = [t for t in policy.cert_type_overrides if t not in _builtin]
+        all_cert_types = _builtin + _extra
+
         rotation_configs = []
+        for cert_type in all_cert_types:
+            override = policy.cert_type_overrides.get(cert_type)
+            if isinstance(override, dict):
+                interval = override.get("rotation_interval_hours", policy.default_interval_hours)
+                warning = override.get("expiry_warning_days", policy.default_warning_days)
+            else:
+                interval = policy.default_interval_hours
+                warning = policy.default_warning_days
 
-        # Platform identity cert
-        platform_cfg_dict = policy.cert_type_overrides.get("platform_identity")
-        if platform_cfg_dict and isinstance(platform_cfg_dict, dict):
-            platform_interval = platform_cfg_dict.get(
-                "rotation_interval_hours", policy.default_interval_hours
+            rotation_configs.append(
+                CertTypeRotationConfig(
+                    cert_type=cert_type,
+                    rotation_interval_hours=interval,
+                    expiry_warning_days=warning,
+                    rotation_callback=(
+                        self._prepare_app_cert_rotation
+                        if cert_type in _callback_types
+                        else None
+                    ),
+                )
             )
-            platform_warning = platform_cfg_dict.get(
-                "expiry_warning_days", policy.default_warning_days
-            )
-            platform_cfg = CertTypeRotationConfig(
-                cert_type="platform_identity",
-                rotation_interval_hours=platform_interval,
-                expiry_warning_days=platform_warning,
-                rotation_callback=self._prepare_app_cert_rotation,
-            )
-        else:
-            platform_cfg = CertTypeRotationConfig(
-                cert_type="platform_identity",
-                rotation_interval_hours=policy.default_interval_hours,
-                expiry_warning_days=policy.default_warning_days,
-                rotation_callback=self._prepare_app_cert_rotation,
-            )
-        rotation_configs.append(platform_cfg)
 
-        # Inworld identity cert
-        inworld_cfg_dict = policy.cert_type_overrides.get("inworld_identity")
-        if inworld_cfg_dict and isinstance(inworld_cfg_dict, dict):
-            inworld_interval = inworld_cfg_dict.get(
-                "rotation_interval_hours", policy.default_interval_hours
-            )
-            inworld_warning = inworld_cfg_dict.get(
-                "expiry_warning_days", policy.default_warning_days
-            )
-            inworld_cfg = CertTypeRotationConfig(
-                cert_type="inworld_identity",
-                rotation_interval_hours=inworld_interval,
-                expiry_warning_days=inworld_warning,
-                rotation_callback=self._prepare_app_cert_rotation,
-            )
-        else:
-            inworld_cfg = CertTypeRotationConfig(
-                cert_type="inworld_identity",
-                rotation_interval_hours=policy.default_interval_hours,
-                expiry_warning_days=policy.default_warning_days,
-                rotation_callback=self._prepare_app_cert_rotation,
-            )
-        rotation_configs.append(inworld_cfg)
-
-        # App certs (with rotation callback for graceful transition)
-        app_cfg_dict = policy.cert_type_overrides.get("app")
-        if app_cfg_dict and isinstance(app_cfg_dict, dict):
-            app_interval = app_cfg_dict.get(
-                "rotation_interval_hours", policy.default_interval_hours
-            )
-            app_warning = app_cfg_dict.get("expiry_warning_days", policy.default_warning_days)
-            app_cfg = CertTypeRotationConfig(
-                cert_type="app",
-                rotation_interval_hours=app_interval,
-                expiry_warning_days=app_warning,
-                rotation_callback=self._prepare_app_cert_rotation,
-            )
-        else:
-            app_cfg = CertTypeRotationConfig(
-                cert_type="app",
-                rotation_interval_hours=policy.default_interval_hours,
-                expiry_warning_days=policy.default_warning_days,
-                rotation_callback=self._prepare_app_cert_rotation,
-            )
-        rotation_configs.append(app_cfg)
-
-        # Storage/MinIO cert
-        storage_cfg_dict = policy.cert_type_overrides.get("storage")
-        if storage_cfg_dict and isinstance(storage_cfg_dict, dict):
-            storage_interval = storage_cfg_dict.get(
-                "rotation_interval_hours", policy.default_interval_hours
-            )
-            storage_warning = storage_cfg_dict.get(
-                "expiry_warning_days", policy.default_warning_days
-            )
-            storage_cfg = CertTypeRotationConfig(
-                cert_type="storage",
-                rotation_interval_hours=storage_interval,
-                expiry_warning_days=storage_warning,
-            )
-        else:
-            storage_cfg = CertTypeRotationConfig(
-                cert_type="storage",
-                rotation_interval_hours=policy.default_interval_hours,
-                expiry_warning_days=policy.default_warning_days,
-            )
-        rotation_configs.append(storage_cfg)
-
-        # Register rotation worker
         if context.pgmq_client:
             rotation_worker = PKICertRotationWorker(pki, context.pgmq_client, rotation_configs)
             context.consumer_supervisor.register("pki_cert_rotation", rotation_worker.run)
-            context.logger.info("PKI certificate rotation worker registered")
+            context.logger.info(
+                f"PKI certificate rotation worker registered ({len(rotation_configs)} cert types)"
+            )
 
     async def _prepare_app_cert_rotation(self, cn: str, cert_metadata: dict) -> None:
         """Called before rotating app cert - prepare for transition.
