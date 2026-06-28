@@ -14,6 +14,10 @@ class Queue(StrEnum):
     AND_PROVISIONING = "and_provisioning"
     INWORLD_ADMISSIONS = "inworld_admissions"
     SERVICES_ADMISSIONS = "services_admissions"
+    AND_ADMISSIONS = "and_admissions"
+    PKI_CERT_ROTATION_EVENTS = "pki_cert_rotation_events"
+    DRIFT_EVENTS = "drift_events"
+    WORLD_HEALTH = "world_health"
 
     # Dead-letter queues (derived from primary names)
     DNS_UPDATES_DLQ = "dns_updates_dlq"
@@ -21,6 +25,10 @@ class Queue(StrEnum):
     AND_PROVISIONING_DLQ = "and_provisioning_dlq"
     INWORLD_ADMISSIONS_DLQ = "inworld_admissions_dlq"
     SERVICES_ADMISSIONS_DLQ = "services_admissions_dlq"
+    AND_ADMISSIONS_DLQ = "and_admissions_dlq"
+    PKI_CERT_ROTATION_EVENTS_DLQ = "pki_cert_rotation_events_dlq"
+    DRIFT_EVENTS_DLQ = "drift_events_dlq"
+    WORLD_HEALTH_DLQ = "world_health_dlq"
 
 
 # Primary queues only — used for metrics/introspection endpoints
@@ -30,4 +38,8 @@ PRIMARY_QUEUES: tuple[Queue, ...] = (
     Queue.AND_PROVISIONING,
     Queue.INWORLD_ADMISSIONS,
     Queue.SERVICES_ADMISSIONS,
+    Queue.AND_ADMISSIONS,
+    Queue.PKI_CERT_ROTATION_EVENTS,
+    Queue.DRIFT_EVENTS,
+    Queue.WORLD_HEALTH,
 )

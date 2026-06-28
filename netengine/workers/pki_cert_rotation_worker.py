@@ -7,10 +7,14 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.core.state import RuntimeState
+from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 from netengine.handlers.pki_handler import PKIHandler
 
 logger = logging.getLogger(__name__)
+
+# Built-in cert types always managed by the rotation worker.
+_BUILTIN_CERT_TYPES = ["platform_identity", "inworld_identity", "app", "storage"]
 
 
 @dataclass
@@ -34,8 +38,62 @@ class PKICertRotationWorker:
     ):
         self.pki_handler = pki_handler
         self.pgmq = pgmq
-        self.cert_type_configs = {cfg.cert_type: cfg for cfg in cert_type_configs}
+        # Initial configs, keyed by cert_type. Used as fallback if spec reload fails.
+        self._initial_configs: Dict[str, CertTypeRotationConfig] = {
+            cfg.cert_type: cfg for cfg in cert_type_configs
+        }
+        # Per-cert-type callbacks survive spec reloads (they're in-process callables).
+        self._callbacks: Dict[str, Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]]] = {
+            cfg.cert_type: cfg.rotation_callback for cfg in cert_type_configs
+        }
         self.logger = logging.getLogger(__name__)
+
+    def _resolve_configs(self, state: RuntimeState) -> Dict[str, CertTypeRotationConfig]:
+        """Return the current rotation config, refreshed from world_spec if available.
+
+        On live-reload the world_spec in RuntimeState is updated; re-reading it here
+        means the worker picks up rotation_policy changes without a restart.
+        Falls back to the initial configs on any parse error.
+        """
+        if not state.world_spec:
+            return self._initial_configs
+
+        try:
+            from netengine.spec.models import NetEngineSpec
+
+            spec = NetEngineSpec(**state.world_spec)
+            policy = spec.pki.rotation_policy
+
+            if not policy.enabled:
+                return {}
+
+            extra_types = [t for t in policy.cert_type_overrides if t not in _BUILTIN_CERT_TYPES]
+            all_cert_types = _BUILTIN_CERT_TYPES + extra_types
+
+            configs: Dict[str, CertTypeRotationConfig] = {}
+            for cert_type in all_cert_types:
+                override = policy.cert_type_overrides.get(cert_type)
+                if isinstance(override, dict):
+                    interval = override.get(
+                        "rotation_interval_hours", policy.default_interval_hours
+                    )
+                    warning = override.get("expiry_warning_days", policy.default_warning_days)
+                else:
+                    interval = policy.default_interval_hours
+                    warning = policy.default_warning_days
+
+                configs[cert_type] = CertTypeRotationConfig(
+                    cert_type=cert_type,
+                    rotation_interval_hours=interval,
+                    expiry_warning_days=warning,
+                    rotation_callback=self._callbacks.get(cert_type),
+                )
+            return configs
+        except Exception as exc:
+            self.logger.warning(
+                f"pki_rotation_worker: spec reload failed, using cached config: {exc}"
+            )
+            return self._initial_configs
 
     async def run(self) -> None:
         """Main worker loop: check expiry per cert type, rotate if needed."""
@@ -43,8 +101,12 @@ class PKICertRotationWorker:
             try:
                 state = RuntimeState.load()
 
+                # Re-resolve configs from current spec on every iteration so that
+                # live reloads changing rotation_policy take effect without restart.
+                current_configs = self._resolve_configs(state)
+
                 # Check each cert type on its own schedule
-                for cert_type, config in self.cert_type_configs.items():
+                for cert_type, config in current_configs.items():
                     last_check = self._get_last_check_time(state, cert_type)
                     if self._should_check_now(last_check, config.rotation_interval_hours):
                         await self._check_and_rotate_cert_type(state, cert_type, config)
@@ -180,6 +242,6 @@ class PKICertRotationWorker:
                 emitted_by="pki_cert_rotation_worker",
                 payload=payload,
             )
-            await self.pgmq.send("pki_cert_rotation_events", event)
+            await self.pgmq.send(Queue.PKI_CERT_ROTATION_EVENTS, event)
         except Exception as e:
             self.logger.debug(f"Failed to emit rotation event: {e}")

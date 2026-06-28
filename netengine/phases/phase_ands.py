@@ -15,6 +15,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any, Optional
 
+from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -346,7 +347,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
 
         while True:
             try:
-                msg = await context.pgmq_client.receive("and_admissions")
+                msg = await context.pgmq_client.receive(Queue.AND_ADMISSIONS)
                 if not msg:
                     await asyncio.sleep(1)
                     continue
@@ -355,7 +356,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
                     envelope = EventEnvelope(**json.loads(msg["message"]))
 
                     if envelope.event_type != "org.admitted":
-                        await context.pgmq_client.delete("and_admissions", msg["msg_id"])
+                        await context.pgmq_client.delete(Queue.AND_ADMISSIONS, msg["msg_id"])
                         continue
 
                     payload = envelope.payload
@@ -364,7 +365,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
 
                     if not org_name:
                         logger.warning("org.admitted event missing org_name")
-                        await context.pgmq_client.delete("and_admissions", msg["msg_id"])
+                        await context.pgmq_client.delete(Queue.AND_ADMISSIONS, msg["msg_id"])
                         continue
 
                     logger.info(f"Auto-provisioning AND for org: {org_name}")
@@ -379,13 +380,13 @@ class ANDsPhaseHandler(BasePhaseHandler):
                     and_instance = SyntheticAND(org_name, and_profile)
                     await self._provision_and(context, docker, gateway, and_instance, ands_spec)
                     logger.info(f"Auto-provisioned AND for org {org_name}")
-                    await context.pgmq_client.delete("and_admissions", msg["msg_id"])
+                    await context.pgmq_client.delete(Queue.AND_ADMISSIONS, msg["msg_id"])
 
                 except Exception as e:
                     logger.error(f"Failed to process org admission event: {e}")
                     try:
                         await context.pgmq_client.archive_to_dlq(
-                            "and_admissions", msg["msg_id"], str(e)
+                            Queue.AND_ADMISSIONS, msg["msg_id"], str(e)
                         )
                     except Exception as dlq_err:
                         logger.error(f"Failed to archive to DLQ: {dlq_err}")

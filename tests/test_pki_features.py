@@ -356,3 +356,100 @@ class TestPKIRotationPolicyWiring:
         handler = PKIPhaseHandler()
         # Should not raise
         handler._register_rotation_worker(ctx, MagicMock(), spec)
+
+
+# ─────────────────────────────────────────────
+# PKI Rotation Worker — reload-aware config
+# ─────────────────────────────────────────────
+
+
+class TestPKICertRotationWorkerReloadAware:
+    """_resolve_configs picks up rotation_policy changes from world_spec."""
+
+    def _make_worker(self, initial_interval=24, initial_warning=30):
+        from netengine.workers.pki_cert_rotation_worker import PKICertRotationWorker
+
+        configs = [
+            CertTypeRotationConfig(
+                cert_type=ct,
+                rotation_interval_hours=initial_interval,
+                expiry_warning_days=initial_warning,
+            )
+            for ct in ["platform_identity", "inworld_identity", "app", "storage"]
+        ]
+        return PKICertRotationWorker(
+            pki_handler=MagicMock(),
+            pgmq=MagicMock(),
+            cert_type_configs=configs,
+        )
+
+    def _make_state(self, interval, warning, extra_overrides=None):
+        from pathlib import Path
+
+        import yaml
+
+        from netengine.spec.loader import load_spec
+
+        base = yaml.safe_load(
+            (Path(__file__).parent.parent / "examples" / "minimal.yaml").read_text()
+        )
+        base.setdefault("pki", {})["rotation_policy"] = {
+            "enabled": True,
+            "default_interval_hours": interval,
+            "default_warning_days": warning,
+            "cert_type_overrides": extra_overrides or {},
+        }
+        from netengine.spec.models import NetEngineSpec
+
+        spec = NetEngineSpec(**base)
+        state = RuntimeState()
+        state.world_spec = spec.model_dump()
+        return state
+
+    def test_resolves_updated_interval_from_world_spec(self):
+        worker = self._make_worker(initial_interval=24)
+        state = self._make_state(interval=6, warning=30)
+        configs = worker._resolve_configs(state)
+        assert configs["app"].rotation_interval_hours == 6
+
+    def test_resolves_updated_warning_days_from_world_spec(self):
+        worker = self._make_worker(initial_warning=30)
+        state = self._make_state(interval=24, warning=7)
+        configs = worker._resolve_configs(state)
+        assert configs["platform_identity"].expiry_warning_days == 7
+
+    def test_per_type_override_applied(self):
+        worker = self._make_worker()
+        state = self._make_state(
+            interval=24,
+            warning=30,
+            extra_overrides={"app": {"rotation_interval_hours": 2, "expiry_warning_days": 5}},
+        )
+        configs = worker._resolve_configs(state)
+        assert configs["app"].rotation_interval_hours == 2
+        assert configs["app"].expiry_warning_days == 5
+        # Other types use defaults
+        assert configs["storage"].rotation_interval_hours == 24
+
+    def test_disabled_policy_returns_empty(self):
+        worker = self._make_worker()
+        state = self._make_state(interval=24, warning=30)
+        state.world_spec["pki"]["rotation_policy"]["enabled"] = False
+        configs = worker._resolve_configs(state)
+        assert configs == {}
+
+    def test_falls_back_to_initial_configs_on_corrupt_spec(self):
+        worker = self._make_worker(initial_interval=24)
+        state = RuntimeState()
+        state.world_spec = {"invalid": "spec"}
+        configs = worker._resolve_configs(state)
+        # Should fall back without raising
+        assert "app" in configs
+        assert configs["app"].rotation_interval_hours == 24
+
+    def test_no_world_spec_returns_initial_configs(self):
+        worker = self._make_worker(initial_interval=48)
+        state = RuntimeState()
+        state.world_spec = None
+        configs = worker._resolve_configs(state)
+        assert configs["app"].rotation_interval_hours == 48

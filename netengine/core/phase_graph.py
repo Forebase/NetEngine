@@ -43,4 +43,5 @@ PHASE_PREREQUISITES: dict[int, list[str]] = {
     6: ["world_registry_output", "domain_registry_output"],
     7: ["identity_inworld_output"],
     8: ["ands_output"],
+    9: ["world_services_output"],
 }
