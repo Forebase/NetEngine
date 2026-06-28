@@ -11,13 +11,13 @@ import yaml
 
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
+from netengine.db.migrations import MigrationRunResult, run_migrations
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import load_spec, load_spec_with_composition, load_spec_with_environment
 
 logger = get_logger(__name__)
-MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations"
 
 
 def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
@@ -53,24 +53,22 @@ def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
     return overrides
 
 
-async def _run_migrations(db_url: str) -> None:
-    """Run all SQL migration files in order against the given Postgres URL."""
-    import asyncpg  # type: ignore[import]
-
-    migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
-    if not migration_files:
-        logger.info("No migration files found")
-        return
-
-    conn = await asyncpg.connect(db_url)
-    try:
-        for migration_path in migration_files:
-            sql = migration_path.read_text()
-            logger.info(f"Running migration: {migration_path.name}")
-            await conn.execute(sql)
-        logger.info(f"Applied {len(migration_files)} migration(s)")
-    finally:
-        await conn.close()
+async def _run_migrations(db_url: str) -> MigrationRunResult:
+    """Run SQL migrations using the shared migration service."""
+    result = await run_migrations(db_url)
+    for migration in result.results:
+        if migration.status == "applied":
+            logger.info(
+                f"Applied migration: {migration.filename} "
+                f"({migration.duration_seconds:.3f}s)"
+            )
+        elif migration.status == "skipped":
+            logger.info(f"Skipped migration: {migration.filename} (already applied)")
+    logger.info(
+        f"Migrations complete: {result.applied_count} applied, "
+        f"{result.skipped_count} skipped, {result.failed_count} failed"
+    )
+    return result
 
 
 @click.group()
