@@ -2,6 +2,7 @@ import os
 import secrets
 from datetime import UTC, datetime
 
+from netengine.db.migrations import run_migrations
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
@@ -9,7 +10,6 @@ from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.oidc_handler import OIDCHandler
 from netengine.handlers.pki_handler import PKIHandler
 from netengine.logging import get_logger
-from netengine.utils.run_migrations import apply_migrations
 
 logger = get_logger(__name__)
 
@@ -23,7 +23,7 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
 
         # 1. Run Supabase migrations (idempotent)
         logger.info("Running Supabase migrations...")
-        await apply_migrations()
+        await run_migrations()
 
         # 2. Generate or retrieve bootstrap admin password for Keycloak
         admin_password = getattr(context.runtime_state, "bootstrap_admin_password", None)
@@ -102,12 +102,13 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
         )
 
         # Create platform client for API authentication
-        client_id = await oidc.create_client(
+        client_id, client_secret = await oidc.create_client(
             realm="platform",
             client_id="platform-api",
             name="Platform API",
             redirect_uris=["https://api.platform.internal/callback"],
             public=False,
+            return_secret=True,
         )
 
         # Add token mapper to include org claim in JWT
@@ -129,11 +130,16 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
         context.runtime_state.platform_realm_id = realm_id
         context.runtime_state.admin_user_id = user_id
         context.runtime_state.platform_client_id = client_id
+        context.runtime_state.platform_client_auth_id = "platform-api"
+        context.runtime_state.platform_client_secret = client_secret
         context.runtime_state.identity_platform_output = {
             "keycloak_container_id": container_id,
             "platform_realm_id": realm_id,
             "admin_user_id": user_id,
             "platform_client_id": client_id,
+            "platform_client_auth_id": "platform-api",
+            "platform_client_secret": client_secret,
+            "deployed_at": datetime.utcnow().isoformat(),
             "deployed_at": datetime.now(UTC).isoformat(),
         }
         context.runtime_state.phase_completed["4"] = True

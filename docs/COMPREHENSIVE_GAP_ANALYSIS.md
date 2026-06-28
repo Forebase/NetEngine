@@ -150,43 +150,48 @@ ands:
 
 ## 2. 🟡 MEDIUM: EVENT INFRASTRUCTURE GAPS
 
-### 2.1 Queue Registration Mismatch
-**File**: `netengine/events/queues.py:27-33` (PRIMARY_QUEUES definition)
+### 2.1 Queue Registration Baseline
+**File**: `netengine/events/queues.py` (`PRIMARY_QUEUES` definition)
 
-**Declared Queues in Code**:
+`netengine/events/queues.py::PRIMARY_QUEUES` is the source of truth for the
+operator-facing pgmq queue set. The current baseline is 11 primary queues plus
+11 matching dead-letter queues (`*_dlq`):
+
 ```python
-PRIMARY_QUEUES = {
-    "dns_updates",
-    "oidc_provisioning", 
-    "and_provisioning",
-    "inworld_admissions",
-    "services_admissions",
-}
-```
-
-**Queues Referenced But Not in PRIMARY_QUEUES**:
-
-| Queue Name | Emitted By | Line | Status |
-|---|---|---|---|
-| `and_admissions` | phase_ands.py | 342 | ❌ Queue doesn't exist; will fail at runtime |
-| `pki_cert_rotation_events` | pki_cert_rotation_worker.py | 16 | ❌ Queue undefined |
-| `drift_events` | drift_controller.py | 315 | ❌ Queue undefined |
-| `world_health` | monitoring/service.py | 75 | ❌ Queue undefined |
-
-**Impact**: 
-- When drift controller tries to emit: `await context.pgmq_client.send_to_queue("drift_events", ...)` → **fails because queue doesn't exist**
-- Health monitoring events are lost
-- Queue metrics endpoint (`/api/v1/queues`) doesn't report these queues
-- Event replay CLI can't restore lost events from these queues
-
-**Evidence**:
-```python
-# netengine/phases/phase_ands.py:342
-await context.pgmq_client.send_to_queue(
-    "and_admissions",  # This queue is never created!
-    EventEnvelope(...)
+PRIMARY_QUEUES = (
+    Queue.DNS_UPDATES,
+    Queue.OIDC_PROVISIONING,
+    Queue.AND_PROVISIONING,
+    Queue.INWORLD_ADMISSIONS,
+    Queue.SERVICES_ADMISSIONS,
+    Queue.AND_ADMISSIONS,
+    Queue.PKI_CERT_ROTATION_EVENTS,
+    Queue.DRIFT_EVENTS,
+    Queue.WORLD_HEALTH,
+    Queue.GATEWAY_PORTAL_EVENTS,
+    Queue.PHASE_EVENTS,
 )
 ```
+
+**Registered Primary Queues**:
+
+| Queue Name | Purpose |
+|---|---|
+| `dns_updates` | DNS zone updates |
+| `oidc_provisioning` | Identity setup |
+| `and_provisioning` | Network isolation setup |
+| `inworld_admissions` | In-world admission events |
+| `services_admissions` | Service admission events |
+| `and_admissions` | AND admission events |
+| `pki_cert_rotation_events` | Certificate rotation events |
+| `drift_events` | Drift detection and remediation events |
+| `world_health` | Health check events |
+| `gateway_portal_events` | Gateway portal lifecycle events |
+| `phase_events` | Phase lifecycle events |
+
+**Operator note**: Queue metrics, replay tooling, and DLQ checks should derive
+their queue inventory from `PRIMARY_QUEUES` rather than copying a hard-coded
+count or list into runbooks.
 
 ---
 
@@ -397,9 +402,9 @@ old_spec = NetEngineSpec(**state.world_spec)  # Uses stale snapshot
    - **Benefit**: Manages expectations
 
 ### 🟡 P1: High Value Gaps (3-5 Hours Each)
-3. **Fix Queue Registration Mismatch**
-   - Add missing queues to PRIMARY_QUEUES
-   - Update queue creation logic in ConsumerSupervisor
+3. **Maintain Queue Registration Baseline**
+   - Keep `PRIMARY_QUEUES` as the source of truth for the 11 primary queues
+   - Ensure ConsumerSupervisor creates each primary queue and its matching DLQ
    - **Files**: events/queues.py, core/consumer_supervisor.py
    - **Effort**: 2 hours
 
@@ -457,7 +462,7 @@ old_spec = NetEngineSpec(**state.world_spec)  # Uses stale snapshot
 | Category | Count | Most Critical | Easy Win |
 |----------|-------|---|---|
 | **Spec Fields (Declared, Not Implemented)** | 14+ | DNSSEC, CRL, OCSP, intermediate CA | Add warnings |
-| **Event Infrastructure** | 4 | Queue mismatch | Fix PRIMARY_QUEUES |
+| **Event Infrastructure** | 4 | Queue/DLQ inventory drift | Keep docs and tooling sourced from PRIMARY_QUEUES |
 | **API Gaps** | 4+ | Service toggle endpoint | Add PUT endpoints |
 | **Phase Logic** | 2 | Phase 9 prerequisites, Phase 2 explicit | Update graph, decompose handler |
 | **State Debt** | 7 | Container ID fields | Clean up deprecated fields |
