@@ -12,7 +12,7 @@ import yaml
 from netengine.core.migrations import MigrationService, MigrationStatus
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
-from netengine.db.migrations import MigrationRunResult, run_migrations
+from netengine.db.migrations import MIGRATIONS_DIR
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
@@ -63,6 +63,37 @@ async def _run_migrations(db_url: str) -> None:
     """Run all SQL migration files in order against the given Postgres URL."""
     from netengine.utils.migration_service import MigrationService
 
+
+def _print_migration_status(status: MigrationStatus) -> None:
+    click.echo("Migration status")
+    click.echo(f"  Applied: {len(status.applied)}")
+    for record in status.applied:
+        applied_at = record.applied_at.isoformat() if record.applied_at else "unknown time"
+        click.echo(f"    ✓ {record.version} {record.name} ({applied_at})")
+
+    click.echo(f"  Pending: {len(status.pending)}")
+    for migration in status.pending:
+        click.echo(f"    • {migration.version} {migration.name} ({migration.path.name})")
+
+    click.echo(f"  Failed: {len(status.failed)}")
+    for record in status.failed:
+        detail = f": {record.error}" if record.error else ""
+        click.echo(f"    ✗ {record.version} {record.name}{detail}")
+
+    click.echo(f"  Checksum drift: {len(status.checksum_drifted)}")
+    for migration, record in status.checksum_drifted:
+        click.echo(
+            f"    ! {migration.version} {migration.name}: "
+            f"database={record.checksum or 'unknown'} file={migration.checksum}"
+        )
+
+    click.echo("  pgmq prerequisites:")
+    click.echo(f"    Extension available: {'yes' if status.pgmq_available else 'no'}")
+    click.echo(f"    Extension installed: {'yes' if status.pgmq_installed else 'no'}")
+    if status.missing_queues:
+        click.echo(f"    Missing queues: {', '.join(status.missing_queues)}")
+    else:
+        click.echo("    Missing queues: none")
     service = MigrationService(db_url, MIGRATIONS_DIR, logger.info)
     await service.apply()
 
