@@ -11,13 +11,13 @@ import yaml
 
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
-from netengine.events.queues import PRIMARY_QUEUES, Queue
+from netengine.db.migrations import MigrationRunResult, run_migrations
+from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import load_spec, load_spec_with_composition, load_spec_with_environment
 
 logger = get_logger(__name__)
-MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations"
 
 
 def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
@@ -585,7 +585,7 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
         if dlq:
             click.echo("\nDead-letter queue contents:\n")
             for q in queues_to_check:
-                dlq_name = f"{q}_dlq"
+                dlq_name = dlq_for(Queue(q)).value
                 try:
                     rows = await conn.fetch(
                         "SELECT msg_id, message, enqueued_at, read_ct "
@@ -620,7 +620,7 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
         else:
             click.echo("\nEvent queue depths:\n")
             for q in queues_to_check:
-                dlq_name = f"{q}_dlq"
+                dlq_name = dlq_for(Queue(q)).value
                 try:
                     depth_row = await conn.fetchrow("SELECT count(*) AS depth FROM pgmq.q_$1", q)
                     dlq_row = await conn.fetchrow(

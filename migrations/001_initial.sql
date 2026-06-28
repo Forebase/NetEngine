@@ -73,6 +73,8 @@ SELECT pgmq.create('world_health');
 SELECT pgmq.create('world_health_dlq');
 SELECT pgmq.create('gateway_portal_events');
 SELECT pgmq.create('gateway_portal_events_dlq');
+SELECT pgmq.create('phase_events');
+SELECT pgmq.create('phase_events_dlq');
 
 -- pgmq_send(queue_name, message)
 CREATE OR REPLACE FUNCTION pgmq_send(queue_name text, message text)

@@ -51,6 +51,26 @@ PRIMARY_QUEUES: tuple[Queue, ...] = (
 )
 
 
+DLQ_BY_PRIMARY: dict[Queue, Queue] = {
+    Queue.DNS_UPDATES: Queue.DNS_UPDATES_DLQ,
+    Queue.OIDC_PROVISIONING: Queue.OIDC_PROVISIONING_DLQ,
+    Queue.AND_PROVISIONING: Queue.AND_PROVISIONING_DLQ,
+    Queue.INWORLD_ADMISSIONS: Queue.INWORLD_ADMISSIONS_DLQ,
+    Queue.SERVICES_ADMISSIONS: Queue.SERVICES_ADMISSIONS_DLQ,
+    Queue.AND_ADMISSIONS: Queue.AND_ADMISSIONS_DLQ,
+    Queue.PKI_CERT_ROTATION_EVENTS: Queue.PKI_CERT_ROTATION_EVENTS_DLQ,
+    Queue.DRIFT_EVENTS: Queue.DRIFT_EVENTS_DLQ,
+    Queue.WORLD_HEALTH: Queue.WORLD_HEALTH_DLQ,
+    Queue.GATEWAY_PORTAL_EVENTS: Queue.GATEWAY_PORTAL_EVENTS_DLQ,
+    Queue.PHASE_EVENTS: Queue.PHASE_EVENTS_DLQ,
+}
+
+
+def dlq_for(queue: Queue) -> Queue:
+    """Return the dead-letter queue associated with a primary queue."""
+    return DLQ_BY_PRIMARY[queue]
+
+
 def queue_for_event_type(event_type: str) -> Queue:
     """Return the PGMQ queue that should receive an emitted event type.
 

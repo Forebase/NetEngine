@@ -1,6 +1,7 @@
 import json
 from typing import Any, Dict, Optional
 
+from netengine.events.queues import Queue, dlq_for
 from netengine.events.schema import EventEnvelope
 
 MAX_RETRIES = 3
@@ -71,7 +72,7 @@ class PGMQClient:
                 parent_event_id=envelope.parent_event_id,
                 retry_count=envelope.retry_count + 1,
             )
-            await self.send(f"{queue_name}_dlq", dlq_envelope)
+            await self.send(dlq_for(Queue(queue_name)), dlq_envelope)
         else:
             requeue_envelope = EventEnvelope(
                 event_id=envelope.event_id,

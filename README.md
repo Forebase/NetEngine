@@ -139,7 +139,7 @@ poetry run netengine up spec.yaml --set metadata.name=my-world
 
 **Runtime state** is persisted to `netengines_state.json` after each phase so interrupted runs can resume where they left off.
 
-**Events** flow phase-to-phase via pgmq queues: `dns_updates`, `oidc_provisioning`, `and_provisioning`, `inworld_admissions`, `services_admissions`. Each queue has a dead-letter queue (`*_dlq`) for failed messages.
+**Events** flow phase-to-phase via pgmq queues defined by `netengine/events/queues.py::PRIMARY_QUEUES`. There are currently 11 primary queues (`dns_updates`, `oidc_provisioning`, `and_provisioning`, `inworld_admissions`, `services_admissions`, `and_admissions`, `pki_cert_rotation_events`, `drift_events`, `world_health`, `gateway_portal_events`, `phase_events`) plus 11 matching dead-letter queues (`*_dlq`) for failed messages.
 
 ---
 

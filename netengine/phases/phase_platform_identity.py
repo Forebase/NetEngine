@@ -2,6 +2,7 @@ import os
 import secrets
 from datetime import UTC, datetime
 
+from netengine.db.migrations import run_migrations
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
@@ -9,7 +10,6 @@ from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.oidc_handler import OIDCHandler
 from netengine.handlers.pki_handler import PKIHandler
 from netengine.logging import get_logger
-from netengine.utils.run_migrations import apply_migrations
 
 logger = get_logger(__name__)
 
@@ -23,7 +23,7 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
 
         # 1. Run Supabase migrations (idempotent)
         logger.info("Running Supabase migrations...")
-        await apply_migrations()
+        await run_migrations()
 
         # 2. Generate or retrieve bootstrap admin password for Keycloak
         admin_password = getattr(context.runtime_state, "bootstrap_admin_password", None)
