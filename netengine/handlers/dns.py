@@ -108,7 +108,7 @@ class DNSHandler(BasePhaseHandler):
                 container_id = await self._deploy_coredns(context, zone_dir)
                 dns_output["coredns_container_id"] = container_id
                 # Brief pause for CoreDNS to bind port 53
-                await asyncio.sleep(2)
+                await asyncio.sleep(3)
 
             # Verify DNS service
             dns_healthy = await self._verify_dns_service(context, dns_output)
@@ -482,6 +482,17 @@ class DNSHandler(BasePhaseHandler):
                 networking_config=networking_config,
             )
             client.api.start(response["Id"])
+
+            # Give CoreDNS a moment to fail fast (e.g. bad Corefile)
+            import time
+
+            time.sleep(1)
+            status = client.api.inspect_container(response["Id"])
+            if not status["State"]["Running"]:
+                logs = client.api.logs(response["Id"], stdout=True, stderr=True, tail=50).decode(
+                    "utf-8", errors="replace"
+                )
+                raise RuntimeError(f"CoreDNS exited immediately after start. Logs:\n{logs}")
             return response["Id"]
 
         container_id: str = await asyncio.to_thread(_sync)
@@ -644,15 +655,32 @@ class DNSHandler(BasePhaseHandler):
                 logger.info("DNS service verification passed (mock mode)")
                 return True
 
-            # Real mode: query the root zone for its SOA record
+            # Real mode: query the root zone for its SOA record, with retries.
             root_ip = dns_output["root_zone"].get("listen_ip", "10.0.0.2")
             root_zone_name = dns_output["root_zone"].get("name", "root.internal")
-            verified = await self._query_soa(root_ip, root_zone_name, logger)
-            if verified:
-                logger.info(f"DNS SOA query confirmed at {root_ip}")
-            else:
-                logger.error(f"DNS SOA query failed for {root_zone_name} at {root_ip}")
-            return verified
+
+            for attempt in range(1, 7):
+                verified = await self._query_soa(root_ip, root_zone_name, logger)
+                if verified:
+                    logger.info(f"DNS SOA query confirmed at {root_ip} (attempt {attempt})")
+                    return True
+                if attempt < 6:
+                    logger.warning(f"SOA query attempt {attempt}/6 failed; retrying in 2s...")
+                    await asyncio.sleep(2)
+
+            # All retries exhausted — capture CoreDNS container logs for diagnosis.
+            logger.error(f"DNS SOA query failed for {root_zone_name} at {root_ip} (6 attempts)")
+            try:
+                import docker as docker_lib
+
+                client = context.docker_client.client  # type: ignore[union-attr]
+                container = client.containers.get(COREDNS_CONTAINER_NAME)
+                coredns_logs = container.logs(tail=80).decode("utf-8", errors="replace")
+                logger.error(f"CoreDNS container status: {container.status}")
+                logger.error(f"CoreDNS logs (last 80 lines):\n{coredns_logs}")
+            except Exception as log_err:
+                logger.error(f"Could not retrieve CoreDNS logs: {log_err}")
+            return False
 
         except Exception as e:
             logger.error(f"DNS verification failed: {e}")
