@@ -466,15 +466,20 @@ class DNSHandler(BasePhaseHandler):
                 "root_zone", {}
             ).get("listen_ip", "10.0.0.2")
 
+            # Start without a network so the listen IP can be assigned statically
             container = client.containers.run(
                 image=COREDNS_IMAGE,
                 name=COREDNS_CONTAINER_NAME,
                 command=["-conf", "/etc/coredns/Corefile"],
-                volumes={str(zone_dir): {"bind": "/etc/coredns", "mode": "ro"}},
-                ports={"53/udp": (root_listen_ip, 53), "53/tcp": (root_listen_ip, 53)},
+                # rw so the gateway portal handler can append stub zones at runtime
+                volumes={str(zone_dir): {"bind": "/etc/coredns", "mode": "rw"}},
+                network_mode="none",
                 detach=True,
                 restart_policy={"Name": "unless-stopped"},
             )
+            # Attach to the in-world core network with the declared listen IP
+            net = client.networks.get("core")
+            net.connect(container, ipv4_address=root_listen_ip)
             return container.id
 
         container_id: str = await asyncio.to_thread(_sync)

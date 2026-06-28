@@ -102,8 +102,9 @@ class DockerHandler:
 
     def _exec_command_sync(self, container_id, cmd):
         container = self.client.containers.get(container_id)
-        exec_result = container.exec_run(cmd, demux=True)
-        return exec_result.exit_code, (exec_result.output or b"").decode()
+        exec_result = container.exec_run(cmd, demux=False)
+        output = exec_result.output or b""
+        return exec_result.exit_code, output.decode("utf-8", errors="replace")
 
     async def stop_container(self, container_id: str) -> None:
         await asyncio.to_thread(self._stop_container_sync, container_id)
