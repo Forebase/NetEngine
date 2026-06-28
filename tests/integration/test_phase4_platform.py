@@ -33,7 +33,7 @@ def patched_platform_deps(phase_context):
     mock_dns.add_zone_record = AsyncMock()
 
     patches = [
-        patch("netengine.phases.phase_platform_identity.apply_migrations", AsyncMock()),
+        patch("netengine.phases.phase_platform_identity.run_migrations", AsyncMock()),
         patch(
             "netengine.phases.phase_platform_identity.PKIHandler",
             MagicMock(return_value=mock_pki),
