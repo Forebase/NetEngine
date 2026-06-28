@@ -106,7 +106,13 @@ class GatewayPortalHandler(BasePhaseHandler):
         config = portal.real_internet
         context.logger.info(f"Real-internet mode: {config.mode.value}")
 
-        await gateway.apply_internet_policy(config)
+        try:
+            await gateway.apply_internet_policy(config)
+        except GatewayError as exc:
+            context.logger.warning(
+                f"Internet policy ({config.mode.value}) not applied — "
+                f"gateway container unavailable: {exc}"
+            )
 
         output: dict[str, Any] = {"mode": config.mode.value}
 
