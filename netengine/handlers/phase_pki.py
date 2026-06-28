@@ -2,6 +2,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
+from netengine.events.queues import queue_for_event_type
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -207,6 +208,6 @@ class PKIPhaseHandler(BasePhaseHandler):
         context.logger.info(f"Event emitted: {event_type}")
         if context.pgmq_client is not None:
             try:
-                await context.pgmq_client.send(event)
+                await context.pgmq_client.send(queue_for_event_type(event_type), event)
             except Exception as exc:
                 context.logger.warning(f"Failed to queue pki event: {exc}")

@@ -12,6 +12,7 @@ import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
+from netengine.events.queues import queue_for_event_type
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
@@ -347,7 +348,7 @@ class ServicesPhaseHandler(BasePhaseHandler):
         # Queue to pgmq for downstream processing
         if context.pgmq_client is not None:
             try:
-                await context.pgmq_client.send(event)
+                await context.pgmq_client.send(queue_for_event_type(event_type), event)
                 context.logger.debug(f"Event queued to pgmq: {event_type}")
             except Exception as e:
                 context.logger.warning(f"Failed to queue event to pgmq: {e}")
