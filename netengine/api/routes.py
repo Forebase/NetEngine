@@ -13,12 +13,12 @@ from typing import Any
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from netengine.api.auth import require_admin, require_auth
 from netengine.core.reload import ReloadResult, apply_reload, check_immutability, compute_diff
 from netengine.core.state import RuntimeState
-from netengine.events.queues import PRIMARY_QUEUES
+from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import SpecLoadError, load_spec
@@ -32,6 +32,74 @@ router = APIRouter(prefix="/api/v1")
 # Health
 # ─────────────────────────────────────────────
 
+IMPORT_SCHEMA_VERSION = "netengine.import.v1"
+
+PHASE_REQUIRED_OUTPUTS = {
+    "0": ("substrate_output",),
+    "1": ("dns_output",),
+    "2": ("dns_output",),
+    "3": ("pki_bootstrapped",),
+    "4": ("identity_platform_output",),
+    "5": ("world_registry_output", "domain_registry_output"),
+    "6": ("identity_inworld_output",),
+    "7": ("ands_output",),
+    "8": ("world_services_output",),
+    "9": ("org_apps_output",),
+}
+
+
+def _validate_import_phase_state(state: RuntimeState) -> None:
+    """Reject import snapshots with invalid phase completion state."""
+    unknown = sorted(set(state.phase_completed) - set(PHASE_REQUIRED_OUTPUTS))
+    if unknown:
+        raise HTTPException(
+            status_code=422, detail=f"Unknown phase ID(s): {', '.join(unknown)}"
+        )
+
+    completed = {
+        phase for phase, is_completed in state.phase_completed.items() if is_completed
+    }
+    for phase in completed:
+        required_outputs = PHASE_REQUIRED_OUTPUTS[phase]
+        missing = [
+            field for field in required_outputs if not getattr(state, field, None)
+        ]
+        if missing:
+            missing_str = ", ".join(missing)
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Phase {phase} is completed but missing required "
+                    f"output(s): {missing_str}"
+                ),
+            )
+
+    completed_ints = sorted(int(phase) for phase in completed)
+    if completed_ints:
+        expected = set(range(completed_ints[-1] + 1))
+        missing_prereqs = sorted(expected - set(completed_ints))
+        if missing_prereqs:
+            missing_str = ", ".join(str(phase) for phase in missing_prereqs)
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Impossible phase combination; missing prerequisite "
+                    f"phase(s): {missing_str}"
+                ),
+            )
+
+
+PHASE_LABELS = {
+    "0": "Substrate",
+    "1": "DNS root + platform zones",
+    "2": "DNS TLD hierarchy",
+    "3": "PKI + ACME",
+    "4": "Platform identity",
+    "5": "Registries",
+    "6": "In-world identity",
+    "7": "ANDs",
+    "8": "Services",
+}
 
 @router.get("/health")
 async def health() -> dict[str, Any]:
@@ -138,7 +206,9 @@ async def teardown_world(
     """
     state = RuntimeState.load()
     if state.world_spec:
-        raw_lifecycle = (state.world_spec.get("metadata") or {}).get("lifecycle", "ephemeral")
+        raw_lifecycle = (state.world_spec.get("metadata") or {}).get(
+            "lifecycle", "ephemeral"
+        )
         if raw_lifecycle == "persistent" and not body.confirm:
             raise HTTPException(
                 status_code=409,
@@ -780,7 +850,7 @@ async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
                 metrics = {}
 
             try:
-                dlq_result = await db.rpc("pgmq_metrics", {"queue_name": f"{q}_dlq"}).execute()
+                dlq_result = await db.rpc("pgmq_metrics", {"queue_name": dlq_for(q)}).execute()
                 dlq_metrics = dlq_result.data[0] if dlq_result.data else {}
             except Exception:
                 dlq_metrics = {}
@@ -790,7 +860,7 @@ async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
                     "queue": q,
                     "depth": metrics.get("queue_length", 0),
                     "oldest_msg_age_sec": metrics.get("oldest_msg_age_sec"),
-                    "dlq": f"{q}_dlq",  # DLQ name follows convention: {queue}_dlq
+                    "dlq": dlq_for(q),
                     "dlq_depth": dlq_metrics.get("queue_length", 0),
                 }
             )
@@ -805,8 +875,13 @@ async def replay_dlq(queue_name: str, user: dict = Depends(require_auth)) -> dic
     """Move all messages from a DLQ back to the main queue for retry."""
     from netengine.core.pgmq_client import PGMQClient
 
+    try:
+        queue = Queue(queue_name)
+        dlq = dlq_for(queue)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown queue: {queue_name}") from exc
+
     client = PGMQClient()
-    dlq = f"{queue_name}_dlq"
     replayed = 0
     errors: list[str] = []
     while True:
@@ -821,7 +896,7 @@ async def replay_dlq(queue_name: str, user: dict = Depends(require_auth)) -> dic
 
             envelope = EventEnvelope(**_json.loads(msg["message"]))
             envelope.retry_count = 0  # reset retry counter
-            await client.send(queue_name, envelope)
+            await client.send(queue, envelope)
             await client.delete(dlq, msg["msg_id"])
             replayed += 1
         except Exception as exc:
@@ -902,7 +977,8 @@ async def export_world(user: dict = Depends(require_admin)) -> dict[str, Any]:
     import datetime as _dt
 
     return {
-        "exported_at": _dt.datetime.now(_dt.UTC).isoformat(),
+        "schema_version": IMPORT_SCHEMA_VERSION,
+        "exported_at": _dt.datetime.utcnow().isoformat(),
         "spec": state.world_spec,
         "phase_completed": state.phase_completed,
         "ca_cert_pem": state.ca_cert_pem,
@@ -918,13 +994,22 @@ async def export_world(user: dict = Depends(require_admin)) -> dict[str, Any]:
 
 
 class ImportRequest(BaseModel):
+    schema_version: str = Field(
+        ..., description="Import snapshot schema/version identifier"
+    )
     spec: dict[str, Any]
-    phase_completed: dict[str, bool] = {}
+    phase_completed: dict[str, bool] = Field(default_factory=dict)
     ca_cert_pem: str | None = None
+    substrate_output: dict[str, Any] | None = None
     pki_output: dict[str, Any] | None = None
     dns_output: dict[str, Any] | None = None
+    identity_platform_output: dict[str, Any] | None = None
+    world_registry_output: dict[str, Any] | None = None
+    domain_registry_output: dict[str, Any] | None = None
+    identity_inworld_output: dict[str, Any] | None = None
     ands_output: dict[str, Any] | None = None
     world_services_output: dict[str, Any] | None = None
+    org_apps_output: dict[str, Any] | None = None
 
 
 @router.post("/import")
@@ -932,12 +1017,47 @@ async def import_world(body: ImportRequest, user: dict = Depends(require_admin))
     """Restore world state from an export snapshot (persistent mode only)."""
     state = RuntimeState.load()
     if state.world_spec:
-        raw_lifecycle = (state.world_spec.get("metadata") or {}).get("lifecycle", "ephemeral")
+        raw_lifecycle = (state.world_spec.get("metadata") or {}).get(
+            "lifecycle", "ephemeral"
+        )
         if raw_lifecycle == "ephemeral":
             raise HTTPException(
                 status_code=409, detail="Import is only valid for persistent worlds"
             )
 
+    if body.schema_version != IMPORT_SCHEMA_VERSION:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported import schema_version: {body.schema_version}",
+        )
+
+    try:
+        spec = NetEngineSpec.model_validate(body.spec)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Spec parse error: {exc}")
+
+    imported_state = RuntimeState(
+        world_spec=spec.model_dump(mode="json"),
+        phase_completed=dict(body.phase_completed),
+        ca_cert_pem=body.ca_cert_pem,
+        substrate_output=body.substrate_output,
+        pki_output=body.pki_output,
+        dns_output=body.dns_output,
+        identity_platform_output=body.identity_platform_output,
+        world_registry_output=body.world_registry_output,
+        domain_registry_output=body.domain_registry_output,
+        identity_inworld_output=body.identity_inworld_output,
+        ands_output=body.ands_output,
+        world_services_output=body.world_services_output,
+        org_apps_output=body.org_apps_output,
+        pki_bootstrapped=bool(body.ca_cert_pem or body.pki_output),
+    )
+    _validate_import_phase_state(imported_state)
+
+    phases_restored = [
+        phase for phase, completed in body.phase_completed.items() if completed
+    ]
+    imported_state.save()
     phases_restored = list(body.phase_completed.keys())
     state.world_spec = body.spec
     state.phase_completed = dict(body.phase_completed)

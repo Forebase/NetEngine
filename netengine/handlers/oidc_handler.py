@@ -98,8 +98,14 @@ class OIDCHandler:
         name: str,
         redirect_uris: list[str] = None,
         public: bool = False,
-    ) -> str:
-        """Create an OIDC client in the given realm."""
+        return_secret: bool = False,
+    ) -> str | tuple[str, str | None]:
+        """Create an OIDC client in the given realm.
+
+        Returns the Keycloak client UUID by default. When ``return_secret`` is
+        true, also returns the confidential client secret generated for the
+        client.
+        """
         payload = {
             "clientId": client_id,
             "name": name,
@@ -113,13 +119,17 @@ class OIDCHandler:
             "serviceAccountsEnabled": False,
             "protocol": "openid-connect",
         }
-        # If not public, generate a secret (we'll store it)
+        client_secret = None
         if not public:
-            payload["secret"] = self._generate_secret()
+            client_secret = self._generate_secret()
+            payload["secret"] = client_secret
         await self._admin_request("POST", f"realms/{realm}/clients", json=payload)
         # Get the client UUID
         clients = await self._admin_request("GET", f"realms/{realm}/clients?clientId={client_id}")
-        return clients[0]["id"]
+        keycloak_client_id = clients[0]["id"]
+        if return_secret:
+            return keycloak_client_id, client_secret
+        return keycloak_client_id
 
     async def create_user(
         self,

@@ -12,13 +12,13 @@ import yaml
 from netengine.core.migrations import MigrationService, MigrationStatus
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
-from netengine.events.queues import PRIMARY_QUEUES, Queue
+from netengine.db.migrations import MigrationRunResult, run_migrations
+from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import load_spec, load_spec_with_composition, load_spec_with_environment
 
 logger = get_logger(__name__)
-MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations"
 
 
 def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
@@ -107,6 +107,19 @@ def _print_migration_status(status: MigrationStatus) -> None:
         click.echo(f"    Missing queues: {', '.join(status.missing_queues)}")
     else:
         click.echo("    Missing queues: none")
+    from netengine.utils.migrations import apply_migration_files
+
+    migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
+    if not migration_files:
+        logger.info("No migration files found")
+        return
+
+    conn = await asyncpg.connect(db_url)
+    try:
+        applied_count = await apply_migration_files(conn, migration_files)
+        logger.info(f"Applied {applied_count} migration(s)")
+    finally:
+        await conn.close()
 
 
 @click.group()
@@ -679,7 +692,7 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
         if dlq:
             click.echo("\nDead-letter queue contents:\n")
             for q in queues_to_check:
-                dlq_name = f"{q}_dlq"
+                dlq_name = dlq_for(Queue(q)).value
                 try:
                     rows = await conn.fetch(
                         "SELECT msg_id, message, enqueued_at, read_ct "
@@ -714,7 +727,7 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
         else:
             click.echo("\nEvent queue depths:\n")
             for q in queues_to_check:
-                dlq_name = f"{q}_dlq"
+                dlq_name = dlq_for(Queue(q)).value
                 try:
                     depth_row = await conn.fetchrow("SELECT count(*) AS depth FROM pgmq.q_$1", q)
                     dlq_row = await conn.fetchrow(

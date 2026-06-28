@@ -12,7 +12,7 @@ import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
-from netengine.events.queues import queue_for_event_type
+from netengine.events.queues import Queue, queue_for_event_type
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
@@ -301,7 +301,7 @@ class ServicesPhaseHandler(BasePhaseHandler):
 
         while True:
             try:
-                msg = await context.pgmq_client.receive("services_admissions")
+                msg = await context.pgmq_client.receive(Queue.SERVICES_ADMISSIONS)
                 if not msg:
                     await asyncio.sleep(1)
                     continue
@@ -311,7 +311,7 @@ class ServicesPhaseHandler(BasePhaseHandler):
                 logger.debug("Processing org.admitted event for services provisioning")
 
                 # Mark message as processed
-                await context.pgmq_client.delete("services_admissions", msg["msg_id"])
+                await context.pgmq_client.delete(Queue.SERVICES_ADMISSIONS, msg["msg_id"])
 
             except Exception as e:
                 logger.error(f"Org admission consumer error: {e}")

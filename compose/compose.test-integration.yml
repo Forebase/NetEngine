@@ -38,13 +38,10 @@ services:
       PGPASSWORD: integration_test_password
     command: |
       sh -c "
-        psql -h postgres-integration -U netengine -d netengine_integration -c 'CREATE EXTENSION IF NOT EXISTS pgmq' &&
-        psql -h postgres-integration -U netengine -d netengine_integration -c 'SELECT pgmq.create_queue(''dns_updates'');' &&
-        psql -h postgres-integration -U netengine -d netengine_integration -c 'SELECT pgmq.create_queue(''oidc_provisioning'');' &&
-        psql -h postgres-integration -U netengine -d netengine_integration -c 'SELECT pgmq.create_queue(''and_provisioning'');' &&
-        psql -h postgres-integration -U netengine -d netengine_integration -c 'SELECT pgmq.create_queue(''inworld_admissions'');' &&
-        psql -h postgres-integration -U netengine -d netengine_integration -c 'SELECT pgmq.create_queue(''services_admissions'');'
+        psql -h postgres-integration -U netengine -d netengine_integration -f /migrations/001_initial.sql
       "
+    volumes:
+      - ../migrations/001_initial.sql:/migrations/001_initial.sql:ro
     networks:
       - netengine-integration
     restart: on-failure

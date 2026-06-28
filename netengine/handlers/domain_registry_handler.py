@@ -3,6 +3,7 @@ from typing import Any, List
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.errors import RegistryError
+from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 
 
@@ -48,4 +49,4 @@ class DomainRegistryHandler:
             emitted_by="domain_registry_handler",
             payload={"domain": domain, "org": org_name, "ns": ns_records},
         )
-        await self.pgmq.send("dns_updates", event)
+        await self.pgmq.send(Queue.DNS_UPDATES, event)
