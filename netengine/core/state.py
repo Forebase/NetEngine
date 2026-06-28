@@ -62,6 +62,8 @@ class RuntimeState:
     world_spec: Optional[Dict[str, Any]] = None
     bootstrap_admin_password: Optional[str] = None
     platform_client_id: Optional[str] = None
+    platform_client_auth_id: Optional[str] = None
+    platform_client_secret: Optional[str] = None
 
     # Drift detection and self-healing
     drift_history: list[Dict[str, Any]] = field(default_factory=list)
