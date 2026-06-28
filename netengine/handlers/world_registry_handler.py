@@ -1,6 +1,7 @@
 from typing import Any, List
 
 from netengine.core.pgmq_client import PGMQClient
+from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 
 
@@ -36,8 +37,8 @@ class WorldRegistryHandler:
             emitted_by="world_registry_handler",
             payload={"org_name": name, "capabilities": capabilities, "and_profile": and_profile},
         )
-        await self.pgmq.send("oidc_provisioning", event)
-        await self.pgmq.send("and_provisioning", event)
+        await self.pgmq.send(Queue.OIDC_PROVISIONING, event)
+        await self.pgmq.send(Queue.AND_PROVISIONING, event)
 
     async def list_orgs(self) -> List[Any]:
         """Return all orgs in the world registry."""
@@ -62,8 +63,8 @@ class WorldRegistryHandler:
             emitted_by="world_registry_handler",
             payload={"org_name": name, "capabilities": capabilities, "and_profile": and_profile},
         )
-        await self.pgmq.send("oidc_provisioning", event)
-        await self.pgmq.send("and_provisioning", event)
+        await self.pgmq.send(Queue.OIDC_PROVISIONING, event)
+        await self.pgmq.send(Queue.AND_PROVISIONING, event)
 
     async def remove_org(self, name: str) -> bool:
         """Remove an org from the world registry. Returns True if it existed."""
@@ -77,6 +78,6 @@ class WorldRegistryHandler:
             emitted_by="world_registry_handler",
             payload={"org_name": name},
         )
-        await self.pgmq.send("oidc_provisioning", event)
-        await self.pgmq.send("and_provisioning", event)
+        await self.pgmq.send(Queue.OIDC_PROVISIONING, event)
+        await self.pgmq.send(Queue.AND_PROVISIONING, event)
         return True

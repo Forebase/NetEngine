@@ -9,15 +9,16 @@ from typing import Any
 import click
 import yaml
 
+from netengine.core.migrations import MigrationService, MigrationStatus
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
-from netengine.events.queues import PRIMARY_QUEUES, Queue
+from netengine.db.migrations import MigrationRunResult, run_migrations
+from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import load_spec, load_spec_with_composition, load_spec_with_environment
 
 logger = get_logger(__name__)
-MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations"
 
 
 def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
@@ -53,6 +54,11 @@ def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
     return overrides
 
 
+def _db_url_from_env() -> str | None:
+    """Return the database URL used by CLI migration operations."""
+    return os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+
+
 async def _run_migrations(db_url: str) -> None:
     """Run all SQL migration files in order against the given Postgres URL."""
     from netengine.utils.migration_service import MigrationService
@@ -64,6 +70,63 @@ async def _run_migrations(db_url: str) -> None:
 @click.group()
 def cli() -> None:
     """NetEngine — spin up, reload, and tear down authority-autonomous worlds."""
+
+
+@cli.group()
+def migrate() -> None:
+    """Manage NetEngine database migrations."""
+
+
+@migrate.command("up")
+def migrate_up() -> None:
+    """Apply pending database migrations."""
+    asyncio.run(_migrate_up())
+
+
+async def _migrate_up() -> None:
+    db_url = _require_db_url()
+    service = MigrationService(db_url, MIGRATIONS_DIR)
+    click.echo(f"Applying migrations from {MIGRATIONS_DIR}...")
+    try:
+        applied = await service.apply_pending()
+    except Exception as exc:
+        click.echo(f"Migration failed: {exc}", err=True)
+        sys.exit(1)
+    if applied:
+        click.echo(f"Applied {len(applied)} migration(s):")
+        for record in applied:
+            click.echo(f"  ✓ {record.version} {record.name}")
+    else:
+        click.echo("No pending migrations.")
+
+
+@migrate.command("status")
+def migrate_status() -> None:
+    """Print applied, pending, failed, and drifted migrations."""
+    asyncio.run(_migrate_status(exit_on_unhealthy=False))
+
+
+@migrate.command("check")
+def migrate_check() -> None:
+    """Validate migrations and pgmq prerequisites for CI."""
+    asyncio.run(_migrate_status(exit_on_unhealthy=True))
+
+
+async def _migrate_status(*, exit_on_unhealthy: bool) -> None:
+    db_url = _require_db_url()
+    service = MigrationService(db_url, MIGRATIONS_DIR)
+    try:
+        status = await service.status()
+    except Exception as exc:
+        click.echo(f"Unable to inspect migrations: {exc}", err=True)
+        sys.exit(1)
+    _print_migration_status(status)
+    if exit_on_unhealthy:
+        if status.ok:
+            click.echo("Migration check passed.")
+        else:
+            click.echo("Migration check failed.", err=True)
+            sys.exit(1)
 
 
 @cli.command()
@@ -83,6 +146,12 @@ def cli() -> None:
     help="Skip running database migrations on startup.",
 )
 @click.option(
+    "--allow-migration-failure",
+    is_flag=True,
+    default=False,
+    help="Continue booting if database migrations fail (development escape hatch).",
+)
+@click.option(
     "--env", "environment", help="Merge spec.{ENV}.yaml next to SPEC_FILE before booting."
 )
 @click.option(
@@ -97,11 +166,22 @@ def up(
     up_to: int,
     mock: bool,
     skip_migrations: bool,
+    allow_migration_failure: bool,
     environment: str | None,
     set_values: tuple[str, ...],
 ) -> None:
     """Boot a world from SPEC_FILE."""
-    asyncio.run(_up(spec_file, up_to, mock, skip_migrations, environment, set_values))
+    asyncio.run(
+        _up(
+            spec_file,
+            up_to,
+            mock,
+            skip_migrations,
+            allow_migration_failure,
+            environment,
+            set_values,
+        )
+    )
 
 
 async def _up(
@@ -109,6 +189,7 @@ async def _up(
     up_to: int,
     mock: bool,
     skip_migrations: bool,
+    allow_migration_failure: bool = False,
     environment: str | None = None,
     set_values: tuple[str, ...] = (),
 ) -> None:
@@ -126,12 +207,18 @@ async def _up(
         click.echo("WARNING: running in mock mode — no real infrastructure will be created.")
 
     if not skip_migrations and not mock:
-        db_url = os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+        db_url = _db_url_from_env()
         if db_url:
             try:
                 await _run_migrations(db_url)
             except Exception as exc:
-                logger.warning(f"Migrations failed (continuing anyway): {exc}")
+                if allow_migration_failure:
+                    logger.warning(f"Migrations failed (continuing anyway): {exc}")
+                else:
+                    message = f"Migrations failed: {exc}"
+                    logger.error(message)
+                    click.echo(message, err=True)
+                    sys.exit(1)
 
     orchestrator = Orchestrator(spec, mock_mode=mock)
     click.echo(f"Booting world from {spec_file} (phases 0–{up_to})…")
@@ -574,7 +661,7 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
         if dlq:
             click.echo("\nDead-letter queue contents:\n")
             for q in queues_to_check:
-                dlq_name = f"{q}_dlq"
+                dlq_name = dlq_for(Queue(q)).value
                 try:
                     rows = await conn.fetch(
                         "SELECT msg_id, message, enqueued_at, read_ct "
@@ -609,7 +696,7 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
         else:
             click.echo("\nEvent queue depths:\n")
             for q in queues_to_check:
-                dlq_name = f"{q}_dlq"
+                dlq_name = dlq_for(Queue(q)).value
                 try:
                     depth_row = await conn.fetchrow("SELECT count(*) AS depth FROM pgmq.q_$1", q)
                     dlq_row = await conn.fetchrow(

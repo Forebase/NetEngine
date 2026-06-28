@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 import aiohttp
 
-from netengine.events.queues import queue_for_event_type
+from netengine.events.queues import Queue, queue_for_event_type
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -475,7 +475,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
 
         while True:
             try:
-                msg = await context.pgmq_client.receive("inworld_admissions")
+                msg = await context.pgmq_client.receive(Queue.INWORLD_ADMISSIONS)
                 if not msg:
                     await asyncio.sleep(1)
                     continue
@@ -485,7 +485,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
 
                     if envelope.event_type != "org.admitted":
                         # Skip non-admission events
-                        await context.pgmq_client.delete("inworld_admissions", msg["msg_id"])
+                        await context.pgmq_client.delete(Queue.INWORLD_ADMISSIONS, msg["msg_id"])
                         continue
 
                     payload = envelope.payload
@@ -493,7 +493,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
 
                     if not org_name:
                         logger.warning("org.admitted event missing org_name")
-                        await context.pgmq_client.delete("inworld_admissions", msg["msg_id"])
+                        await context.pgmq_client.delete(Queue.INWORLD_ADMISSIONS, msg["msg_id"])
                         continue
 
                     logger.info(f"Processing org admission: {org_name}")
@@ -509,13 +509,13 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
                     logger.info(f"Provisioned in-world realm for org {org_name}")
 
                     # Mark message as processed
-                    await context.pgmq_client.delete("inworld_admissions", msg["msg_id"])
+                    await context.pgmq_client.delete(Queue.INWORLD_ADMISSIONS, msg["msg_id"])
 
                 except Exception as e:
                     logger.error(f"Failed to process org admission event: {e}")
                     # Archive to DLQ for manual review
                     await context.pgmq_client.archive_to_dlq(
-                        "inworld_admissions", msg["msg_id"], str(e)
+                        Queue.INWORLD_ADMISSIONS, msg["msg_id"], str(e)
                     )
 
             except Exception as e:

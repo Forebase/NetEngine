@@ -53,6 +53,44 @@ CREATE TABLE IF NOT EXISTS operator_log (
 );
 
 -- pgmq queues
+DO $$
+DECLARE
+    queue_to_create text;
+BEGIN
+    FOREACH queue_to_create IN ARRAY ARRAY[
+        'dns_updates',
+        'oidc_provisioning',
+        'and_provisioning',
+        'inworld_admissions',
+        'services_admissions',
+        'and_admissions',
+        'pki_cert_rotation_events',
+        'drift_events',
+        'world_health',
+        'gateway_portal_events',
+        'phase_events',
+        'dns_updates_dlq',
+        'oidc_provisioning_dlq',
+        'and_provisioning_dlq',
+        'inworld_admissions_dlq',
+        'services_admissions_dlq',
+        'and_admissions_dlq',
+        'pki_cert_rotation_events_dlq',
+        'drift_events_dlq',
+        'world_health_dlq',
+        'gateway_portal_events_dlq',
+        'phase_events_dlq'
+    ] LOOP
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pgmq.meta
+            WHERE meta.queue_name = queue_to_create
+        ) THEN
+            PERFORM pgmq.create(queue_to_create);
+        END IF;
+    END LOOP;
+END;
+$$;
 SELECT pgmq.create('dns_updates');
 SELECT pgmq.create('dns_updates_dlq');
 SELECT pgmq.create('oidc_provisioning');
@@ -73,6 +111,8 @@ SELECT pgmq.create('world_health');
 SELECT pgmq.create('world_health_dlq');
 SELECT pgmq.create('gateway_portal_events');
 SELECT pgmq.create('gateway_portal_events_dlq');
+SELECT pgmq.create('phase_events');
+SELECT pgmq.create('phase_events_dlq');
 
 -- pgmq_send(queue_name, message)
 CREATE OR REPLACE FUNCTION pgmq_send(queue_name text, message text)

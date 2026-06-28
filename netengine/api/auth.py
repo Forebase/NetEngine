@@ -93,11 +93,16 @@ async def require_auth(
         raise HTTPException(status_code=401, detail="Bearer token required")
 
     token = credentials.credentials
-    admin_password = getattr(state, "bootstrap_admin_password", None) or os.environ.get(
-        "KEYCLOAK_ADMIN_PASSWORD", ""
+    client_id = (
+        getattr(state, "platform_client_auth_id", None)
+        or os.environ.get("KEYCLOAK_PLATFORM_CLIENT_ID")
+        or "platform-api"
     )
-    if not admin_password:
-        raise HTTPException(status_code=500, detail="Keycloak admin credentials not configured")
+    client_secret = getattr(state, "platform_client_secret", None) or os.environ.get(
+        "KEYCLOAK_PLATFORM_CLIENT_SECRET", ""
+    )
+    if not client_secret:
+        raise HTTPException(status_code=500, detail="Platform API client secret not configured")
 
     try:
         async with aiohttp.ClientSession() as session:
