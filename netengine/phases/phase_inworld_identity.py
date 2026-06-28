@@ -12,7 +12,7 @@ import asyncio
 import json
 import secrets
 import ssl
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 import aiohttp
@@ -82,7 +82,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
                 "Ensure Phase 1-2 have run and created zones."
             )
 
-        context.runtime_state.started_at = datetime.utcnow()
+        context.runtime_state.started_at = datetime.now(UTC)
 
         try:
             inworld_output: dict[str, Any] = {}
@@ -139,10 +139,10 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
 
             inworld_output["realms_created"] = realms_created
             inworld_output["credentials_stored"] = credentials_stored
-            inworld_output["deployed_at"] = datetime.utcnow().isoformat()
+            inworld_output["deployed_at"] = datetime.now(UTC).isoformat()
 
             context.runtime_state.identity_inworld_output = inworld_output
-            context.runtime_state.completed_at = datetime.utcnow()
+            context.runtime_state.completed_at = datetime.now(UTC)
 
             logger.info(f"Phase 6 complete: {len(realms_created)} realms created")
 
@@ -162,7 +162,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
 
         except Exception as e:
             context.runtime_state.last_error = str(e)
-            context.runtime_state.last_error_at = datetime.utcnow()
+            context.runtime_state.last_error_at = datetime.now(UTC)
             logger.error(f"Phase 6 setup failed: {e}")
             raise
 
@@ -295,7 +295,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
         expiry = pki.extract_cert_expiry(cert)
         context.runtime_state.issued_certificates[canonical_name] = {
             "cert_type": "inworld_identity",
-            "issued_at": datetime.utcnow().isoformat(),
+            "issued_at": datetime.now(UTC).isoformat(),
             "expires_at": expiry.isoformat(),
             "sans": [canonical_name],
             "rotated_at": None,
@@ -358,8 +358,8 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
 
-        start = datetime.utcnow()
-        while (datetime.utcnow() - start).total_seconds() < timeout:
+        start = datetime.now(UTC)
+        while (datetime.now(UTC) - start).total_seconds() < timeout:
             try:
                 client_timeout = aiohttp.ClientTimeout(total=5)
                 async with aiohttp.ClientSession(
@@ -434,7 +434,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
                     "client_id": client_id,
                     "client_secret": client_secret,
                     "realm_name": realm_name,
-                    "created_at": datetime.utcnow().isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                 }
             ).execute()
             logger.info(f"Stored OIDC credentials for {org_name}")

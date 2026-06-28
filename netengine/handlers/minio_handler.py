@@ -1,6 +1,6 @@
 import secrets
 import tempfile
-from datetime import datetime
+from datetime import UTC, datetime
 
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
@@ -27,7 +27,7 @@ class StorageHandler:
         expiry = self.pki.extract_cert_expiry(cert)
         self.state.issued_certificates[self.storage_dns] = {
             "cert_type": "storage",
-            "issued_at": datetime.utcnow().isoformat(),
+            "issued_at": datetime.now(UTC).isoformat(),
             "expires_at": expiry.isoformat(),
             "sans": [],
             "rotated_at": None,

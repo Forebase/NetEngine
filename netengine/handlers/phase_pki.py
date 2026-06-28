@@ -1,5 +1,5 @@
 # netengine/handlers/pki_phase.py (or phases/phase_pki.py)
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from netengine.events.schema import EventEnvelope
@@ -29,11 +29,11 @@ class PKIPhaseHandler(BasePhaseHandler):
                 "ca_dns": spec.pki.acme.canonical_name,
                 "bootstrapped": True,
                 "mock": True,
-                "deployed_at": datetime.utcnow().isoformat(),
+                "deployed_at": datetime.now(UTC).isoformat(),
             }
             context.runtime_state.pki_bootstrapped = True
             context.runtime_state.phase_completed["3"] = True
-            context.runtime_state.completed_at = datetime.utcnow()
+            context.runtime_state.completed_at = datetime.now(UTC)
             context.runtime_state.save()
             logger.info("Phase 3: PKI + ACME complete (mock mode)")
             await self._emit_event(
@@ -69,7 +69,7 @@ class PKIPhaseHandler(BasePhaseHandler):
             "ca_dns": pki.ca_dns,
             "container_id": context.runtime_state.step_ca_container_id,
             "bootstrapped": True,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
 
         if spec.pki.crl_enabled:
@@ -105,7 +105,7 @@ class PKIPhaseHandler(BasePhaseHandler):
         context.runtime_state.pki_output = pki_output
         context.runtime_state.pki_bootstrapped = True
         context.runtime_state.phase_completed["3"] = True
-        context.runtime_state.completed_at = datetime.utcnow()
+        context.runtime_state.completed_at = datetime.now(UTC)
         context.runtime_state.save()
 
         logger.info("Phase 3: PKI + ACME complete")
