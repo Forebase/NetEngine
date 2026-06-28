@@ -447,6 +447,7 @@ class TestExportImportRoutes:
         assert "spec" in data
         assert "phase_completed" in data
         assert "exported_at" in data
+        assert data["schema_version"] == "netengine.import.v1"
 
     def test_import_updates_state(self, tmp_path, monkeypatch):
         monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
@@ -460,17 +461,108 @@ class TestExportImportRoutes:
         from netengine.api.app import app
 
         client = TestClient(app)
+        spec = _load_example("minimal.yaml").model_dump(mode="json")
+        spec["metadata"]["lifecycle"] = "persistent"
+
         resp = client.post(
             "/api/v1/import",
             json={
-                "spec": {"metadata": {"name": "restored", "lifecycle": "persistent"}},
+                "schema_version": "netengine.import.v1",
+                "spec": spec,
                 "phase_completed": {"0": True, "1": True, "2": True},
+                "substrate_output": {"networks": ["platform", "core"]},
+                "dns_output": {"root_ip": "10.0.0.2"},
             },
             headers={"X-Bootstrap-Secret": "test-secret"},
         )
         assert resp.status_code == 200
         assert "0" in resp.json()["phases_restored"]
 
+    def test_import_rejects_invalid_spec(self, tmp_path, monkeypatch):
+        client = _make_client(monkeypatch, tmp_path)
+
+        state = RuntimeState()
+        state.world_spec = {"metadata": {"name": "x", "lifecycle": "persistent"}}
+        state.save()
+
+        resp = client.post(
+            "/api/v1/import",
+            json={
+                "schema_version": "netengine.import.v1",
+                "spec": {"metadata": {"name": "broken", "lifecycle": "persistent"}},
+                "phase_completed": {},
+            },
+            headers={"X-Bootstrap-Secret": "test-secret"},
+        )
+        assert resp.status_code == 422
+        assert "Spec parse error" in resp.json()["detail"]
+
+    def test_import_rejects_unknown_phase(self, tmp_path, monkeypatch):
+        client = _make_client(monkeypatch, tmp_path)
+
+        state = RuntimeState()
+        state.world_spec = {"metadata": {"name": "x", "lifecycle": "persistent"}}
+        state.save()
+
+        spec = _load_example("minimal.yaml").model_dump(mode="json")
+        spec["metadata"]["lifecycle"] = "persistent"
+        resp = client.post(
+            "/api/v1/import",
+            json={
+                "schema_version": "netengine.import.v1",
+                "spec": spec,
+                "phase_completed": {"99": True},
+            },
+            headers={"X-Bootstrap-Secret": "test-secret"},
+        )
+        assert resp.status_code == 422
+        assert "Unknown phase ID" in resp.json()["detail"]
+
+    def test_import_rejects_phase_completion_without_required_output(
+        self, tmp_path, monkeypatch
+    ):
+        client = _make_client(monkeypatch, tmp_path)
+
+        state = RuntimeState()
+        state.world_spec = {"metadata": {"name": "x", "lifecycle": "persistent"}}
+        state.save()
+
+        spec = _load_example("minimal.yaml").model_dump(mode="json")
+        spec["metadata"]["lifecycle"] = "persistent"
+        resp = client.post(
+            "/api/v1/import",
+            json={
+                "schema_version": "netengine.import.v1",
+                "spec": spec,
+                "phase_completed": {"0": True},
+            },
+            headers={"X-Bootstrap-Secret": "test-secret"},
+        )
+        assert resp.status_code == 422
+        assert "missing required output" in resp.json()["detail"]
+
+    def test_import_rejects_skipped_prerequisite_phase(self, tmp_path, monkeypatch):
+        client = _make_client(monkeypatch, tmp_path)
+
+        state = RuntimeState()
+        state.world_spec = {"metadata": {"name": "x", "lifecycle": "persistent"}}
+        state.save()
+
+        spec = _load_example("minimal.yaml").model_dump(mode="json")
+        spec["metadata"]["lifecycle"] = "persistent"
+        resp = client.post(
+            "/api/v1/import",
+            json={
+                "schema_version": "netengine.import.v1",
+                "spec": spec,
+                "phase_completed": {"0": True, "2": True},
+                "substrate_output": {"networks": ["platform", "core"]},
+                "dns_output": {"root_ip": "10.0.0.2"},
+            },
+            headers={"X-Bootstrap-Secret": "test-secret"},
+        )
+        assert resp.status_code == 422
+        assert "Impossible phase combination" in resp.json()["detail"]
     def test_export_sanitizes_secret_phase_output(self, tmp_path, monkeypatch):
         monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
