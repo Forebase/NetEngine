@@ -57,6 +57,8 @@ async def _run_migrations(db_url: str) -> None:
     """Run all SQL migration files in order against the given Postgres URL."""
     import asyncpg  # type: ignore[import]
 
+    from netengine.utils.migrations import apply_migration_files
+
     migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
     if not migration_files:
         logger.info("No migration files found")
@@ -64,11 +66,8 @@ async def _run_migrations(db_url: str) -> None:
 
     conn = await asyncpg.connect(db_url)
     try:
-        for migration_path in migration_files:
-            sql = migration_path.read_text()
-            logger.info(f"Running migration: {migration_path.name}")
-            await conn.execute(sql)
-        logger.info(f"Applied {len(migration_files)} migration(s)")
+        applied_count = await apply_migration_files(conn, migration_files)
+        logger.info(f"Applied {applied_count} migration(s)")
     finally:
         await conn.close()
 

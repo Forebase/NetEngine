@@ -1,7 +1,7 @@
-import asyncio
 import os
 from pathlib import Path
-from urllib.parse import urlparse
+
+from netengine.utils.migrations import apply_migration_files
 
 
 async def apply_migrations() -> None:
@@ -10,53 +10,27 @@ async def apply_migrations() -> None:
     Reads NETENGINE_DB_URL (e.g. postgresql://user:pass@host:5432/db).
     Falls back to SUPABASE_DB_* variables for backward compat with cloud setups.
     """
+    import asyncpg  # type: ignore[import]
+
     db_url = os.environ.get("NETENGINE_DB_URL")
+    migrations_dir = Path(__file__).parent.parent.parent / "migrations"
+    migration_files = sorted(migrations_dir.glob("*.sql"))
+    if not migration_files:
+        raise FileNotFoundError(f"No migration files found in: {migrations_dir}")
 
     if db_url:
-        parsed = urlparse(db_url)
-        db_host = parsed.hostname or "localhost"
-        db_port = str(parsed.port or 5432)
-        db_user = parsed.username or "netengine"
-        db_password = parsed.password or ""
-        db_name = (parsed.path or "/netengine").lstrip("/")
+        conn = await asyncpg.connect(db_url)
     else:
-        # Backward compat: Supabase cloud connection details
-        db_host = os.environ.get("SUPABASE_DB_HOST", "localhost")
-        db_port = os.environ.get("SUPABASE_DB_PORT", "5432")
-        db_user = os.environ.get("SUPABASE_DB_USER", "postgres")
-        db_password = os.environ.get("SUPABASE_DB_PASSWORD", "")
-        db_name = os.environ.get("SUPABASE_DB_NAME", "postgres")
-
-    sql_path = Path(__file__).parent.parent.parent / "migrations" / "001_initial.sql"
-    if not sql_path.exists():
-        raise FileNotFoundError(f"Migration file not found: {sql_path}")
-
-    env = os.environ.copy()
-    if db_password:
-        env["PGPASSWORD"] = db_password
+        parsed_port = int(os.environ.get("SUPABASE_DB_PORT", "5432"))
+        conn = await asyncpg.connect(
+            host=os.environ.get("SUPABASE_DB_HOST", "localhost"),
+            port=parsed_port,
+            user=os.environ.get("SUPABASE_DB_USER", "postgres"),
+            password=os.environ.get("SUPABASE_DB_PASSWORD", ""),
+            database=os.environ.get("SUPABASE_DB_NAME", "postgres"),
+        )
 
     try:
-        process = await asyncio.create_subprocess_exec(
-            "psql",
-            "-h",
-            db_host,
-            "-p",
-            db_port,
-            "-U",
-            db_user,
-            "-d",
-            db_name,
-            "-f",
-            str(sql_path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-        )
-        stdout, stderr = await process.communicate()
-
-        if process.returncode != 0:
-            error_msg = stderr.decode() if stderr else "Unknown error"
-            raise RuntimeError(f"Migration failed: {error_msg}")
-
-    except FileNotFoundError:
-        raise RuntimeError("psql command not found. Install PostgreSQL client tools.")
+        await apply_migration_files(conn, migration_files)
+    finally:
+        await conn.close()
