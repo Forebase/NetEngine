@@ -196,6 +196,34 @@ async def teardown_world(
 # ─────────────────────────────────────────────
 
 
+class ServiceToggleRequest(BaseModel):
+    enabled: bool
+
+
+@router.put("/services/{name}")
+async def update_service(
+    name: str, body: ServiceToggleRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Enable or disable a named world service (mail, storage) in the spec."""
+    state = RuntimeState.load()
+
+    if not state.world_spec:
+        raise HTTPException(status_code=409, detail="No world spec loaded")
+
+    world_services = state.world_spec.get("world_services") or {}
+    if name not in world_services:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Service '{name}' not found — known services: {list(world_services)}",
+        )
+
+    world_services[name]["enabled"] = body.enabled
+    state.world_spec["world_services"] = world_services
+    state.save()
+
+    return {"status": "updated", "service": name, "enabled": body.enabled}
+
+
 @router.get("/services")
 async def get_services(user: dict = Depends(require_auth)) -> dict[str, Any]:
     """List running NetEngines containers and their status."""
@@ -404,6 +432,44 @@ async def create_and(body: ANDCreateRequest, user: dict = Depends(require_auth))
     return {"status": "provisioned", "and": body.name, "org": body.org, "dns_suffix": dns_suffix}
 
 
+class ANDProfileUpdateRequest(BaseModel):
+    profile: str
+    dns_suffix: str = ""
+
+
+@router.put("/ands/{and_name}/profile")
+async def update_and_profile(
+    and_name: str, body: ANDProfileUpdateRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Update the profile (and optionally dns_suffix) of a provisioned AND instance."""
+    state = RuntimeState.load()
+
+    if not state.world_spec:
+        raise HTTPException(status_code=409, detail="No world spec loaded")
+
+    ands_out = state.ands_output or {}
+    instances: list[dict[str, Any]] = ands_out.get("instances", [])
+    instance = next((i for i in instances if i.get("and_name") == and_name), None)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"AND instance '{and_name}' not found")
+    profiles = (state.world_spec.get("ands") or {}).get("profiles", {})
+    if body.profile not in profiles:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Profile '{body.profile}' not defined in spec"
+            f" — known profiles: {list(profiles)}",
+        )
+
+    instance["profile"] = body.profile
+    if body.dns_suffix:
+        instance["dns_suffix"] = body.dns_suffix
+
+    state.ands_output = ands_out
+    state.save()
+
+    return {"status": "updated", "and": and_name, "profile": body.profile}
+
+
 @router.delete("/ands/{and_name}")
 async def remove_and(and_name: str, user: dict = Depends(require_auth)) -> dict[str, Any]:
     """Remove an AND instance."""
@@ -513,6 +579,71 @@ async def dns_query(
 
 
 # ─────────────────────────────────────────────
+# Gateway
+# ─────────────────────────────────────────────
+
+
+class GatewayUpdateRequest(BaseModel):
+    real_internet_mode: str = ""
+    upstream_resolver_enabled: bool | None = None
+    upstream_resolver_ip: str = ""
+    cross_world_mode: str = ""
+
+
+@router.put("/gateway")
+async def update_gateway(
+    body: GatewayUpdateRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Update gateway portal configuration in the running spec.
+
+    Fields left at their zero-values are not modified. Changes take effect on
+    the next bootstrap cycle; live gateway reconfiguration requires a full reload.
+    """
+    state = RuntimeState.load()
+
+    if not state.world_spec:
+        raise HTTPException(status_code=409, detail="No world spec loaded")
+
+    gw = state.world_spec.get("gateway_portal") or {}
+    real_internet = gw.get("real_internet") or {}
+    cross_world = gw.get("cross_world") or {}
+
+    valid_ri_modes = {"isolated", "shadowed", "mirrored", "exposed", "custom"}
+    valid_cw_modes = {"none", "peered", "federated"}
+
+    if body.real_internet_mode:
+        if body.real_internet_mode not in valid_ri_modes:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid real_internet_mode '{body.real_internet_mode}'"
+                f" — valid: {valid_ri_modes}",
+            )
+        real_internet["mode"] = body.real_internet_mode
+
+    if body.upstream_resolver_enabled is not None:
+        real_internet["upstream_resolver_enabled"] = body.upstream_resolver_enabled
+
+    if body.upstream_resolver_ip:
+        real_internet["upstream_resolver_ip"] = body.upstream_resolver_ip
+
+    if body.cross_world_mode:
+        if body.cross_world_mode not in valid_cw_modes:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid cross_world_mode '{body.cross_world_mode}'"
+                f" — valid: {valid_cw_modes}",
+            )
+        cross_world["mode"] = body.cross_world_mode
+
+    gw["real_internet"] = real_internet
+    gw["cross_world"] = cross_world
+    state.world_spec["gateway_portal"] = gw
+    state.save()
+
+    return {"status": "updated", "gateway_portal": gw}
+
+
+# ─────────────────────────────────────────────
 # PKI
 # ─────────────────────────────────────────────
 
@@ -538,6 +669,50 @@ async def list_certs(user: dict = Depends(require_auth)) -> dict[str, Any]:
         "step_ca_ip": step_ca_ip,
         "issued_certs": certs,
     }
+
+
+class PKIRotationPolicyUpdateRequest(BaseModel):
+    enabled: bool | None = None
+    default_interval_hours: int | None = None
+    default_warning_days: int | None = None
+    cert_type_overrides: dict[str, Any] | None = None
+
+
+@router.put("/pki/rotation-policy")
+async def update_pki_rotation_policy(
+    body: PKIRotationPolicyUpdateRequest, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Update PKI certificate rotation policy in the running spec.
+
+    Only fields provided (non-None) are updated; omitted fields are left as-is.
+    Changes are picked up by the rotation worker on its next iteration without restart.
+    """
+    state = RuntimeState.load()
+
+    if not state.world_spec:
+        raise HTTPException(status_code=409, detail="No world spec loaded")
+
+    pki = state.world_spec.get("pki") or {}
+    policy = pki.get("rotation_policy") or {}
+
+    if body.enabled is not None:
+        policy["enabled"] = body.enabled
+    if body.default_interval_hours is not None:
+        if body.default_interval_hours < 1:
+            raise HTTPException(status_code=422, detail="default_interval_hours must be >= 1")
+        policy["default_interval_hours"] = body.default_interval_hours
+    if body.default_warning_days is not None:
+        if body.default_warning_days < 1:
+            raise HTTPException(status_code=422, detail="default_warning_days must be >= 1")
+        policy["default_warning_days"] = body.default_warning_days
+    if body.cert_type_overrides is not None:
+        policy["cert_type_overrides"] = body.cert_type_overrides
+
+    pki["rotation_policy"] = policy
+    state.world_spec["pki"] = pki
+    state.save()
+
+    return {"status": "updated", "rotation_policy": policy}
 
 
 # ─────────────────────────────────────────────
