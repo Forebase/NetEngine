@@ -12,6 +12,23 @@ from netengine.spec.loader import load_spec
 from netengine.spec.models import NetEngineSpec
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-e2e",
+        action="store_true",
+        default=False,
+        help="Run e2e tests that require a live Docker daemon and pull real images",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    if not config.getoption("--run-e2e"):
+        skip_e2e = pytest.mark.skip(reason="pass --run-e2e to run live Docker tests")
+        for item in items:
+            if item.get_closest_marker("e2e"):
+                item.add_marker(skip_e2e)
+
+
 def pytest_configure(config):
     """Keep Starlette's TestClient compatible with newer httpx releases."""
     import inspect

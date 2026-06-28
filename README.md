@@ -197,9 +197,9 @@ GET  /phases/{n}      Individual phase status and output
 
 The active development roadmap lives in the [GitHub project](https://github.com/Forebase/NetEngine). Key items:
 
-- [ ] End-to-end integration test (real Docker, live DNS query, cert issuance, OIDC login)
+- [x] End-to-end integration test (real Docker, live DNS query, cert issuance, OIDC login)
 - [x] Complete operator API (org CRUD, AND management, domain management)
-- [ ] Cross-world federation
+- [x] Cross-world federation
 - [x] `persistent` lifecycle mode (import/export, lifecycle guards, teardown confirmation)
 - [x] `netengine down --dry-run`
 

@@ -83,5 +83,6 @@ addopts = "-v --strict-markers --tb=short"
 markers = [
     "unit: Unit tests",
     "integration: Integration tests (requires Docker)",
-    "slow: Slow tests",
+    "slow: Slow tests (image pulls, Keycloak startup, etc.)",
+    "e2e: Full-stack tests against live Docker infrastructure (--run-e2e to enable)",
 ]

@@ -129,6 +129,8 @@ table ip netengine_{and_name} {{
 
         Generates and loads an nftables ruleset that enforces the mode declared
         in *config*.  CUSTOM mode is a no-op (operator manages rules directly).
+        Raises GatewayError if the gateway container does not exist or the
+        nftables command fails.
         """
         from netengine.spec.types import GatewayRealInternetMode
 
@@ -143,8 +145,12 @@ table ip netengine_{and_name} {{
             tmp_path = f.name
         try:
             await self.docker.copy_to_container(self.gateway_container, tmp_path, dest_path)
-        finally:
+        except Exception as exc:
             os.unlink(tmp_path)
+            raise GatewayError(
+                f"Gateway container '{self.gateway_container}' unavailable: {exc}"
+            ) from exc
+        os.unlink(tmp_path)
 
         exit_code, output = await self.docker.exec_command(
             self.gateway_container, ["nft", "-f", dest_path]
@@ -294,8 +300,12 @@ table inet netengine_peer_{peer_name} {{
             tmp_path = f.name
         try:
             await self.docker.copy_to_container(self.gateway_container, tmp_path, dest_path)
-        finally:
+        except Exception as exc:
             os.unlink(tmp_path)
+            raise GatewayError(
+                f"Gateway container '{self.gateway_container}' unavailable: {exc}"
+            ) from exc
+        os.unlink(tmp_path)
 
         exit_code, output = await self.docker.exec_command(
             self.gateway_container, ["nft", "-f", dest_path]
