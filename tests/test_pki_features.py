@@ -453,3 +453,136 @@ class TestPKICertRotationWorkerReloadAware:
         state.world_spec = None
         configs = worker._resolve_configs(state)
         assert configs["app"].rotation_interval_hours == 48
+
+
+# ─────────────────────────────────────────────
+# Intermediate CA — Phase output + API endpoint
+# ─────────────────────────────────────────────
+
+
+class TestIntermediateCAPhaseOutput:
+    """Phase 3 pki_output includes the cert PEM when intermediate CA is enabled."""
+
+    def _make_context(self, intermediate_cert: str | None = None):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from netengine.core.state import RuntimeState
+
+        spec = MagicMock()
+        spec.pki.acme.listen_ip = "10.0.0.6"
+        spec.pki.acme.canonical_name = "ca.platform.internal"
+        spec.pki.crl_enabled = False
+        spec.pki.ocsp_enabled = False
+        spec.pki.intermediate_ca_enabled = True
+        spec.pki.dnssec_enabled = False
+        spec.pki.rotation_policy.enabled = False
+
+        state = RuntimeState()
+        state.ca_cert_pem = "ROOT_CA_PEM"
+        state.step_ca_container_id = "c-abc"
+        if intermediate_cert:
+            state.intermediate_ca_cert = intermediate_cert
+
+        ctx = MagicMock()
+        ctx.mock_mode = False
+        ctx.runtime_state = state
+        ctx.spec = spec
+        ctx.docker_client = MagicMock()
+        ctx.consumer_supervisor = None
+        ctx.pgmq_client = None
+        ctx.logger = MagicMock()
+        return ctx, state
+
+    async def test_intermediate_cert_included_in_pki_output(self):
+        cert_pem = "-----BEGIN CERTIFICATE-----\nINTERMEDIATE\n-----END CERTIFICATE-----"
+        ctx, state = self._make_context(intermediate_cert=cert_pem)
+
+        with (
+            patch("netengine.handlers.phase_pki.PKIHandler") as mock_pki_cls,
+            patch("netengine.handlers.dns.DNSHandler") as mock_dns_cls,
+        ):
+            mock_pki = MagicMock()
+            mock_pki.ca_ip = "10.0.0.6"
+            mock_pki.ca_dns = "ca.platform.internal"
+            mock_pki.bootstrap = AsyncMock()
+            mock_pki_cls.return_value = mock_pki
+
+            mock_dns = MagicMock()
+            mock_dns.add_zone_record = AsyncMock()
+            mock_dns_cls.return_value = mock_dns
+
+            handler = PKIPhaseHandler()
+            with patch.object(handler, "_emit_event", AsyncMock()):
+                await handler.execute(ctx)
+
+        assert state.pki_output["intermediate_ca_enabled"] is True
+        assert state.pki_output["intermediate_ca_cert"] == cert_pem
+        assert state.pki_output["intermediate_ca_cert_available"] is True
+
+    async def test_intermediate_cert_absent_when_state_empty(self):
+        ctx, state = self._make_context(intermediate_cert=None)
+
+        with (
+            patch("netengine.handlers.phase_pki.PKIHandler") as mock_pki_cls,
+            patch("netengine.handlers.dns.DNSHandler") as mock_dns_cls,
+        ):
+            mock_pki = MagicMock()
+            mock_pki.ca_ip = "10.0.0.6"
+            mock_pki.ca_dns = "ca.platform.internal"
+            mock_pki.bootstrap = AsyncMock()
+            mock_pki_cls.return_value = mock_pki
+
+            mock_dns = MagicMock()
+            mock_dns.add_zone_record = AsyncMock()
+            mock_dns_cls.return_value = mock_dns
+
+            handler = PKIPhaseHandler()
+            with patch.object(handler, "_emit_event", AsyncMock()):
+                await handler.execute(ctx)
+
+        assert state.pki_output["intermediate_ca_enabled"] is True
+        assert "intermediate_ca_cert" not in state.pki_output
+        assert state.pki_output.get("intermediate_ca_cert_available") is not True
+
+
+class TestIntermediateCAEndpoint:
+    """GET /pki/intermediate-ca-cert returns cert or 404."""
+
+    def _make_app(self, intermediate_cert: str | None):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from netengine.api.auth import require_auth
+        from netengine.api.routes import router
+        from netengine.core.state import RuntimeState
+
+        state = RuntimeState()
+        state.intermediate_ca_cert = intermediate_cert
+
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[require_auth] = lambda: {"sub": "test"}
+
+        client = TestClient(app)
+        return client, state
+
+    def test_returns_cert_when_available(self):
+        cert_pem = "-----BEGIN CERTIFICATE-----\nINTERMEDIATE\n-----END CERTIFICATE-----"
+        client, state = self._make_app(cert_pem)
+
+        with patch("netengine.api.routes.RuntimeState.load", return_value=state):
+            resp = client.get("/api/v1/pki/intermediate-ca-cert")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["available"] is True
+        assert body["intermediate_ca_cert"] == cert_pem
+
+    def test_returns_404_when_cert_not_available(self):
+        client, state = self._make_app(None)
+
+        with patch("netengine.api.routes.RuntimeState.load", return_value=state):
+            resp = client.get("/api/v1/pki/intermediate-ca-cert")
+
+        assert resp.status_code == 404
+        assert "intermediate" in resp.json()["detail"].lower()

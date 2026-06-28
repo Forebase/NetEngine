@@ -86,6 +86,7 @@ class PKIPhaseHandler(BasePhaseHandler):
             pki_output["intermediate_ca_enabled"] = True
             if context.runtime_state.intermediate_ca_cert:
                 pki_output["intermediate_ca_cert_available"] = True
+                pki_output["intermediate_ca_cert"] = context.runtime_state.intermediate_ca_cert
             logger.info("Intermediate CA enabled and tracked in state")
 
         if spec.pki.dnssec_enabled:

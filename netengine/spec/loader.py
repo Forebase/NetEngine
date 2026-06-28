@@ -36,12 +36,6 @@ def _warn_unsupported(spec: NetEngineSpec) -> None:
         logger.warning(
             "pki.ocsp_enabled is set but OCSP is not yet implemented — field will be ignored"
         )
-    if pki.intermediate_ca_enabled:
-        logger.warning(
-            "pki.intermediate_ca_enabled is set but intermediate CA is not yet implemented"
-            " — field will be ignored"
-        )
-
     gw = spec.gateway_portal
     if gw.real_internet.mode.value != "isolated":
         logger.warning(

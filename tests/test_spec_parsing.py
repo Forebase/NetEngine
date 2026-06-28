@@ -196,16 +196,6 @@ class TestUnsupportedFieldWarnings:
             _warn_unsupported(spec)
         assert any("ocsp_enabled" in r.message for r in caplog.records)
 
-    def test_intermediate_ca_warns(self, caplog) -> None:
-        import logging
-
-        spec = self._make_spec({"pki": {"intermediate_ca_enabled": True}})
-        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
-            from netengine.spec.loader import _warn_unsupported
-
-            _warn_unsupported(spec)
-        assert any("intermediate_ca_enabled" in r.message for r in caplog.records)
-
     def test_real_internet_mode_warns(self, caplog) -> None:
         import logging
 

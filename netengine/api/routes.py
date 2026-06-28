@@ -671,6 +671,25 @@ async def list_certs(user: dict = Depends(require_auth)) -> dict[str, Any]:
     }
 
 
+@router.get("/pki/intermediate-ca-cert")
+async def get_intermediate_ca_cert(user: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Return the intermediate CA certificate PEM, if intermediate CA is enabled.
+
+    Clients that need to build a full trust chain should fetch this cert and
+    add it alongside the root CA cert (available in GET /world as ca_cert_present).
+    """
+    state = RuntimeState.load()
+    if not state.intermediate_ca_cert:
+        raise HTTPException(
+            status_code=404,
+            detail="Intermediate CA certificate not available; ensure pki.intermediate_ca_enabled is true and PKI phase has completed",
+        )
+    return {
+        "intermediate_ca_cert": state.intermediate_ca_cert,
+        "available": True,
+    }
+
+
 class PKIRotationPolicyUpdateRequest(BaseModel):
     enabled: bool | None = None
     default_interval_hours: int | None = None
