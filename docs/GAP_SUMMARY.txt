@@ -1,0 +1,118 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║          NETENGINE: MAJOR GAPS DISCOVERED (2026-06-27)                    ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 🔴 CRITICAL GAPS (Spec Declared But Not Implemented)                    │
+└─────────────────────────────────────────────────────────────────────────┘
+
+1. PKI FEATURES (netengine/spec/models.py:201-228)
+   ❌ DNSSEC Support (dnssec_enabled, ksk/zsk lifetimes)
+   ❌ CRL (Certificate Revocation List) - crl_enabled
+   ❌ OCSP (Online Certificate Status Protocol) - ocsp_enabled
+   ❌ Intermediate CA - intermediate_ca_enabled
+   ⚠️  PKI Rotation Policy - declared but not wired from spec
+
+2. GATEWAY FEATURES (netengine/spec/models.py:521-551)
+   ❌ Real Internet Mode (service_mirrors, upstream_resolver)
+   ❌ Cross-World Federation (peers, trust anchors)
+
+3. AND PROFILE FEATURES (netengine/spec/models.py:380-388)
+   ❌ Dynamic IP Allocation - dynamic_ip flag
+   ❌ Reverse DNS - reverse_dns flag
+   ❌ BGP Configuration - bgp setting
+
+4. MAIL FEATURES (netengine/spec/models.py:438-439)
+   ❌ SPF Record Generation - spf_default ignored
+   ❌ DMARC Policy Defaults - dmarc_default ignored
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 🟡 MEDIUM SEVERITY (Infrastructure/API Gaps)                            │
+└─────────────────────────────────────────────────────────────────────────┘
+
+5. EVENT QUEUE MISMATCHES (netengine/events/queues.py:27-33)
+   ❌ Queue "and_admissions" referenced but not defined
+   ❌ Queue "pki_cert_rotation_events" referenced but not defined
+   ❌ Queue "drift_events" referenced but not defined
+   ❌ Queue "world_health" referenced but not defined
+   → RUNTIME RISK: Will fail when trying to emit to undefined queues
+
+6. MISSING API ENDPOINTS (netengine/api/routes.py)
+   ❌ PUT /ands/{and_name}/profile (to update AND config)
+   ❌ PUT /gateway (to modify gateway configuration)
+   ❌ PUT /services/{name} (to enable/disable services)
+   ❌ PUT /pki/rotation-policy (to update rotation settings)
+
+7. INCOMPLETE PHASE LOGIC (netengine/core/)
+   ❌ Phase 9 missing prerequisite for world_services_output
+   ❌ Phase 2 handled implicitly by Phase 1 (non-obvious architecture)
+
+8. STATE PERSISTENCE (netengine/api/routes.py:99)
+   ❌ world_spec not updated after /api/v1/reload
+   → Results in stale spec snapshots after reload
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 🟢 LOW SEVERITY (Code Quality/Tech Debt)                                │
+└─────────────────────────────────────────────────────────────────────────┘
+
+9. DEPRECATED STATE FIELDS (netengine/core/state.py:51-72)
+   - gateway_container_id
+   - dns_root_container_id
+   - step_ca_container_id
+   - keycloak_platform_container_id
+   - inworld_keycloak_container_id
+   - bootstrap_admin_password
+   - platform_client_id
+   → Never read; accumulates state file bloat
+
+10. SILENT GRACEFUL DEGRADATION
+    • pgmq unavailability → events disabled without warning
+    • Queue creation deferral → potential runtime failures
+    • Handler field validation missing → unsupported configs allowed
+
+11. TEST COVERAGE GAPS
+    • No tests for: DNSSEC, OCSP, CRL, intermediate CA, real internet,
+      cross-world, service mirrors, BGP, AND dynamic IP, AND reverse DNS
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 📊 STATISTICS                                                           │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Total Gaps Identified:     30+
+Declared But Unimplemented: 14+ fields
+Missing Event Consumers:    4 queues
+Missing API Endpoints:      4+ endpoints
+Test Coverage Gaps:         8+ features
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ ⚡ QUICK FIXES (High ROI)                                               │
+└─────────────────────────────────────────────────────────────────────────┘
+
+P0 (1-2 hours):  Add warnings when users enable unsupported fields
+P1 (2-4 hours):  Fix queue registration mismatch
+P1 (4 hours):    Implement Intermediate CA support
+P1 (2 hours):    Wire PKI rotation policy from spec config
+P1 (1 hour):     Add Phase 9 prerequisites
+P2 (3 hours):    Clean up deprecated state fields
+P2 (4 hours):    Add test coverage for declared features
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 📂 KEY FILES TO REVIEW                                                  │
+└─────────────────────────────────────────────────────────────────────────┘
+
+netengine/spec/models.py               (201-228, 380-388, 521-551)
+netengine/handlers/pki_handler.py      (62-96)
+netengine/handlers/phase_pki.py        (127-133)
+netengine/handlers/gateway_handler.py  (14-25)
+netengine/events/queues.py             (27-33)
+netengine/api/routes.py                (75-800)
+netengine/core/state.py                (51-72)
+netengine/core/phase_graph.py          (39-46)
+
+═══════════════════════════════════════════════════════════════════════════
+
+See COMPREHENSIVE_GAP_ANALYSIS.md for:
+• Detailed file:line references
+• Evidence and test code snippets
+• Full remediation roadmap
+• Prioritized fix suggestions
