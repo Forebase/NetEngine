@@ -9,7 +9,7 @@ Responsibilities:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from netengine.handlers._base import BasePhaseHandler
@@ -62,7 +62,7 @@ class ServicesPhaseHandler(BasePhaseHandler):
         # Validate prerequisites
         self._validate_prerequisites(runtime_state, logger)
 
-        runtime_state.started_at = datetime.utcnow()
+        runtime_state.started_at = datetime.now(UTC)
 
         try:
             services_output: dict[str, Any] = {}
@@ -92,9 +92,9 @@ class ServicesPhaseHandler(BasePhaseHandler):
                 logger.info("Storage deployment complete")
 
             # Record deployment info
-            services_output["deployed_at"] = datetime.utcnow().isoformat()
+            services_output["deployed_at"] = datetime.now(UTC).isoformat()
             runtime_state.world_services_output = services_output
-            runtime_state.completed_at = datetime.utcnow()
+            runtime_state.completed_at = datetime.now(UTC)
 
             logger.info("Phase 8 complete: world services ready")
 
@@ -105,12 +105,25 @@ class ServicesPhaseHandler(BasePhaseHandler):
                 payload={"services": list(services_output.keys())},
             )
 
-            # Start org provisioning event consumer (background)
-            asyncio.create_task(self._consume_org_admission_events(context, docker, dns))
+            # Register background consumers
+            if context.consumer_supervisor is not None:
+                context.consumer_supervisor.register(
+                    "org_admission_events",
+                    lambda: self._consume_org_admission_events(context, docker, dns),
+                )
+
+                # Register monitoring service (always-running health checks)
+                from netengine.monitoring import MonitoringService
+
+                monitoring_service = MonitoringService(spec, interval_seconds=60.0)
+                context.consumer_supervisor.register(
+                    "monitoring_service",
+                    monitoring_service.start,
+                )
 
         except Exception as e:
             runtime_state.last_error = str(e)
-            runtime_state.last_error_at = datetime.utcnow()
+            runtime_state.last_error_at = datetime.now(UTC)
             logger.error(f"Phase 8 deployment failed: {e}")
             raise
 

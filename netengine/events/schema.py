@@ -4,12 +4,12 @@ Locked at M0. All inter-handler events (M4+) must use this schema.
 """
 
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Optional
 from uuid import uuid4
 
 
-@dataclass
+@dataclass(frozen=True)
 class EventEnvelope:
     """Message envelope for pgmq inter-handler events.
 
@@ -56,6 +56,11 @@ class EventEnvelope:
     Incremented by event queue. After N retries, moved to DLQ.
     """
 
+    schema_version: str = "1.0"
+    """Envelope schema version. Increment when fields are added or semantics change
+    so consumers can detect and handle mismatches without silent data loss.
+    """
+
     @staticmethod
     def create(
         event_type: str,
@@ -85,7 +90,7 @@ class EventEnvelope:
             parent_event_id=parent_event_id,
             event_type=event_type,
             emitted_by=emitted_by,
-            emitted_at=datetime.utcnow(),
+            emitted_at=datetime.now(UTC),
             payload=payload,
         )
 

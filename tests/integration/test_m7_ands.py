@@ -129,7 +129,7 @@ class TestM7ProfileValidation:
 
         # Mock ands_spec with profiles that have .name attributes
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]  # List of objects with .name
+        ands_spec.profiles = {"business": profile_biz}  # List of objects with .name
         ands_spec.instances = [and_instance]
 
         spec = MagicMock()
@@ -150,7 +150,7 @@ class TestM7ProfileValidation:
 
             with patch("netengine.phases.phase_ands.GatewayHandler") as mock_gateway_class:
                 mock_gateway = AsyncMock()
-                mock_gateway.gateway_container_id = "gateway-123"
+                mock_gateway.gateway_container = "gateway-123"
                 mock_gateway.generate_rules = AsyncMock(return_value=[])
                 mock_gateway.apply_rules = AsyncMock()
                 mock_gateway_class.return_value = mock_gateway
@@ -187,7 +187,7 @@ class TestM7ANDProvisioning:
         and_instance.dns_suffix = "acme.internal"
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
         ands_spec.instances = [and_instance]
 
         spec = MagicMock()
@@ -208,7 +208,7 @@ class TestM7ANDProvisioning:
 
             with patch("netengine.phases.phase_ands.GatewayHandler") as mock_gateway_class:
                 mock_gateway = AsyncMock()
-                mock_gateway.gateway_container_id = "gateway-123"
+                mock_gateway.gateway_container = "gateway-123"
                 mock_gateway.generate_rules = AsyncMock(return_value=[])
                 mock_gateway.apply_rules = AsyncMock()
                 mock_gateway_class.return_value = mock_gateway
@@ -250,7 +250,7 @@ class TestM7ANDProvisioning:
         and_instance2.dns_suffix = "widgets.internal"
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
         ands_spec.instances = [and_instance1, and_instance2]
 
         spec = MagicMock()
@@ -271,7 +271,7 @@ class TestM7ANDProvisioning:
 
             with patch("netengine.phases.phase_ands.GatewayHandler") as mock_gateway_class:
                 mock_gateway = AsyncMock()
-                mock_gateway.gateway_container_id = "gateway-123"
+                mock_gateway.gateway_container = "gateway-123"
                 mock_gateway.generate_rules = AsyncMock(return_value=[])
                 mock_gateway.apply_rules = AsyncMock()
                 mock_gateway_class.return_value = mock_gateway
@@ -311,7 +311,7 @@ class TestM7AddressAllocation:
         and_instance.dns_suffix = "acme.internal"
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
         ands_spec.instances = [and_instance]
 
         spec = MagicMock()
@@ -332,7 +332,7 @@ class TestM7AddressAllocation:
 
             with patch("netengine.phases.phase_ands.GatewayHandler") as mock_gateway_class:
                 mock_gateway = AsyncMock()
-                mock_gateway.gateway_container_id = "gateway-123"
+                mock_gateway.gateway_container = "gateway-123"
                 mock_gateway.generate_rules = AsyncMock(return_value=[])
                 mock_gateway.apply_rules = AsyncMock()
                 mock_gateway_class.return_value = mock_gateway
@@ -372,7 +372,7 @@ class TestM7RuleApplication:
         and_instance.dns_suffix = "acme.internal"
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
         ands_spec.instances = [and_instance]
 
         spec = MagicMock()
@@ -393,7 +393,7 @@ class TestM7RuleApplication:
 
             with patch("netengine.phases.phase_ands.GatewayHandler") as mock_gateway_class:
                 mock_gateway = AsyncMock()
-                mock_gateway.gateway_container_id = "gateway-123"
+                mock_gateway.gateway_container = "gateway-123"
                 mock_gateway.generate_rules = AsyncMock(return_value=["rule1", "rule2"])
                 mock_gateway.apply_rules = AsyncMock()
                 mock_gateway_class.return_value = mock_gateway
@@ -404,7 +404,7 @@ class TestM7RuleApplication:
         # Verify generate_rules was called
         mock_gateway.generate_rules.assert_called()
         call_kwargs = mock_gateway.generate_rules.call_args.kwargs
-        assert call_kwargs["rule_context"] == "acme-prod"
+        assert call_kwargs["and_name"] == "acme-prod"
         assert call_kwargs["profile"] == "business"
 
     async def test_m7_applies_rules_to_gateway(self) -> None:
@@ -427,7 +427,7 @@ class TestM7RuleApplication:
         and_instance.dns_suffix = "acme.internal"
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
         ands_spec.instances = [and_instance]
 
         spec = MagicMock()
@@ -448,7 +448,7 @@ class TestM7RuleApplication:
 
             with patch("netengine.phases.phase_ands.GatewayHandler") as mock_gateway_class:
                 mock_gateway = AsyncMock()
-                mock_gateway.gateway_container_id = "gateway-123"
+                mock_gateway.gateway_container = "gateway-123"
                 mock_gateway.generate_rules = AsyncMock(return_value=["rule1"])
                 mock_gateway.apply_rules = AsyncMock()
                 mock_gateway_class.return_value = mock_gateway
@@ -595,7 +595,7 @@ class TestM7EventHandling:
         and_instance.dns_suffix = "acme.internal"
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
         ands_spec.instances = [and_instance]
 
         spec = MagicMock()
@@ -616,7 +616,7 @@ class TestM7EventHandling:
 
             with patch("netengine.phases.phase_ands.GatewayHandler") as mock_gateway_class:
                 mock_gateway = AsyncMock()
-                mock_gateway.gateway_container_id = "gateway-123"
+                mock_gateway.gateway_container = "gateway-123"
                 mock_gateway.generate_rules = AsyncMock(return_value=[])
                 mock_gateway.apply_rules = AsyncMock()
                 mock_gateway_class.return_value = mock_gateway
@@ -654,7 +654,7 @@ class TestM7OutputStructure:
         and_instance.dns_suffix = "acme.internal"
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
         ands_spec.instances = [and_instance]
 
         spec = MagicMock()
@@ -675,7 +675,7 @@ class TestM7OutputStructure:
 
             with patch("netengine.phases.phase_ands.GatewayHandler") as mock_gateway_class:
                 mock_gateway = AsyncMock()
-                mock_gateway.gateway_container_id = "gateway-123"
+                mock_gateway.gateway_container = "gateway-123"
                 mock_gateway.generate_rules = AsyncMock(return_value=[])
                 mock_gateway.apply_rules = AsyncMock()
                 mock_gateway_class.return_value = mock_gateway
@@ -737,7 +737,7 @@ class TestM7OrgAdmissionEvents:
         profile_biz = MockProfile("business")
 
         ands_spec = MagicMock()
-        ands_spec.profiles = [profile_biz]
+        ands_spec.profiles = {"business": profile_biz}
 
         # Mock Docker and gateway
         mock_docker = AsyncMock()
@@ -745,7 +745,7 @@ class TestM7OrgAdmissionEvents:
         mock_docker.connect_network = AsyncMock()
 
         mock_gateway = AsyncMock()
-        mock_gateway.gateway_container_id = "gateway-123"
+        mock_gateway.gateway_container = "gateway-123"
         mock_gateway.generate_rules = AsyncMock(return_value=[])
         mock_gateway.apply_rules = AsyncMock()
 

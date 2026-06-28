@@ -21,25 +21,6 @@ async def _set_pki_output(context):
     context.runtime_state.pki_bootstrapped = True
 
 
-@pytest.fixture
-def m3_spec():
-    """Spec with PKI and Platform Identity configuration."""
-    return {
-        "name": "m3-test-world",
-        "version": "0.1.0",
-        "pki": {
-            "acme": {
-                "listen_ip": "10.0.0.6",
-                "canonical_name": "ca.platform.internal",
-            },
-        },
-        "identity_platform": {
-            "listen_ip": "10.0.0.7",
-            "realm_name": "platform",
-        },
-    }
-
-
 class TestOrchestratorPhaseExecution:
     """Tests for Orchestrator.execute_phases() behavior."""
 
@@ -253,20 +234,18 @@ class TestOrchestratorPhaseExecution:
                     pass
 
                 # Error should be recorded in state
-                assert orchestrator.runtime_state.error == "test error"
+                assert orchestrator.runtime_state.last_error == "test error"
 
 
 class TestOrchestratorPhaseOrdering:
     """Tests for correct phase ordering and sequencing."""
 
     def test_phase_ordering_is_sequential(self, m3_spec):
-        """Phases should be ordered sequentially 0-8."""
+        """Phases should be ordered sequentially 0-9."""
         orchestrator = Orchestrator(m3_spec)
 
         phases = [phase_num for phase_num, _ in orchestrator.PHASE_HANDLERS]
-        assert phases == [0, 1, 3, 4, 5, 6, 7, 8], (
-            f"Unexpected phase handler registry: {phases}"
-        )
+        assert phases == [0, 1, 3, 4, 5, 6, 7, 8, 9], f"Unexpected phase handler registry: {phases}"
 
     def test_phase_handlers_are_distinct(self, m3_spec):
         """Each phase should have a handler registered."""
@@ -275,9 +254,9 @@ class TestOrchestratorPhaseOrdering:
         handlers = {
             phase_num: handler_class for phase_num, handler_class in orchestrator.PHASE_HANDLERS
         }
-        assert len(handlers) == 8, f"Expected 8 handler milestones, got {len(handlers)}"
+        assert len(handlers) == 9, f"Expected 9 handler milestones, got {len(handlers)}"
         assert min(handlers.keys()) == 0, "Lowest phase should be 0"
-        assert max(handlers.keys()) == 8, "Highest phase should be 8"
+        assert max(handlers.keys()) == 9, "Highest phase should be 9"
 
     def test_phase_3_before_phase_4(self, m3_spec):
         """Phase 3 should execute before Phase 4."""

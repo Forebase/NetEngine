@@ -1,7 +1,8 @@
 """Regression tests for Phase 3+ DNS record insertion callers."""
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 
@@ -28,6 +29,17 @@ async def test_phase_3_pki_inserts_ca_dns_record(context_with_zone_files):
         ca_ip="10.0.0.6",
         ca_dns="ca.platform.internal",
         bootstrap=AsyncMock(),
+        setup_dnssec=AsyncMock(
+            return_value={
+                "zone": "internal",
+                "ksk_name": "Kinternal.+013+00001",
+                "zsk_name": "Kinternal.+013+00002",
+                "volume": "netengines_dnssec_keys",
+                "algorithm": "ECDSAP256SHA256",
+                "ksk_lifetime_days": 365,
+                "zsk_lifetime_days": 30,
+            }
+        ),
     )
 
     with (
@@ -43,10 +55,14 @@ async def test_phase_3_pki_inserts_ca_dns_record(context_with_zone_files):
 
 
 @pytest.mark.asyncio
-async def test_storage_handler_inserts_minio_dns_record(context_with_zone_files):
+async def test_storage_handler_inserts_minio_dns_record(context_with_zone_files, tmp_path):
     """Phase 8 storage helper should store context and insert DNS records."""
     docker = SimpleNamespace(start_container=AsyncMock())
-    pki = SimpleNamespace(issue_cert=AsyncMock(return_value=("cert", "key")))
+    future_expiry = datetime.now(UTC) + timedelta(days=365)
+    pki = SimpleNamespace(
+        issue_cert=AsyncMock(return_value=("cert", "key")),
+        extract_cert_expiry=MagicMock(return_value=future_expiry),
+    )
     dns = __import__("netengine.handlers.dns", fromlist=["DNSHandler"]).DNSHandler()
 
     handler = StorageHandler(
@@ -54,7 +70,8 @@ async def test_storage_handler_inserts_minio_dns_record(context_with_zone_files)
     )
     handler._create_bucket = AsyncMock()
 
-    await handler.deploy_minio()
+    with patch("os.makedirs"), patch("builtins.open", mock_open()):
+        await handler.deploy_minio()
 
     platform_zone = context_with_zone_files.runtime_state.dns_output["zone_files"][
         "platform.internal"

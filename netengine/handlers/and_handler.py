@@ -1,30 +1,37 @@
 import asyncio
 import ipaddress
-import logging
 from typing import Any, Dict
 
 from netengine.core.pgmq_client import PGMQClient
-from netengine.core.supabase_client import get_supabase
+from netengine.errors import ServicesError
 from netengine.events.schema import EventEnvelope
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.domain_registry_handler import DomainRegistryHandler
 from netengine.handlers.gateway_handler import GatewayHandler
+from netengine.logging import get_logger
 
 
 class ANDHandler:
     def __init__(self, docker: DockerHandler, state, context: PhaseContext | None = None):
         self.context = context or PhaseContext(
-            spec={}, runtime_state=state, logger=logging.getLogger(__name__)
+            spec={}, runtime_state=state, logger=get_logger(__name__)
         )
         self.docker = docker
         self.state = state
         self.domain_registry = DomainRegistryHandler()
         self.gateway = GatewayHandler(docker)
         self.dns = DNSHandler()
-        self.supabase = get_supabase()
+        self._db = None
         self.pgmq = PGMQClient()
+
+    async def _get_db(self):
+        if self._db is None:
+            from netengine.core.supabase_client import get_db
+
+            self._db = await get_db()
+        return self._db
 
     async def provision_and(self, and_name: str, org: str, profile: str, dns_suffix: str) -> None:
         """Full AND provisioning: bridge, address, gateway attach, rules, DNS."""
@@ -52,8 +59,9 @@ class ANDHandler:
             value=gateway_ip,
             ttl=300,
         )
-        # 6. Update state in Supabase
-        await self.supabase.table("address_leases").upsert(
+        # 6. Update state in DB
+        db = await self._get_db()
+        await db.table("address_leases").upsert(
             {
                 "and_name": and_name,
                 "cidr": cidr,
@@ -75,19 +83,15 @@ class ANDHandler:
     async def update_and_profile(self, and_name: str, new_profile: str) -> None:
         """Change an AND's profile: regenerate rules and reload atomically."""
         # Fetch current cidr from state
-        result = (
-            await self.supabase.table("address_leases")
-            .select("cidr")
-            .eq("and_name", and_name)
-            .execute()
-        )
+        db = await self._get_db()
+        result = await db.table("address_leases").select("cidr").eq("and_name", and_name).execute()
         if not result.data:
-            raise RuntimeError(f"AND {and_name} not found")
+            raise ServicesError(f"AND {and_name} not found")
         cidr = result.data[0]["cidr"]
         rules = await self.gateway.generate_rules(and_name, new_profile, cidr)
         await self.gateway.apply_rules(and_name, rules)
         # Update profile in state
-        await self.supabase.table("address_leases").update({"profile": new_profile}).eq(
+        await db.table("address_leases").update({"profile": new_profile}).eq(
             "and_name", and_name
         ).execute()
 
@@ -102,7 +106,8 @@ class ANDHandler:
         )
         # 3. Remove bridge
         await self.docker.remove_network(bridge_name)
-        # 4. Remove lease from Supabase
-        await self.supabase.table("address_leases").delete().eq("and_name", and_name).execute()
+        # 4. Remove lease from DB
+        db = await self._get_db()
+        await db.table("address_leases").delete().eq("and_name", and_name).execute()
         # 5. Remove DNS suffix
         # (optional)

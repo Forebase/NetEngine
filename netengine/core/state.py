@@ -1,16 +1,24 @@
 import json
 import os
+import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
+from netengine.logging import get_logger
+
+if TYPE_CHECKING:
+    import asyncio
+
+logger = get_logger(__name__)
 
 DEFAULT_STATE_FILE = "netengines_state.json"
 
 
 def get_state_file() -> Path:
     """Return the runtime state file path for the current environment."""
-    return Path(os.environ.get("NETENGINES_STATE_FILE", DEFAULT_STATE_FILE))
+    return Path(os.environ.get("NETENGINE_STATE_FILE", DEFAULT_STATE_FILE))
 
 
 @dataclass
@@ -53,17 +61,55 @@ class RuntimeState:
     inworld_admin_password: Optional[str] = None
     world_spec: Optional[Dict[str, Any]] = None
     bootstrap_admin_password: Optional[str] = None
+    platform_client_id: Optional[str] = None
+
+    # Drift detection and self-healing
+    drift_history: list[Dict[str, Any]] = field(default_factory=list)
+    last_drift_check_at: Optional[datetime] = None
+    current_drift_phases: list[int] = field(default_factory=list)
+    # PKI certificate rotation tracking
+    issued_certificates: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    pki_rotation_state: Dict[str, Any] = field(default_factory=dict)
+
+    # Extended PKI state
+    intermediate_ca_cert: Optional[str] = None
+    dnssec_output: Optional[Dict[str, Any]] = None
+
+    # Gateway portal state
+    gateway_portal_output: Optional[Dict[str, Any]] = None
 
     @classmethod
     def load(cls) -> "RuntimeState":
         state_file = get_state_file()
         if state_file.exists():
             with open(state_file, "r") as f:
-                data = json.load(f)
+                data: Dict[str, Any] = json.load(f)
             # datetime fields are stored as ISO strings
-            for dt_field in ("started_at", "completed_at", "last_error_at"):
+            for dt_field in ("started_at", "completed_at", "last_error_at", "last_drift_check_at"):
                 if data.get(dt_field):
                     data[dt_field] = datetime.fromisoformat(data[dt_field])
+            for dt_field in ("started_at", "completed_at", "last_error_at"):
+                dt_value = data.get(dt_field)
+                if dt_value and isinstance(dt_value, str):
+                    data[dt_field] = datetime.fromisoformat(dt_value)
+
+            # Deserialize datetime strings in certificate metadata
+            if data.get("issued_certificates"):
+                for cn, cert_metadata in data["issued_certificates"].items():
+                    if isinstance(cert_metadata, dict):
+                        for dt_field in ("issued_at", "expires_at", "rotated_at"):
+                            dt_value = cert_metadata.get(dt_field)
+                            if dt_value and isinstance(dt_value, str):
+                                cert_metadata[dt_field] = datetime.fromisoformat(dt_value)
+
+            # Deserialize datetime strings in pki_rotation_state
+            if data.get("pki_rotation_state"):
+                last_check_by_type = data["pki_rotation_state"].get("last_check_by_type")
+                if last_check_by_type and isinstance(last_check_by_type, dict):
+                    for cert_type, last_check in last_check_by_type.items():
+                        if last_check and isinstance(last_check, str):
+                            last_check_by_type[cert_type] = datetime.fromisoformat(last_check)
+
             state = cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
             state._discard_completion_flags_without_outputs()
             return state
@@ -96,7 +142,89 @@ class RuntimeState:
         for k, v in data.items():
             if isinstance(v, datetime):
                 data[k] = v.isoformat()
+
+        # Serialize nested datetime objects in certificate metadata
+        if data.get("issued_certificates"):
+            for cn, cert_metadata in data["issued_certificates"].items():
+                for dt_field in ("issued_at", "expires_at", "rotated_at"):
+                    if isinstance(cert_metadata.get(dt_field), datetime):
+                        cert_metadata[dt_field] = cert_metadata[dt_field].isoformat()
+
+        # Serialize nested datetime objects in pki_rotation_state
+        if data.get("pki_rotation_state"):
+            last_check_by_type = data["pki_rotation_state"].get("last_check_by_type")
+            if last_check_by_type:
+                for cert_type, last_check in last_check_by_type.items():
+                    if isinstance(last_check, datetime):
+                        last_check_by_type[cert_type] = last_check.isoformat()
+
         state_file = get_state_file()
         state_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(state_file, "w") as f:
-            json.dump(data, f, indent=2)
+        # Atomic write: write to a unique temporary file in the same directory,
+        # flush it to disk, then replace the target in one filesystem operation.
+        # 0o600 permissions protect plaintext secrets stored in the state file.
+        tmp_path: Optional[Path] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                dir=state_file.parent,
+                prefix=f"{state_file.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as f:
+                tmp_path = Path(f.name)
+                os.chmod(tmp_path, 0o600)
+                json.dump(data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            tmp_path.replace(state_file)
+        finally:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
+
+    def sync_to_supabase(self) -> Optional["asyncio.Task[None]"]:
+        """Best-effort sync of the local JSON state snapshot to Supabase.
+
+        The local JSON state file remains the authoritative runtime state. The Supabase
+        ``runtime_state`` row is only an audit/convenience mirror, so sync failures are
+        logged at debug level and do not interrupt orchestration. When called from a
+        running event loop, the sync is scheduled in the background and the created task
+        is returned so async callers may optionally await or inspect it.
+        """
+        try:
+            import asyncio
+
+            from netengine.core.supabase_client import get_db
+
+            data = asdict(self)
+            for k, v in data.items():
+                if isinstance(v, datetime):
+                    data[k] = v.isoformat()
+
+            async def _sync() -> None:
+                db = await get_db()
+                await db.table("runtime_state").upsert(
+                    {"key": "current", "value": json.dumps(data)}
+                ).execute()
+
+            def _log_sync_task_exception(task: "asyncio.Task[None]") -> None:
+                try:
+                    task.result()
+                except asyncio.CancelledError:
+                    logger.debug("State DB sync cancelled")
+                except Exception as exc:
+                    logger.debug(f"State DB sync skipped: {exc}")
+
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Inside an async context — schedule as best-effort background work,
+                # but still observe task failures so exceptions are not lost.
+                task = loop.create_task(_sync())
+                task.add_done_callback(_log_sync_task_exception)
+                return task
+
+            loop.run_until_complete(_sync())
+            return None
+        except Exception as exc:
+            logger.debug(f"State DB sync skipped: {exc}")
+            return None

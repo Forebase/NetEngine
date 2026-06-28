@@ -8,9 +8,10 @@ Responsibilities:
 - Emit substrate.initialized event on success
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
+from netengine.errors import SubstrateError
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -51,7 +52,7 @@ class SubstrateHandler(BasePhaseHandler):
         substrate_config = spec.substrate
 
         logger.info("Starting Phase 0: Substrate initialization")
-        context.runtime_state.started_at = datetime.utcnow()
+        context.runtime_state.started_at = datetime.now(UTC)
 
         try:
             substrate_output: dict[str, Any] = {}
@@ -79,10 +80,10 @@ class SubstrateHandler(BasePhaseHandler):
             substrate_output["gateway"] = gateway_status
             logger.info("Gateway network stub verified")
 
-            substrate_output["deployed_at"] = datetime.utcnow().isoformat()
+            substrate_output["deployed_at"] = datetime.now(UTC).isoformat()
 
             context.runtime_state.substrate_output = substrate_output
-            context.runtime_state.completed_at = datetime.utcnow()
+            context.runtime_state.completed_at = datetime.now(UTC)
 
             logger.info("Phase 0: Substrate initialization complete")
 
@@ -99,7 +100,7 @@ class SubstrateHandler(BasePhaseHandler):
 
         except Exception as e:
             context.runtime_state.last_error = str(e)
-            context.runtime_state.last_error_at = datetime.utcnow()
+            context.runtime_state.last_error_at = datetime.now(UTC)
             logger.error(f"Phase 0 substrate initialization failed: {e}")
             raise
 
@@ -190,17 +191,39 @@ class SubstrateHandler(BasePhaseHandler):
         Raises:
             RuntimeError: If orchestrator initialization fails
         """
+        import asyncio
+
         logger = context.logger
 
         if orchestrator_type == "swarm":
             logger.info("Initializing Docker Swarm orchestrator")
-            # In M1, we stub this. Real implementation would call Docker daemon
+
+            if context.mock_mode or context.docker_client is None:
+                return {
+                    "type": "docker_swarm",
+                    "status": "ready",
+                    "healthy": True,
+                    "version": "24.0+ (mock)",
+                    "initialized_at": datetime.now(UTC).isoformat(),
+                }
+
+            # Real: check if already in swarm; init if not
+            client = context.docker_client.client  # type: ignore[union-attr]
+
+            info = await asyncio.to_thread(client.info)
+            swarm_state = info.get("Swarm", {}).get("LocalNodeState", "inactive")
+            if swarm_state != "active":
+                logger.info("Not in swarm — running docker swarm init")
+                await asyncio.to_thread(client.swarm.init)
+                info = await asyncio.to_thread(client.info)
+
+            version = info.get("ServerVersion", "unknown")
             return {
                 "type": "docker_swarm",
                 "status": "ready",
                 "healthy": True,
-                "version": "24.0+",
-                "initialized_at": datetime.utcnow().isoformat(),
+                "version": version,
+                "initialized_at": datetime.now(UTC).isoformat(),
             }
 
         elif orchestrator_type == "kubernetes":
@@ -210,11 +233,11 @@ class SubstrateHandler(BasePhaseHandler):
                 "status": "ready",
                 "healthy": True,
                 "version": "1.28+",
-                "initialized_at": datetime.utcnow().isoformat(),
+                "initialized_at": datetime.now(UTC).isoformat(),
             }
 
         else:
-            raise RuntimeError(f"Unsupported orchestrator type: {orchestrator_type}")
+            raise SubstrateError(f"Unsupported orchestrator type: {orchestrator_type}")
 
     async def _create_networks(
         self, context: PhaseContext, networks_config: dict[str, Any]
@@ -237,19 +260,61 @@ class SubstrateHandler(BasePhaseHandler):
         for net_name, net_config in networks_config.items():
             logger.debug(f"Creating network '{net_name}' with subnet {net_config.subnet}")
 
-            # M1 stub: Real implementation would call Docker API
+            if context.mock_mode or context.docker_client is None:
+                net_id = f"mock-net-{net_name}"
+            else:
+                net_id = await self._ensure_docker_network(
+                    context, net_name, net_config.subnet, net_config.type
+                )
+
             networks_output[net_name] = {
                 "name": net_name,
-                "id": f"mock-net-{net_name}",
+                "id": net_id,
                 "type": net_config.type,
                 "subnet": net_config.subnet,
                 "description": net_config.description,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             }
 
-            logger.info(f"Network created: {net_name} ({net_config.subnet})")
+            logger.info(f"Network ready: {net_name} ({net_config.subnet}) id={net_id}")
 
         return networks_output
+
+    async def _ensure_docker_network(
+        self, context: PhaseContext, name: str, subnet: str, driver: str
+    ) -> str:
+        """Idempotently create a Docker network, returning its ID."""
+        import asyncio
+
+        import docker as docker_lib
+
+        client = context.docker_client.client  # type: ignore[union-attr]
+
+        def _sync() -> str:
+            try:
+                net = client.networks.get(name)
+                return net.id
+            except docker_lib.errors.NotFound:
+                try:
+                    net = client.networks.create(
+                        name=name,
+                        driver=driver if driver != "overlay" else "overlay",
+                        ipam=docker_lib.types.IPAMConfig(
+                            pool_configs=[docker_lib.types.IPAMPool(subnet=subnet)]
+                        ),
+                    )
+                    return net.id
+                except docker_lib.errors.APIError as e:
+                    if "Pool overlaps" in str(e) or "overlap" in str(e).lower():
+                        raise SubstrateError(
+                            f"Cannot create Docker network '{name}' with subnet {subnet}: "
+                            f"that address range is already in use by another network. "
+                            f"Run `docker network ls` to find the conflict, then remove it "
+                            f"or choose a different subnet for '{name}' in your world spec."
+                        ) from e
+                    raise
+
+        return await asyncio.to_thread(_sync)
 
     async def _configure_ntp(self, context: PhaseContext, servers: list[str]) -> dict[str, Any]:
         """Configure NTP time synchronization.
@@ -264,16 +329,62 @@ class SubstrateHandler(BasePhaseHandler):
         Raises:
             RuntimeError: If NTP configuration fails
         """
+        import asyncio
+        import subprocess
+
         logger = context.logger
         logger.info(f"Configuring NTP with servers: {', '.join(servers)}")
 
-        # M1 stub: Real implementation would configure system NTP
+        if context.mock_mode:
+            return {
+                "enabled": True,
+                "servers": servers,
+                "synchronized": True,
+                "stratum": 2,
+                "configured_at": datetime.now(UTC).isoformat(),
+            }
+
+        def _sync_ntp() -> bool:
+            try:
+                # Try chrony first (modern systemd systems)
+                result = subprocess.run(
+                    ["chronyc", "waitsync"],
+                    timeout=30,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    logger.debug("NTP synced via chrony")
+                    return True
+
+                # Fall back to ntpstat (traditional NTP)
+                result = subprocess.run(
+                    ["ntpstat"],
+                    timeout=10,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    logger.debug("NTP synced via ntpstat")
+                    return True
+
+                logger.warning("NTP sync failed (chrony/ntpstat not available or not synced)")
+                return False
+
+            except Exception as e:
+                logger.warning(f"NTP sync check failed (non-fatal): {e}")
+                return False
+
+        synchronized = await asyncio.to_thread(_sync_ntp)
+
         return {
             "enabled": True,
             "servers": servers,
-            "synchronized": True,
-            "stratum": 2,
-            "configured_at": datetime.utcnow().isoformat(),
+            "synchronized": synchronized,
+            "stratum": 2 if synchronized else 16,
+            "configured_at": datetime.now(UTC).isoformat(),
         }
 
     async def _setup_gateway_stub(
@@ -291,6 +402,9 @@ class SubstrateHandler(BasePhaseHandler):
         Returns:
             Dict with gateway network stub status
         """
+        import asyncio
+        import socket
+
         logger = context.logger
         gateway_config = substrate_config.gateway
 
@@ -299,12 +413,51 @@ class SubstrateHandler(BasePhaseHandler):
             f"{gateway_config.core_ip} (core)"
         )
 
+        # In mock mode or without docker, skip connectivity checks
+        if context.mock_mode or context.docker_client is None:
+            return {
+                "platform_ip": gateway_config.platform_ip,
+                "core_ip": gateway_config.core_ip,
+                "description": gateway_config.description,
+                "status": "ready",
+                "reachable": True,
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+
+        # Real mode: verify IPs are reachable via ping/socket
+        def _check_ip(ip: str) -> bool:
+            try:
+                # Try to resolve and connect to see if network is accessible
+                socket.create_connection((ip, 53), timeout=2)
+                return True
+            except (socket.timeout, OSError):
+                # Try simple socket creation as alternative check
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    sock.settimeout(1)
+                    sock.connect((ip, 53))
+                    sock.close()
+                    return True
+                except (OSError, socket.error):
+                    return False
+
+        platform_reachable = await asyncio.to_thread(_check_ip, gateway_config.platform_ip)
+        core_reachable = await asyncio.to_thread(_check_ip, gateway_config.core_ip)
+
+        if not (platform_reachable and core_reachable):
+            logger.warning(
+                f"Gateway connectivity check incomplete: "
+                f"platform={platform_reachable}, core={core_reachable}"
+            )
+
         return {
             "platform_ip": gateway_config.platform_ip,
             "core_ip": gateway_config.core_ip,
             "description": gateway_config.description,
             "status": "ready",
-            "created_at": datetime.utcnow().isoformat(),
+            "platform_reachable": platform_reachable,
+            "core_reachable": core_reachable,
+            "created_at": datetime.now(UTC).isoformat(),
         }
 
     async def _emit_event(
@@ -335,5 +488,11 @@ class SubstrateHandler(BasePhaseHandler):
             f"Event emitted: {event_type} "
             f"(event_id={event.event_id}, correlation_id={event.correlation_id})"
         )
-        # M4+: Queue to pgmq
-        # await context.pgmq_client.send(event)
+        if context.pgmq_client is not None:
+            try:
+                await context.pgmq_client.send(event)
+                context.logger.debug(f"Event queued to pgmq: {event_type}")
+            except Exception as e:
+                context.logger.warning(f"Failed to queue event to pgmq: {e}")
+        else:
+            context.logger.debug("pgmq_client not available; event logged only")

@@ -3,6 +3,8 @@ from typing import Optional
 
 import aiohttp
 
+from netengine.errors import IdentityError
+
 
 class OIDCHandler:
     def __init__(self, keycloak_url: str, admin_username: str, admin_password: str):
@@ -25,7 +27,7 @@ class OIDCHandler:
         async with aiohttp.ClientSession() as session:
             async with session.post(token_url, data=data) as resp:
                 if resp.status != 200:
-                    raise RuntimeError(f"Failed to get admin token: {await resp.text()}")
+                    raise IdentityError(f"Failed to get admin token: {await resp.text()}")
                 body = await resp.json()
                 self._access_token = body["access_token"]
                 return self._access_token
@@ -38,7 +40,7 @@ class OIDCHandler:
             async with session.request(method, url, json=json, headers=headers) as resp:
                 if resp.status not in (200, 201, 204):
                     text = await resp.text()
-                    raise RuntimeError(f"Keycloak admin request failed: {resp.status} {text}")
+                    raise IdentityError(f"Keycloak admin request failed: {resp.status} {text}")
                 if resp.status == 204:
                     return {}
                 return await resp.json()
@@ -142,6 +144,26 @@ class OIDCHandler:
         # Get user ID
         users = await self._admin_request("GET", f"realms/{realm}/users?username={username}")
         return users[0]["id"]
+
+    async def add_token_mapper(
+        self,
+        realm: str,
+        client_id: str,
+        mapper_name: str,
+        protocol_mapper_type: str,
+        config: dict,
+    ) -> str:
+        """Add a protocol mapper (token claim) to a client."""
+        payload = {
+            "name": mapper_name,
+            "protocolMapper": protocol_mapper_type,
+            "protocol": "openid-connect",
+            "config": config,
+        }
+        await self._admin_request(
+            "POST", f"realms/{realm}/clients/{client_id}/protocol-mappers/models", json=payload
+        )
+        return mapper_name
 
     def _generate_secret(self) -> str:
         import secrets

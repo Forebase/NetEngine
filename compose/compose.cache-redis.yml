@@ -1,0 +1,101 @@
+version: "3.8"
+
+# Redis caching layer for performance testing
+# Usage: docker compose -f docker-compose.yml -f compose/compose.cache-redis.yml up -d
+
+services:
+  # Primary Redis cache
+  redis:
+    image: redis:7-alpine
+    container_name: netengine_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - "everysec"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis replica for failover testing
+  redis-replica:
+    image: redis:7-alpine
+    container_name: netengine_redis_replica
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_replica_data:/data
+    command:
+      - redis-server
+      - --slaveof
+      - "redis"
+      - "6379"
+      - --appendonly
+      - "yes"
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    profiles:
+      - redis-ha
+
+  # Redis Sentinel for automatic failover
+  redis-sentinel:
+    image: redis:7-alpine
+    container_name: netengine_redis_sentinel
+    ports:
+      - "26379:26379"
+    volumes:
+      - ./compose/sentinel.conf:/etc/sentinel.conf:ro
+      - sentinel_data:/data
+    command:
+      - redis-sentinel
+      - /etc/sentinel.conf
+    depends_on:
+      - redis
+      - redis-replica
+    profiles:
+      - redis-ha
+
+  # Redis exporter for monitoring
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: netengine_redis_exporter
+    environment:
+      REDIS_ADDR: redis:6379
+    ports:
+      - "9121:9121"
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9121/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Redis CLI for manual testing
+  redis-cli:
+    image: redis:7-alpine
+    container_name: netengine_redis_cli
+    entrypoint: sleep
+    command:
+      - "infinity"
+    depends_on:
+      - redis
+    profiles:
+      - redis-tools
+
+volumes:
+  redis_data:
+  redis_replica_data:
+  sentinel_data:

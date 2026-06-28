@@ -1,0 +1,224 @@
+version: '3.8'
+
+# GPU-accelerated services configuration
+# Use: docker compose -f docker-compose.yml -f compose/compose.gpu.yml up -d
+# For environments with GPU hardware (NVIDIA, AMD, etc.)
+# Enables GPU acceleration for compute-intensive workloads
+
+services:
+  # GPU detection and info container
+  gpu-detector:
+    image: nvidia/cuda:12.0.1-base-ubuntu22.04
+    container_name: netengine_gpu_detector
+    command: |
+      bash -c "
+        echo 'GPU Detection:' &&
+        nvidia-smi || echo 'NVIDIA GPU not detected' &&
+        echo '' &&
+        sleep infinity
+      "
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    networks:
+      - gpu-services
+    restart: unless-stopped
+
+  # GPU-accelerated image processing
+  gpu-image-processor:
+    image: nvidia/cuda:12.0.1-devel-ubuntu22.04
+    container_name: netengine_gpu_image_processor
+    command: |
+      bash -c "
+        apt-get update &&
+        apt-get install -y python3 python3-pip &&
+        pip install --no-cache-dir pillow opencv-python &&
+        python3 -c '
+import sys
+try:
+    import cv2
+    print(f\"OpenCV built with CUDA: {cv2.cuda.getCudaEnabledDeviceCount() > 0}\")
+except:
+    print(\"OpenCV CUDA support not available\")
+' &&
+        sleep infinity
+      "
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
+    networks:
+      - gpu-services
+    restart: unless-stopped
+
+  # GPU-accelerated machine learning inference
+  gpu-ml-inference:
+    image: nvidia/cuda:12.0.1-devel-ubuntu22.04
+    container_name: netengine_gpu_ml_inference
+    command: |
+      bash -c "
+        apt-get update &&
+        apt-get install -y python3 python3-pip &&
+        pip install --no-cache-dir torch torchvision numpy &&
+        python3 -c '
+import torch
+print(f\"PyTorch version: {torch.__version__}\")
+print(f\"CUDA available: {torch.cuda.is_available()}\")
+if torch.cuda.is_available():
+    print(f\"CUDA device count: {torch.cuda.device_count()}\")
+    print(f\"Current device: {torch.cuda.current_device()}\")
+    print(f\"Device name: {torch.cuda.get_device_name(0)}\")
+' &&
+        python3 << 'PYTHON_EOF'
+import torch
+import torch.nn as nn
+
+# Simple GPU benchmark
+if torch.cuda.is_available():
+    print(\"\\nRunning GPU benchmark...\")
+    device = torch.device(\"cuda\")
+    model = nn.Linear(10000, 10000).to(device)
+    input_data = torch.randn(1000, 10000).to(device)
+
+    import time
+    start = time.time()
+    for _ in range(100):
+        _ = model(input_data)
+    elapsed = time.time() - start
+    print(f\"GPU Linear layer: {elapsed:.3f}s for 100 iterations\")
+else:
+    print(\"CUDA not available\")
+PYTHON_EOF
+        sleep infinity
+      "
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    networks:
+      - gpu-services
+    restart: unless-stopped
+
+  # GPU-accelerated database query acceleration
+  gpu-db-accelerator:
+    image: nvidia/cuda:12.0.1-devel-ubuntu22.04
+    container_name: netengine_gpu_db_accelerator
+    command: |
+      bash -c "
+        apt-get update &&
+        apt-get install -y python3 python3-pip &&
+        pip install --no-cache-dir cudf=* &&
+        python3 -c '
+try:
+    import cudf
+    print(f\"cuDF available\")
+    # Create a GPU dataframe
+    df = cudf.DataFrame({
+        \"a\": [1, 2, 3, 4, 5],
+        \"b\": [10, 20, 30, 40, 50]
+    })
+    print(f\"GPU DataFrame created: {len(df)} rows\")
+except Exception as e:
+    print(f\"cuDF not available: {e}\")
+' &&
+        sleep infinity
+      "
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    networks:
+      - gpu-services
+    restart: unless-stopped
+
+  # GPU memory monitor
+  gpu-monitor:
+    image: nvidia/cuda:12.0.1-base-ubuntu22.04
+    container_name: netengine_gpu_monitor
+    command: |
+      bash -c "
+        while true; do
+          echo 'GPU Memory Status:' &&
+          nvidia-smi --query-gpu=memory.used,memory.free --format=csv,nounits,noheader || echo 'GPU monitoring unavailable' &&
+          sleep 5
+        done
+      "
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: utility
+    networks:
+      - gpu-services
+    restart: unless-stopped
+
+  # GPU throughput benchmark
+  gpu-benchmark:
+    image: nvidia/cuda:12.0.1-devel-ubuntu22.04
+    container_name: netengine_gpu_benchmark
+    command: |
+      bash -c "
+        apt-get update &&
+        apt-get install -y python3 python3-pip &&
+        pip install --no-cache-dir torch numpy &&
+        python3 << 'PYTHON_EOF'
+import torch
+import time
+
+print(\"GPU Benchmark Suite\")
+print(\"=\"*50)
+
+if not torch.cuda.is_available():
+    print(\"No GPU available. Skipping benchmarks.\")
+else:
+    device = torch.device(\"cuda\")
+
+    # Matrix multiplication benchmark
+    print(\"\\n1. Matrix Multiplication (FP32)\")
+    for size in [1024, 2048, 4096]:
+        a = torch.randn(size, size, device=device)
+        b = torch.randn(size, size, device=device)
+
+        torch.cuda.synchronize()
+        start = time.time()
+        for _ in range(10):
+            c = torch.matmul(a, b)
+        torch.cuda.synchronize()
+        elapsed = time.time() - start
+
+        flops = 2 * size * size * size * 10 / elapsed / 1e9
+        print(f\"  {size}x{size}: {elapsed:.3f}s ({flops:.1f} GFLOPS)\")
+
+    # Memory bandwidth benchmark
+    print(\"\\n2. Memory Bandwidth\")
+    size = 100_000_000
+    a = torch.randn(size, device=device)
+
+    torch.cuda.synchronize()
+    start = time.time()
+    for _ in range(100):
+        b = a * 2.0
+    torch.cuda.synchronize()
+    elapsed = time.time() - start
+
+    bandwidth = (size * 4 * 200) / elapsed / 1e9
+    print(f\"  Bandwidth: {bandwidth:.1f} GB/s\")
+
+print(\"\\nBenchmark complete\")
+PYTHON_EOF
+        sleep infinity
+      "
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    networks:
+      - gpu-services
+    restart: unless-stopped
+
+networks:
+  gpu-services:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.42.0.0/16

@@ -1,0 +1,135 @@
+version: '3.8'
+
+# Network testing environment: CoreDNS, nftables lab, and network policies
+# Use: docker compose -f docker-compose.yml -f compose/compose.test-network.yml up -d
+# Tests DNS resolution, network isolation, and nftables policy enforcement
+
+services:
+  coredns-network-test:
+    image: coredns/coredns:latest
+    container_name: netengine_coredns_network_test
+    command: -conf /etc/coredns/Corefile
+    ports:
+      - "5355:53/udp"
+      - "5355:53/tcp"
+      - "9154:9153"  # Prometheus metrics
+    volumes:
+      - ./coredns-network-test.conf:/etc/coredns/Corefile
+      - coredns_network_data:/root/zones
+    healthcheck:
+      test: ["CMD-SHELL", "dig @localhost -p 53 world.internal || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - netengine-network-test
+    restart: unless-stopped
+
+  # Network policy simulator using tc (traffic control)
+  nftables-lab:
+    image: ubuntu:22.04
+    container_name: netengine_nftables_lab
+    privileged: true
+    command: |
+      bash -c "
+        apt-get update && apt-get install -y nftables iproute2 tcpdump curl netcat-openbsd iperf3 &&
+        # Initialize nftables with basic firewall rules
+        nft add table inet filter || true
+        nft add chain inet filter input '{ type filter hook input priority 0; }' || true
+        nft add chain inet filter forward '{ type filter hook forward priority 0; }' || true
+        nft add chain inet filter output '{ type filter hook output priority 0; }' || true
+
+        # Allow loopback
+        nft add rule inet filter input iif lo accept || true
+
+        # Log and allow established connections
+        nft add rule inet filter input ct state established,related accept || true
+
+        # Drop invalid
+        nft add rule inet filter input ct state invalid drop || true
+
+        # Default policy
+        nft add rule inet filter input policy drop || true
+
+        # Keep running
+        tail -f /dev/null
+      "
+    networks:
+      - netengine-network-test
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    restart: unless-stopped
+
+  # Iperf3 server for bandwidth testing
+  iperf3-server:
+    image: networkstatic/iperf3:latest
+    container_name: netengine_iperf3_server
+    command: -s
+    ports:
+      - "5201:5201/tcp"
+      - "5201:5201/udp"
+    networks:
+      - netengine-network-test
+    restart: unless-stopped
+
+  # Iperf3 client for network testing (ephemeral)
+  iperf3-client:
+    image: networkstatic/iperf3:latest
+    container_name: netengine_iperf3_client
+    depends_on:
+      iperf3-server:
+        condition: service_started
+    environment:
+      IPERF3_SERVER_HOSTNAME: iperf3-server
+      IPERF3_DURATION: 10
+      IPERF3_PARALLEL: 4
+    command: tail -f /dev/null  # Stay alive for manual testing
+    networks:
+      - netengine-network-test
+    restart: unless-stopped
+
+  # tcpdump for packet analysis
+  packet-sniffer:
+    image: tcpdump/tcpdump:latest
+    container_name: netengine_packet_sniffer
+    command: -i any -w /tmp/network-test.pcap
+    volumes:
+      - network_capture:/tmp
+    networks:
+      - netengine-network-test
+    restart: unless-stopped
+
+  # Network diagnostics container
+  netshoot:
+    image: nicolaka/netshoot:latest
+    container_name: netengine_netshoot
+    command: tail -f /dev/null  # Stay alive for manual testing
+    networks:
+      - netengine-network-test
+    restart: unless-stopped
+
+  # DNS query monitor
+  dns-monitor:
+    image: dnstap/dnstap-receiver:latest
+    container_name: netengine_dns_monitor
+    ports:
+      - "6000:6000/udp"
+    volumes:
+      - dns_monitor_data:/var/log/dnstap
+    networks:
+      - netengine-network-test
+    restart: unless-stopped
+
+volumes:
+  coredns_network_data:
+  network_capture:
+  dns_monitor_data:
+
+networks:
+  netengine-network-test:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.32.0.0/16

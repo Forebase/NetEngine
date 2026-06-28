@@ -1,0 +1,208 @@
+version: '3.8'
+
+# Cross-world networking and bridging
+# Use: docker compose -f compose/compose.multi-world.yml -f compose/compose.world-bridge.yml up -d
+# Tests network bridging between worlds and cross-world DNS lookups
+
+services:
+  # DNS bridge that connects two world networks
+  dns-bridge:
+    image: coredns/coredns:latest
+    container_name: netengine_dns_bridge
+    command: -conf /etc/coredns/Corefile
+    ports:
+      - "5357:53/udp"
+      - "5357:53/tcp"
+      - "9156:9153"  # Prometheus metrics
+    volumes:
+      - ./coredns-world-bridge.conf:/etc/coredns/Corefile
+      - dns_bridge_data:/root/zones
+    healthcheck:
+      test: ["CMD-SHELL", "dig @localhost -p 53 bridge.local || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - world-bridge
+    restart: unless-stopped
+
+  # Network proxy for bridging worlds
+  network-bridge-proxy:
+    image: nginx:alpine
+    container_name: netengine_network_bridge_proxy
+    depends_on:
+      dns-bridge:
+        condition: service_healthy
+    volumes:
+      - ./world-bridge-nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8100:8100"
+      - "8101:8101"
+    networks:
+      - world-bridge
+    restart: unless-stopped
+
+  # VPN tunnel simulator for world-to-world communication
+  world-vpn-bridge:
+    image: alpine:latest
+    container_name: netengine_world_vpn_bridge
+    command: |
+      sh -c "
+        apk add --no-cache wireguard-tools iptables tcpdump curl &&
+
+        # Generate WireGuard keys
+        umask 077
+        mkdir -p /etc/wireguard
+        cd /etc/wireguard
+
+        # World 1 keys
+        wg genkey | tee world1_private.key | wg pubkey > world1_public.key
+
+        # World 2 keys
+        wg genkey | tee world2_private.key | wg pubkey > world2_public.key
+
+        echo 'VPN bridge initialized with WireGuard keys generated' &&
+        tail -f /dev/null
+      "
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    volumes:
+      - vpn_bridge_config:/etc/wireguard
+    networks:
+      - world-bridge
+    restart: unless-stopped
+
+  # Cross-world service registry
+  service-registry-bridge:
+    image: python:3.13-alpine
+    container_name: netengine_service_registry_bridge
+    command: |
+      sh -c "
+        pip install flask &&
+        python -c '
+import json
+from flask import Flask, jsonify, request
+
+app = Flask(__name__)
+
+# Registry for services across worlds
+services_registry = {
+    \"world1\": {
+        \"api\": \"http://api.world1.bridge:8080\",
+        \"dns\": \"dns.world1.bridge:53\",
+        \"registry\": \"registry.world1.bridge:5000\"
+    },
+    \"world2\": {
+        \"api\": \"http://api.world2.bridge:8080\",
+        \"dns\": \"dns.world2.bridge:53\",
+        \"registry\": \"registry.world2.bridge:5000\"
+    }
+}
+
+@app.route(\"/health\", methods=[\"GET\"])
+def health():
+    return jsonify({\"status\": \"healthy\"}), 200
+
+@app.route(\"/services\", methods=[\"GET\"])
+def list_services():
+    return jsonify(services_registry), 200
+
+@app.route(\"/services/<world>/<service>\", methods=[\"GET\"])
+def get_service(world, service):
+    if world in services_registry and service in services_registry[world]:
+        return jsonify({
+            \"world\": world,
+            \"service\": service,
+            \"endpoint\": services_registry[world][service]
+        }), 200
+    return jsonify({\"error\": \"Not found\"}), 404
+
+@app.route(\"/bridge/health\", methods=[\"GET\"])
+def bridge_health():
+    return jsonify({
+        \"worlds\": list(services_registry.keys()),
+        \"status\": \"operational\"
+    }), 200
+
+if __name__ == \"__main__\":
+    app.run(host=\"0.0.0.0\", port=7777, debug=False)
+' &
+        sleep infinity
+      "
+    ports:
+      - "7777:7777"
+    networks:
+      - world-bridge
+    restart: unless-stopped
+
+  # Cross-world federation relay
+  federation-relay:
+    image: python:3.13-alpine
+    container_name: netengine_federation_relay
+    depends_on:
+      dns-bridge:
+        condition: service_healthy
+      service-registry-bridge:
+        condition: service_started
+    command: |
+      sh -c "
+        pip install fastapi uvicorn &&
+        python -c '
+from fastapi import FastAPI
+import uvicorn
+
+app = FastAPI()
+
+@app.get(\"/health\")
+def health():
+    return {\"status\": \"healthy\"}
+
+@app.post(\"/federation/sync\")
+def federation_sync(world: str, data: dict):
+    \"\"\"Sync federation state across worlds\"\"\"
+    return {
+        \"federation_sync\": True,
+        \"world\": world,
+        \"data_received\": bool(data)
+    }
+
+@app.get(\"/federation/peers\")
+def list_peers():
+    \"\"\"List peer worlds\"\"\"
+    return {
+        \"peers\": [\"world1\", \"world2\"],
+        \"connection_status\": \"connected\"
+    }
+
+if __name__ == \"__main__\":
+    uvicorn.run(app, host=\"0.0.0.0\", port=8888)
+' &
+        sleep infinity
+      "
+    ports:
+      - "8888:8888"
+    networks:
+      - world-bridge
+    restart: unless-stopped
+
+  # Bridge diagnostics and monitoring
+  bridge-monitor:
+    image: nicolaka/netshoot:latest
+    container_name: netengine_bridge_monitor
+    command: tail -f /dev/null  # Stay alive for manual monitoring
+    networks:
+      - world-bridge
+    restart: unless-stopped
+
+volumes:
+  dns_bridge_data:
+  vpn_bridge_config:
+
+networks:
+  world-bridge:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.39.0.0/16

@@ -1,0 +1,138 @@
+version: "3.8"
+
+# Domain registrar & DNS management platform for in-world
+# Manages .world TLDs, domain registration, delegation, WHOIS
+# API at: registrar.platform.internal
+
+services:
+  # Registrar database (separate from main DB for isolation)
+  registrar-db:
+    image: postgres:15
+    container_name: netengine_registrar_db
+    environment:
+      POSTGRES_USER: registrar
+      POSTGRES_PASSWORD: ${REGISTRAR_DB_PASSWORD:-registrar_dev}
+      POSTGRES_DB: domain_registry
+    ports:
+      - "5440:5432"
+    volumes:
+      - ./compose/registrar-schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+      - registrar_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U registrar"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Registrar API (domain management, registration, renewal)
+  registrar-api:
+    image: python:3.13-slim
+    container_name: netengine_registrar_api
+    environment:
+      REGISTRAR_DB_URL: postgresql://registrar:${REGISTRAR_DB_PASSWORD:-registrar_dev}@registrar-db:5432/domain_registry
+      KEYCLOAK_URL: http://keycloak:8180
+      COREDNS_API_URL: http://coredns:8181
+      API_PORT: 8090
+      LOG_LEVEL: INFO
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./compose/registrar-api.py:/app/api.py:ro
+      - registrar_data:/app/data
+    working_dir: /app
+    entrypoint: python
+    command:
+      - api.py
+    depends_on:
+      registrar-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - registrar
+
+  # WHOIS server - public domain lookup
+  whois-server:
+    image: jkaberg/whois-server:latest
+    container_name: netengine_whois_server
+    ports:
+      - "43:43"
+    environment:
+      DB_HOST: registrar-db
+      DB_USER: registrar
+      DB_PASSWORD: ${REGISTRAR_DB_PASSWORD:-registrar_dev}
+      DB_NAME: domain_registry
+    depends_on:
+      registrar-db:
+        condition: service_healthy
+    profiles:
+      - whois
+
+  # Domain registrar UI (web dashboard)
+  registrar-ui:
+    image: node:18-alpine
+    container_name: netengine_registrar_ui
+    ports:
+      - "3400:3000"
+    environment:
+      REACT_APP_API_URL: http://registrar-api:8090
+      REACT_APP_KEYCLOAK_URL: http://keycloak:8180
+    volumes:
+      - ./compose/registrar-ui:/app:ro
+    working_dir: /app
+    command:
+      - npm
+      - start
+    depends_on:
+      - registrar-api
+    profiles:
+      - registrar-ui
+
+  # DNS delegation manager (auto-updates CoreDNS zones)
+  dns-delegator:
+    image: python:3.13-slim
+    container_name: netengine_dns_delegator
+    environment:
+      REGISTRAR_DB_URL: postgresql://registrar:${REGISTRAR_DB_PASSWORD:-registrar_dev}@registrar-db:5432/domain_registry
+      COREDNS_API_URL: http://coredns:8181
+      ZONE_DIR: /data/coredns
+      UPDATE_INTERVAL: "300"  # Update every 5 minutes
+    volumes:
+      - ./compose/dns-delegator.py:/scripts/delegator.py:ro
+      - coredns_zone_dir:/data/coredns
+    working_dir: /scripts
+    entrypoint: python
+    command:
+      - delegator.py
+    depends_on:
+      registrar-db:
+        condition: service_healthy
+    profiles:
+      - dns-delegator
+
+  # Domain reservation validator (checks for conflicts)
+  domain-validator:
+    image: python:3.13-slim
+    container_name: netengine_domain_validator
+    environment:
+      REGISTRAR_DB_URL: postgresql://registrar:${REGISTRAR_DB_PASSWORD:-registrar_dev}@registrar-db:5432/domain_registry
+      VALIDATION_INTERVAL: "3600"  # Validate hourly
+    volumes:
+      - ./compose/domain-validator.py:/scripts/validator.py:ro
+    working_dir: /scripts
+    entrypoint: python
+    command:
+      - validator.py
+    depends_on:
+      registrar-db:
+        condition: service_healthy
+    profiles:
+      - domain-validator
+
+volumes:
+  registrar_db_data:
+  registrar_data:
+  coredns_zone_dir:

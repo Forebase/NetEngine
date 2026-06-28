@@ -1,0 +1,134 @@
+version: "3.8"
+
+# Resource allocation, quota, and capacity management for in-world
+# Available at: resources.platform.internal
+
+services:
+  # Resource management database
+  resource-db:
+    image: postgres:15
+    container_name: netengine_resource_db
+    environment:
+      POSTGRES_USER: resources
+      POSTGRES_PASSWORD: ${RESOURCE_DB_PASSWORD:-resources_dev}
+      POSTGRES_DB: resources
+    ports:
+      - "5446:5432"
+    volumes:
+      - ./compose/resource-schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+      - resource_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U resources"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Resource allocation API
+  resource-api:
+    image: python:3.13-slim
+    container_name: netengine_resource_api
+    environment:
+      RESOURCE_DB_URL: postgresql://resources:${RESOURCE_DB_PASSWORD:-resources_dev}@resource-db:5432/resources
+      KEYCLOAK_URL: http://keycloak:8180
+      API_PORT: 8095
+    ports:
+      - "8095:8095"
+    volumes:
+      - ./compose/resource-api.py:/app/api.py:ro
+      - resource_data:/app/data
+    working_dir: /app
+    entrypoint: python
+    command:
+      - api.py
+    depends_on:
+      - resource-db
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8095/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - resources
+
+  # Resource monitoring & capacity planner
+  capacity-planner:
+    image: python:3.13-slim
+    container_name: netengine_capacity_planner
+    environment:
+      RESOURCE_DB_URL: postgresql://resources:${RESOURCE_DB_PASSWORD:-resources_dev}@resource-db:5432/resources
+      METRICS_URL: http://prometheus:9090
+      PLANNING_INTERVAL: "3600"  # Plan hourly
+    volumes:
+      - ./compose/capacity-planner.py:/app/planner.py:ro
+    working_dir: /app
+    entrypoint: python
+    command:
+      - planner.py
+    depends_on:
+      - resource-db
+    profiles:
+      - capacity-planner
+
+  # Quota scheduler (auto-adjust quotas based on usage)
+  quota-scheduler:
+    image: python:3.13-slim
+    container_name: netengine_quota_scheduler
+    environment:
+      RESOURCE_DB_URL: postgresql://resources:${RESOURCE_DB_PASSWORD:-resources_dev}@resource-db:5432/resources
+      SCHEDULER_INTERVAL: "300"  # Adjust every 5 minutes
+    volumes:
+      - ./compose/quota-scheduler.py:/app/scheduler.py:ro
+    working_dir: /app
+    entrypoint: python
+    command:
+      - scheduler.py
+    depends_on:
+      - resource-db
+    profiles:
+      - quota-scheduler
+
+  # Resource usage dashboard
+  resource-dashboard:
+    image: grafana/grafana:latest
+    container_name: netengine_resource_dashboard
+    ports:
+      - "3404:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - resource_dashboard_data:/var/lib/grafana
+      - ./compose/grafana-resource-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    depends_on:
+      - resource-db
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - resource-dashboard
+
+  # Usage alerts & notifications
+  usage-alerter:
+    image: python:3.13-slim
+    container_name: netengine_usage_alerter
+    environment:
+      RESOURCE_DB_URL: postgresql://resources:${RESOURCE_DB_PASSWORD:-resources_dev}@resource-db:5432/resources
+      NOTIFICATION_SERVICE_URL: http://notification-service:8093
+      ALERT_THRESHOLD: "80"  # Alert at 80% usage
+      ALERT_INTERVAL: "600"  # Check every 10 minutes
+    volumes:
+      - ./compose/usage-alerter.py:/app/alerter.py:ro
+    working_dir: /app
+    entrypoint: python
+    command:
+      - alerter.py
+    depends_on:
+      - resource-db
+    profiles:
+      - usage-alerter
+
+volumes:
+  resource_db_data:
+  resource_data:
+  resource_dashboard_data:

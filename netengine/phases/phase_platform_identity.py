@@ -1,15 +1,17 @@
 import os
 import secrets
-from datetime import datetime
+from datetime import UTC, datetime
 
-from netengine.core.supabase_client import get_supabase
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.oidc_handler import OIDCHandler
 from netengine.handlers.pki_handler import PKIHandler
+from netengine.logging import get_logger
 from netengine.utils.run_migrations import apply_migrations
+
+logger = get_logger(__name__)
 
 
 class PlatformIdentityPhaseHandler(BasePhaseHandler):
@@ -35,6 +37,18 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
         # Get TLS cert from PKI (already available via PKIHandler)
         pki = PKIHandler(DockerHandler(), context.runtime_state, spec)  # import needed
         cert, key = await pki.issue_cert("auth.platform.internal", [])
+
+        # Track issued certificate in RuntimeState
+        expiry = pki.extract_cert_expiry(cert)
+        context.runtime_state.issued_certificates["auth.platform.internal"] = {
+            "cert_type": "platform_identity",
+            "issued_at": datetime.now(UTC).isoformat(),
+            "expires_at": expiry.isoformat(),
+            "sans": [],
+            "rotated_at": None,
+            "version": 1,
+        }
+
         # Write cert/key to a temporary volume or directory.
         # For simplicity, we'll mount a host directory with the certs.
         cert_dir = "/var/lib/netengines/certs"
@@ -44,6 +58,9 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
         with open(f"{cert_dir}/auth.key", "w") as f:
             f.write(key)
 
+        auth_ip = spec.identity_platform.listen_ip
+        auth_hostname = spec.identity_platform.canonical_name
+
         docker = DockerHandler()
         container_id = await docker.start_container(
             name="netengines_keycloak_platform",
@@ -51,9 +68,9 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
             command=["start"],
             volumes={cert_dir: {"bind": "/certs", "mode": "ro"}},
             network="core",
-            ip="10.0.0.7",  # from spec identity_platform.listen_ip
+            ip=auth_ip,
             environment={
-                "KC_HOSTNAME": "auth.platform.internal",
+                "KC_HOSTNAME": auth_hostname,
                 "KC_HTTPS_CERTIFICATE_FILE": "/certs/auth.crt",
                 "KC_HTTPS_CERTIFICATE_KEY_FILE": "/certs/auth.key",
                 "KC_BOOTSTRAP_ADMIN_USERNAME": "admin",
@@ -64,11 +81,11 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
         context.runtime_state.save()
 
         # Wait for Keycloak to be ready (healthcheck)
-        await self._wait_for_keycloak("https://10.0.0.7/health/ready")
+        await self._wait_for_keycloak(f"https://{auth_ip}/health/ready")
 
         # 4. Register DNS record for auth.platform.internal
         dns = DNSHandler()  # or get from context
-        await dns.add_zone_record(context, "platform.internal", "A", "auth", "10.0.0.7", 300)
+        await dns.add_zone_record(context, "platform.internal", "A", "auth", auth_ip, 300)
 
         # 5. Bootstrap platform realm via OIDC handler
         oidc = OIDCHandler(
@@ -83,13 +100,41 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
             email="admin@platform.internal",
             password=admin_password,
         )
+
+        # Create platform client for API authentication
+        client_id = await oidc.create_client(
+            realm="platform",
+            client_id="platform-api",
+            name="Platform API",
+            redirect_uris=["https://api.platform.internal/callback"],
+            public=False,
+        )
+
+        # Add token mapper to include org claim in JWT
+        await oidc.add_token_mapper(
+            realm="platform",
+            client_id=client_id,
+            mapper_name="org-claim-mapper",
+            protocol_mapper_type="oidc-usermodel-property-mapper",
+            config={
+                "user.attribute": "org",
+                "claim.name": "org",
+                "jsonType.label": "String",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true",
+            },
+        )
+
         context.runtime_state.platform_realm_id = realm_id
         context.runtime_state.admin_user_id = user_id
+        context.runtime_state.platform_client_id = client_id
         context.runtime_state.identity_platform_output = {
             "keycloak_container_id": container_id,
             "platform_realm_id": realm_id,
             "admin_user_id": user_id,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "platform_client_id": client_id,
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
         context.runtime_state.phase_completed["4"] = True
         context.runtime_state.save()
@@ -114,7 +159,8 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
                 container = docker.client.containers.get(container_id)
                 if container.status != "running":
                     return False
-            except Exception:
+            except Exception as exc:
+                logger.debug(f"Could not inspect Keycloak platform container {container_id}: {exc}")
                 return False
 
             # Check OIDC discovery endpoint
@@ -134,7 +180,8 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
                     return False
                 except aiohttp.ClientError:
                     return False
-        except Exception:
+        except Exception as exc:
+            logger.warning(f"Platform identity healthcheck error: {exc}")
             return False
 
     async def should_skip(self, context: PhaseContext) -> bool:
@@ -146,14 +193,14 @@ class PlatformIdentityPhaseHandler(BasePhaseHandler):
 
         import aiohttp
 
-        start = datetime.utcnow()
-        while (datetime.utcnow() - start).total_seconds() < timeout:
+        start = datetime.now(UTC)
+        while (datetime.now(UTC) - start).total_seconds() < timeout:
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(url, ssl=False) as resp:
                         if resp.status == 200:
                             return
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Keycloak not ready yet ({url}): {exc}")
             await asyncio.sleep(2)
         raise RuntimeError("Keycloak did not become ready in time")

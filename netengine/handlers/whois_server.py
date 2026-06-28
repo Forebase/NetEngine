@@ -1,13 +1,19 @@
 import asyncio
 
-from netengine.core.supabase_client import get_supabase
-
 
 class WHOISServer:
     def __init__(self, host: str = "10.0.0.9", port: int = 43):
+        """Defaults match WHOISConfig spec defaults; callers should pass spec values."""
         self.host = host
         self.port = port
-        self.supabase = get_supabase()
+        self._db = None
+
+    async def _get_db(self):
+        if self._db is None:
+            from netengine.core.supabase_client import get_db
+
+            self._db = await get_db()
+        return self._db
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         data = await reader.read(1024)
@@ -20,9 +26,9 @@ class WHOISServer:
 
     async def lookup(self, query: str) -> str:
         """Lookup domain in domain_records and world_registry."""
-        # Query Supabase
+        db = await self._get_db()
         result = (
-            await self.supabase.table("domain_records")
+            await db.table("domain_records")
             .select("domain, org_name, ns_records, created_at")
             .eq("domain", query)
             .execute()
@@ -30,9 +36,8 @@ class WHOISServer:
         if not result.data:
             return f"No match for {query}\n"
         row = result.data[0]
-        # Get org details
         org_result = (
-            await self.supabase.table("world_registry")
+            await db.table("world_registry")
             .select("capabilities")
             .eq("org_name", row["org_name"])
             .execute()

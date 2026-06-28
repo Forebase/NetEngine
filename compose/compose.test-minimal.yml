@@ -1,0 +1,28 @@
+version: "3.8"
+
+# Minimal CI compose: Postgres only (no Keycloak, no NetEngine API)
+# Used for fast unit tests and pgmq queue testing
+# Usage: docker compose -f compose/compose.test-minimal.yml up -d
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: netengine_test_postgres
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-test_password}
+      POSTGRES_DB: netengine
+    ports:
+      - "5433:5432"  # Different port to avoid collision with production
+    volumes:
+      - ./scripts/install_pgmq.sh:/docker-entrypoint-initdb.d/install_pgmq.sh:ro
+      - test_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine -d netengine"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  test_postgres_data:

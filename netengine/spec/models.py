@@ -1,7 +1,7 @@
 """Pydantic v2 models for NetEngine declarative specifications (netengines-spec-v0.2)."""
 
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,7 +33,14 @@ class SpecMetadata(SpecModel):
 
     name: str = Field(..., description="World name")
     version: str = Field(default="1.0", description="Spec version")
-    lifecycle: Lifecycle = Field(default=Lifecycle.EPHEMERAL, description="ephemeral or persistent")
+    lifecycle: Lifecycle = Field(
+        default=Lifecycle.EPHEMERAL,
+        description="ephemeral or persistent",
+        json_schema_extra={
+            "immutable": True,
+            "immutable_reason": "Ephemeral ↔ persistent requires explicit migration, not a reload",
+        },
+    )
     organization: Optional[str] = Field(default=None, description="Owner organization (optional)")
     environment: Optional[str] = Field(default=None, description="Environment label (optional)")
 
@@ -61,8 +68,22 @@ class NetworkConfig(SpecModel):
 class GatewaySubstrate(SpecModel):
     """Gateway stub at Phase 0 (policy applied later in Phase 7)."""
 
-    platform_ip: str = Field(..., description="IP on platform network")
-    core_ip: str = Field(..., description="IP on core network")
+    platform_ip: str = Field(
+        ...,
+        description="IP on platform network",
+        json_schema_extra={
+            "immutable": True,
+            "immutable_reason": "Hardcoded into every resolver config — reset required",
+        },
+    )
+    core_ip: str = Field(
+        ...,
+        description="IP on core network",
+        json_schema_extra={
+            "immutable": True,
+            "immutable_reason": "Hardcoded into every resolver config — reset required",
+        },
+    )
     description: Optional[str] = None
 
 
@@ -73,9 +94,14 @@ class SubstratePhase(SpecModel):
     ntp: NTPConfig = Field(default_factory=NTPConfig)
     networks: dict[str, NetworkConfig] = Field(
         default_factory=lambda: {
-            "platform": NetworkConfig(subnet="172.20.0.0/16"),
-            "core": NetworkConfig(subnet="10.0.0.0/8"),
-        }
+            "platform": NetworkConfig(subnet="172.28.0.0/16"),
+            "core": NetworkConfig(subnet="10.0.0.0/4"),
+        },
+        json_schema_extra={
+            "immutable": True,
+            "immutable_reason": "L0 Docker bridge CIDRs underpin every container IP"
+            " — reset required",
+        },
     )
     gateway: GatewaySubstrate = Field(..., description="Gateway stub configuration")
 
@@ -91,7 +117,13 @@ class RootDNSConfig(SpecModel):
     enabled: bool = Field(default=True)
     type: str = Field(default="authoritative")
     server: str = Field(default="coredns")
-    listen_ip: str = Field(default="10.0.0.2")
+    listen_ip: str = Field(
+        default="10.0.0.2",
+        json_schema_extra={
+            "immutable": True,
+            "immutable_reason": "Hardcoded into every container resolver config — reset required",
+        },
+    )
     soa_primary_ns: str = Field(default="root.internal")
     soa_email: str = Field(default="admin.internal")
     serial_policy: SerialPolicy = Field(default=SerialPolicy.TIMESTAMP)
@@ -144,8 +176,42 @@ class ACMEConfig(SpecModel):
     """ACME provisioner config."""
 
     enabled: bool = Field(default=True)
-    listen_ip: str = Field(default="10.0.0.6")
+    listen_ip: str = Field(
+        default="10.0.0.6",
+        json_schema_extra={
+            "immutable": True,
+            "immutable_reason": (
+                "Hardcoded into every service ACME config and trust store — reset required"
+            ),
+        },
+    )
     canonical_name: str = Field(default="ca.platform.internal")
+
+
+class CertTypeRotationConfig(SpecModel):
+    """Rotation policy for a specific certificate type."""
+
+    cert_type: str = Field(
+        ..., description="Certificate type (platform_identity, app, storage, etc.)"
+    )
+    rotation_interval_hours: int = Field(default=24, description="Check cert expiry every N hours")
+    expiry_warning_days: int = Field(default=30, description="Rotate certs expiring within N days")
+
+
+class PKIRotationPolicy(SpecModel):
+    """Overall PKI certificate rotation policy."""
+
+    enabled: bool = Field(default=True, description="Enable automatic certificate rotation")
+    default_interval_hours: int = Field(
+        default=24, description="Default check interval for all cert types"
+    )
+    default_warning_days: int = Field(
+        default=30, description="Default expiry warning threshold for all cert types"
+    )
+    cert_type_overrides: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Per-cert-type config overrides (keys are cert_type, values are dicts)",
+    )
 
 
 class PKIPhase(SpecModel):
@@ -159,6 +225,7 @@ class PKIPhase(SpecModel):
     dnssec_zsk_lifetime_days: int = Field(default=30)
     crl_enabled: bool = Field(default=False)
     ocsp_enabled: bool = Field(default=False)
+    rotation_policy: PKIRotationPolicy = Field(default_factory=PKIRotationPolicy)
 
 
 # ─────────────────────────────────────────────
@@ -264,7 +331,13 @@ class DomainRegistryPhase(SpecModel):
     listen_ip: str = Field(default="10.0.0.10")
     canonical_name: str = Field(default="domainreg.platform.internal")
     tld_delegations: list[TLDDelegation] = Field(default_factory=list)
-    address_space: list[AddressPool] = Field(default_factory=list)
+    address_space: list[AddressPool] = Field(
+        default_factory=list,
+        json_schema_extra={
+            "immutable": True,
+            "immutable_reason": "Existing AND leases reference these CIDRs — new pool entries only",
+        },
+    )
     registrar: RegistrarConfig = Field(default_factory=RegistrarConfig)
     initial_domains: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -320,7 +393,7 @@ class ANDInstance(SpecModel):
 
     name: str = Field(...)
     org: str = Field(...)
-    profile: ANDProfileDef = Field(...)
+    profile: str = Field(...)  # key into ANDsPhase.profiles dict
     dns_suffix: str = Field(...)
 
 
@@ -487,7 +560,7 @@ class OperatorAPIConfig(SpecModel):
     """Operator API configuration."""
 
     enabled: bool = Field(default=True)
-    listen_ip: str = Field(default="172.20.0.11")
+    listen_ip: str = Field(default="172.28.0.11")
     port: int = Field(default=8080)
     canonical_name: str = Field(default="api.platform.internal")
 
@@ -529,6 +602,6 @@ class NetEngineSpec(SpecModel):
     identity_inworld: IdentityInWorldPhase = Field(..., description="Phase 6")
     ands: ANDsPhase = Field(..., description="Phase 7")
     world_services: WorldServicesPhase = Field(..., description="Phase 8 — world services")
-    org_apps: OrgAppsPhase = Field(..., description="Phase 8 — org apps")
+    org_apps: OrgAppsPhase = Field(..., description="Phase 9 — org apps")
     gateway_portal: GatewayPortal = Field(..., description="Gateway boundary")
     operator: OperatorConfig = Field(..., description="Operator API")

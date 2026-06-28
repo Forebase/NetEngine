@@ -6,6 +6,9 @@ authors = ["NetEngine Team <team@netengine.io>"]
 readme = "README.md"
 license = "MIT"
 
+[tool.poetry.scripts]
+netengine = "netengine.cli.main:cli"
+
 [tool.poetry.dependencies]
 python = "^3.13"
 pydantic = "^2.13"
@@ -15,9 +18,12 @@ python-dotenv = "^1.0"
 loguru = "^0.7"
 docker = "^7.0"
 aiohttp = "^3.9"
+dnspython = "^2.6"
+asyncpg = "^0.30"
 supabase = "^2.0"
-fastapi = "^0.100"
+fastapi = ">=0.115"
 omegaconf = "^2.3"
+prometheus-client = "^0.25.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4"
@@ -37,14 +43,12 @@ exclude = [
     "netengine/api/",
     "netengine/cli/",
     "netengine/phases/",
-    "netengine/core/orchestrator\\.py",
     "netengine/core/pgmq_client\\.py",
-    "netengine/core/supabase_client\\.py",
-    "netengine/utils/",
+    "netengine/handlers/substrate\\.py",
+    "netengine/handlers/dns\\.py",
     "netengine/handlers/pki_handler\\.py",
     "netengine/handlers/phase_pki\\.py",
     "netengine/handlers/oidc_handler\\.py",
-    "netengine/handlers/gateway_handler\\.py",
     "netengine/handlers/docker_handler\\.py",
     "netengine/handlers/and_handler\\.py",
     "netengine/handlers/domain_registry_handler\\.py",
@@ -56,6 +60,10 @@ exclude = [
     "netengine/logging/middleware\\.py",
     "netengine/logging/sinks\\.py",
 ]
+
+[[tool.mypy.overrides]]
+module = "docker.*"
+ignore_missing_imports = true
 
 [tool.black]
 line-length = 100
@@ -75,33 +83,6 @@ addopts = "-v --strict-markers --tb=short"
 markers = [
     "unit: Unit tests",
     "integration: Integration tests (requires Docker)",
-    "slow: Slow tests",
-]
-
-[tool.flake8]
-max-line-length = 100
-extend-ignore = ["E203", "W503"]
-exclude = [
-    "tests",
-    "netengine/phases",
-    "netengine/utils",
-    "netengine/api",
-    "netengine/cli",
-    "netengine/core/orchestrator.py",
-    "netengine/core/pgmq_client.py",
-    "netengine/core/supabase_client.py",
-    "netengine/handlers/pki_handler.py",
-    "netengine/handlers/phase_pki.py",
-    "netengine/handlers/oidc_handler.py",
-    "netengine/handlers/gateway_handler.py",
-    "netengine/handlers/docker_handler.py",
-    "netengine/handlers/and_handler.py",
-    "netengine/handlers/domain_registry_handler.py",
-    "netengine/handlers/mail_handler.py",
-    "netengine/handlers/minio_handler.py",
-    "netengine/handlers/app_handler.py",
-    "netengine/handlers/whois_server.py",
-    "netengine/handlers/world_registry_handler.py",
-    "netengine/logging/middleware.py",
-    "netengine/logging/sinks.py",
+    "slow: Slow tests (image pulls, Keycloak startup, etc.)",
+    "e2e: Full-stack tests against live Docker infrastructure (--run-e2e to enable)",
 ]

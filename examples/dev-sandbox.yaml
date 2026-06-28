@@ -16,14 +16,14 @@ substrate:
   networks:
     platform:
       type: bridge
-      subnet: 172.20.0.0/16
+      subnet: 172.28.0.0/16
       description: "Platform management network"
     core:
       type: bridge
-      subnet: 10.0.0.0/8
+      subnet: 10.0.0.0/24
       description: "In-world core network"
   gateway:
-    platform_ip: 172.20.0.1
+    platform_ip: 172.28.0.1
     core_ip: 10.0.0.1
 
 dns:
@@ -132,23 +132,25 @@ identity_inworld:
           email: bob@bob-home.localnet
 
 ands:
-  profiles: {}
+  profiles:
+    business:
+      dhcp: true
+      nat: false
+      inbound: allowed
+      reverse_dns: true
+    residential:
+      dhcp: true
+      nat: true
+      inbound: blocked
+      reverse_dns: false
   instances:
     - name: acme-corp-net
       org: acme-corp
-      profile:
-        dhcp: true
-        nat: false
-        inbound: allowed
-        reverse_dns: true
+      profile: business
       dns_suffix: acme.internal
     - name: bob-home-net
       org: bob-home
-      profile:
-        dhcp: true
-        nat: true
-        inbound: blocked
-        reverse_dns: false
+      profile: residential
       dns_suffix: bob-home.localnet
 
 world_services:
@@ -204,6 +206,6 @@ gateway_portal:
 operator:
   api:
     enabled: true
-    listen_ip: 172.20.0.11
+    listen_ip: 172.28.0.11
     port: 8080
     canonical_name: api.platform.internal

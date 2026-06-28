@@ -11,6 +11,41 @@ from netengine.logging import get_logger
 from netengine.spec.loader import load_spec
 from netengine.spec.models import NetEngineSpec
 
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-e2e",
+        action="store_true",
+        default=False,
+        help="Run e2e tests that require a live Docker daemon and pull real images",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    if not config.getoption("--run-e2e"):
+        skip_e2e = pytest.mark.skip(reason="pass --run-e2e to run live Docker tests")
+        for item in items:
+            if item.get_closest_marker("e2e"):
+                item.add_marker(skip_e2e)
+
+
+def pytest_configure(config):
+    """Keep Starlette's TestClient compatible with newer httpx releases."""
+    import inspect
+
+    import httpx
+
+    if "app" in inspect.signature(httpx.Client.__init__).parameters:
+        return
+
+    original_init = httpx.Client.__init__
+
+    def patched_init(self, *args, app=None, **kwargs):
+        return original_init(self, *args, **kwargs)
+
+    httpx.Client.__init__ = patched_init
+
+
 # ─────────────────────────────────────────────
 # Logger Fixture
 # ─────────────────────────────────────────────
@@ -53,6 +88,13 @@ def dev_sandbox_spec() -> NetEngineSpec:
     return load_spec(examples_dir / "dev-sandbox.yaml")
 
 
+@pytest.fixture
+def m3_spec() -> NetEngineSpec:
+    """Full valid spec for M3 orchestrator tests."""
+    examples_dir = _get_examples_dir()
+    return load_spec(examples_dir / "minimal.yaml")
+
+
 # ─────────────────────────────────────────────
 # Runtime State Fixtures
 # ─────────────────────────────────────────────
@@ -61,7 +103,7 @@ def dev_sandbox_spec() -> NetEngineSpec:
 @pytest.fixture(autouse=True)
 def isolated_runtime_state_file(tmp_path, monkeypatch):
     """Keep tests from reading or writing the repository-root runtime state file."""
-    monkeypatch.setenv("NETENGINES_STATE_FILE", str(tmp_path / "netengines_state.json"))
+    monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "netengine_state.json"))
 
 
 @pytest.fixture
@@ -82,10 +124,10 @@ def runtime_state_with_substrate() -> RuntimeState:
     state.substrate_output = {
         "orchestrator": "docker",
         "networks": {
-            "platform": {"subnet": "172.20.0.0/16", "created": True},
-            "core": {"subnet": "10.0.0.0/8", "created": True},
+            "platform": {"subnet": "172.28.0.0/16", "created": True},
+            "core": {"subnet": "10.0.0.0/24", "created": True},
         },
-        "gateway": {"platform_ip": "172.20.0.1", "core_ip": "10.0.0.1"},
+        "gateway": {"platform_ip": "172.28.0.1", "core_ip": "10.0.0.1"},
         "ntp": {"enabled": True, "synced": True},
         "healthy": True,
     }

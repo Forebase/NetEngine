@@ -1,0 +1,102 @@
+version: "3.8"
+
+# Debug & troubleshooting toolkit
+# Add to docker-compose.yml for deep inspection:
+#   docker compose -f docker-compose.yml -f compose/compose.debug.yml up -d
+#
+# Includes: tcpdump, mitmproxy, netcat, curl testing, DNS analysis
+
+services:
+  # Network packet capture
+  tcpdump:
+    image: nicolaka/netshoot:latest
+    container_name: netengine_tcpdump
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - debug_pcaps:/captures
+    command:
+      - tcpdump
+      - -i
+      - "any"
+      - -w
+      - "/captures/netengine.pcap"
+      - -C
+      - "100"  # Rotate every 100MB
+    profiles:
+      - debug
+
+  # HTTP traffic inspection
+  mitmproxy:
+    image: mitmproxy/mitmproxy:latest
+    container_name: netengine_mitmproxy
+    ports:
+      - "8888:8888"   # HTTP proxy
+      - "8889:8889"   # mitmweb UI
+    volumes:
+      - mitmproxy_data:/home/mitmproxy/.mitmproxy
+    command:
+      - mitmproxy
+      - --mode
+      - regular
+      - --listen-port
+      - "8888"
+      - --save-stream
+      - /home/mitmproxy/.mitmproxy/flows
+    profiles:
+      - debug
+
+  # DNS debugging & analysis
+  dig-server:
+    image: nicolaka/netshoot:latest
+    container_name: netengine_dig
+    entrypoint: sleep
+    command:
+      - "infinity"
+    volumes:
+      - ./compose/dns-queries.sh:/scripts/queries.sh:ro
+    profiles:
+      - debug
+
+  # General network tools
+  nettools:
+    image: nicolaka/netshoot:latest
+    container_name: netengine_nettools
+    entrypoint: sleep
+    command:
+      - "infinity"
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - nettools_data:/workspace
+    profiles:
+      - debug
+
+  # Postgres query analyzer
+  pg-stat-monitor:
+    image: postgres:15
+    container_name: netengine_pg_monitor
+    environment:
+      PGUSER: netengine
+      PGPASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      PGHOST: postgres
+      PGDATABASE: netengine
+    volumes:
+      - ./compose/pg-queries.sql:/queries.sql:ro
+    entrypoint: psql
+    command:
+      - -f
+      - /queries.sql
+      - --watch
+      - "5"
+    depends_on:
+      - postgres
+    profiles:
+      - debug
+
+volumes:
+  debug_pcaps:
+  mitmproxy_data:
+  nettools_data:

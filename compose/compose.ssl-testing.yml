@@ -1,0 +1,99 @@
+version: "3.8"
+
+# SSL/TLS termination & certificate testing
+# Test HTTPS, mTLS, cert rotation, renewal flows
+# Usage: docker compose -f docker-compose.yml -f compose/compose.ssl-testing.yml up -d
+
+services:
+  # Nginx with TLS termination
+  nginx-tls:
+    image: nginx:alpine
+    container_name: netengine_nginx_tls
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./compose/nginx-ssl.conf:/etc/nginx/nginx.conf:ro
+      - ./compose/certs:/etc/nginx/certs:ro
+    depends_on:
+      - netengine_api
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - ssl-testing
+
+  # Self-signed cert generator
+  cert-generator:
+    image: alpine:latest
+    container_name: netengine_cert_generator
+    volumes:
+      - ./compose/certs:/certs
+      - ./compose/generate-certs.sh:/scripts/generate.sh:ro
+    entrypoint: /bin/sh
+    command:
+      - /scripts/generate.sh
+    profiles:
+      - ssl-testing
+
+  # Let's Encrypt integration test (Certbot)
+  certbot:
+    image: certbot/certbot:latest
+    container_name: netengine_certbot
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_logs:/var/log/letsencrypt
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - "echo 'Certbot ready for certificate management' && sleep infinity"
+    profiles:
+      - ssl-testing
+
+  # Certificate monitoring & expiration alerts
+  cert-monitor:
+    image: nicolaka/netshoot:latest
+    container_name: netengine_cert_monitor
+    volumes:
+      - ./compose/monitor-certs.sh:/scripts/monitor.sh:ro
+      - ./compose/certs:/certs:ro
+    entrypoint: /bin/sh
+    command:
+      - /scripts/monitor.sh
+    profiles:
+      - ssl-testing
+
+  # mTLS testing with mutual authentication
+  mtls-server:
+    image: nginx:alpine
+    container_name: netengine_mtls_server
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./compose/nginx-mtls.conf:/etc/nginx/nginx.conf:ro
+      - ./compose/certs:/etc/nginx/certs:ro
+    depends_on:
+      - cert-generator
+    profiles:
+      - ssl-testing
+
+  # mTLS client for testing
+  mtls-client:
+    image: nicolaka/netshoot:latest
+    container_name: netengine_mtls_client
+    volumes:
+      - ./compose/certs:/certs:ro
+      - ./compose/test-mtls.sh:/scripts/test.sh:ro
+    entrypoint: sleep
+    command:
+      - "infinity"
+    depends_on:
+      - mtls-server
+    profiles:
+      - ssl-testing
+
+volumes:
+  certbot_certs:
+  certbot_logs:

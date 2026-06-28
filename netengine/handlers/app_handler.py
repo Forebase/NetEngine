@@ -1,16 +1,17 @@
-import logging
 import secrets
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Dict
 
 from netengine.core.pgmq_client import PGMQClient
-from netengine.core.supabase_client import get_supabase
+from netengine.errors import ServicesError
 from netengine.events.schema import EventEnvelope
+from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.oidc_handler import OIDCHandler
 from netengine.handlers.pki_handler import PKIHandler
+from netengine.logging import get_logger
 
 
 class AppHandler:
@@ -24,15 +25,22 @@ class AppHandler:
         context: PhaseContext | None = None,
     ):
         self.context = context or PhaseContext(
-            spec={}, runtime_state=state, logger=logging.getLogger(__name__)
+            spec={}, runtime_state=state, logger=get_logger(__name__)
         )
         self.docker = docker
         self.dns = dns
         self.pki = pki
         self.oidc = oidc
         self.state = state
-        self.supabase = get_supabase()
+        self._db = None
         self.pgmq = PGMQClient()
+
+    async def _get_db(self):
+        if self._db is None:
+            from netengine.core.supabase_client import get_db
+
+            self._db = await get_db()
+        return self._db
 
     async def deploy_app(
         self, org: str, app_name: str, subdomain: str, config: Dict[str, Any] = None
@@ -58,6 +66,19 @@ class AppHandler:
 
         # Step 4: Issue TLS certificate via PKI
         cert, key = await self.pki.issue_cert(domain, [f"*.{org}.internal"])
+
+        # Track issued certificate in RuntimeState
+        expiry = self.pki.extract_cert_expiry(cert)
+        self.context.runtime_state.issued_certificates[domain] = {
+            "cert_type": "app",
+            "issued_at": datetime.now(UTC).isoformat(),
+            "expires_at": expiry.isoformat(),
+            "sans": [f"*.{org}.internal"],
+            "rotated_at": None,
+            "version": 1,
+        }
+        self.context.runtime_state.save()
+
         # Mount cert into container (via volume or exec write)
         await self._inject_cert(container_id, domain, cert, key)
 
@@ -78,10 +99,10 @@ class AppHandler:
             "domain": domain,
             "container_id": container_id,
             "client_id": client_id,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
-        # Store in Supabase (optional table: app_deployments)
-        await self.supabase.table("app_deployments").upsert(deployment).execute()
+        db = await self._get_db()
+        await db.table("app_deployments").upsert(deployment).execute()
 
         return deployment
 
@@ -105,17 +126,13 @@ class AppHandler:
         return container_id
 
     async def _get_gateway_ip(self, and_name: str) -> str:
-        """Query Supabase for the CIDR of this AND and derive gateway IP."""
+        """Query DB for the CIDR of this AND and derive gateway IP."""
         import ipaddress
 
-        result = (
-            await self.supabase.table("address_leases")
-            .select("cidr")
-            .eq("and_name", and_name)
-            .execute()
-        )
+        db = await self._get_db()
+        result = await db.table("address_leases").select("cidr").eq("and_name", and_name).execute()
         if not result.data:
-            raise RuntimeError(f"AND {and_name} not found")
+            raise ServicesError(f"AND {and_name} not found")
         cidr = result.data[0]["cidr"]
         # Gateway IP is the first usable IP in the CIDR block
         network = ipaddress.ip_network(cidr, strict=False)
@@ -167,3 +184,39 @@ class AppHandler:
             "nextcloud": "nextcloud:latest",
         }
         return catalog.get(app_name, app_name)
+
+
+class OrgAppsPhaseHandler(BasePhaseHandler):
+    """Phase 9: Deploy org apps declared in spec.org_apps.deployments."""
+
+    async def execute(self, context: PhaseContext) -> None:
+        org_apps_spec = getattr(context.spec, "org_apps", None)
+        if not org_apps_spec or not org_apps_spec.enabled:
+            context.logger.info("Phase 9: org_apps not enabled, skipping deployments")
+            context.runtime_state.org_apps_output = {"deployments": []}
+            return
+
+        docker = context.docker_client
+        dns = DNSHandler()
+        pki = PKIHandler(docker, context.runtime_state, context.spec)
+        oidc = OIDCHandler(
+            keycloak_url="https://auth.platform.internal",
+            admin_username="admin",
+            admin_password=context.runtime_state.inworld_admin_password or "",
+        )
+        handler = AppHandler(docker, dns, pki, oidc, context.runtime_state, context)
+
+        deployments = []
+        for dep in org_apps_spec.deployments:
+            subdomain = dep.subdomain or dep.app
+            result = await handler.deploy_app(dep.org, dep.app, subdomain, {})
+            deployments.append(result)
+            context.logger.info(f"Phase 9: deployed {dep.app} for {dep.org} at {result['domain']}")
+
+        context.runtime_state.org_apps_output = {"deployments": deployments}
+
+    async def healthcheck(self, context: PhaseContext) -> bool:
+        return bool(context.runtime_state.org_apps_output)
+
+    async def should_skip(self, context: PhaseContext) -> bool:
+        return bool(context.runtime_state.org_apps_output)

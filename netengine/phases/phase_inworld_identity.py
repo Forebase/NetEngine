@@ -12,18 +12,20 @@ import asyncio
 import json
 import secrets
 import ssl
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 import aiohttp
 
-from netengine.core.supabase_client import get_supabase
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.oidc_handler import OIDCHandler
 from netengine.handlers.pki_handler import PKIHandler
+from netengine.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class InWorldIdentityPhaseHandler(BasePhaseHandler):
@@ -80,7 +82,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
                 "Ensure Phase 1-2 have run and created zones."
             )
 
-        context.runtime_state.started_at = datetime.utcnow()
+        context.runtime_state.started_at = datetime.now(UTC)
 
         try:
             inworld_output: dict[str, Any] = {}
@@ -137,10 +139,10 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
 
             inworld_output["realms_created"] = realms_created
             inworld_output["credentials_stored"] = credentials_stored
-            inworld_output["deployed_at"] = datetime.utcnow().isoformat()
+            inworld_output["deployed_at"] = datetime.now(UTC).isoformat()
 
             context.runtime_state.identity_inworld_output = inworld_output
-            context.runtime_state.completed_at = datetime.utcnow()
+            context.runtime_state.completed_at = datetime.now(UTC)
 
             logger.info(f"Phase 6 complete: {len(realms_created)} realms created")
 
@@ -160,7 +162,7 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
 
         except Exception as e:
             context.runtime_state.last_error = str(e)
-            context.runtime_state.last_error_at = datetime.utcnow()
+            context.runtime_state.last_error_at = datetime.now(UTC)
             logger.error(f"Phase 6 setup failed: {e}")
             raise
 
@@ -289,6 +291,17 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
         pki = PKIHandler(docker, context.runtime_state, context.spec.__dict__)
         cert, key = await pki.issue_cert(canonical_name, sans=[canonical_name])
 
+        # Track issued certificate in RuntimeState
+        expiry = pki.extract_cert_expiry(cert)
+        context.runtime_state.issued_certificates[canonical_name] = {
+            "cert_type": "inworld_identity",
+            "issued_at": datetime.now(UTC).isoformat(),
+            "expires_at": expiry.isoformat(),
+            "sans": [canonical_name],
+            "rotated_at": None,
+            "version": 1,
+        }
+
         cert_dir = "/var/lib/netengines/certs_inworld"
         import os
 
@@ -345,8 +358,8 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
 
-        start = datetime.utcnow()
-        while (datetime.utcnow() - start).total_seconds() < timeout:
+        start = datetime.now(UTC)
+        while (datetime.now(UTC) - start).total_seconds() < timeout:
             try:
                 client_timeout = aiohttp.ClientTimeout(total=5)
                 async with aiohttp.ClientSession(
@@ -356,8 +369,8 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
                     async with session.get(url) as resp:
                         if resp.status == 200:
                             return
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Keycloak not ready yet ({url}): {exc}")
             await asyncio.sleep(2)
 
         raise RuntimeError(f"Keycloak did not become ready at {url} within {timeout}s")
@@ -410,21 +423,23 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
         # For now, we'll generate and store it separately
         client_secret = secrets.token_urlsafe(32)
 
-        # Store in Supabase for durability
+        # Store in DB for durability
         try:
-            supabase = get_supabase()
-            supabase.table("oidc_credentials").insert(
+            from netengine.core.supabase_client import get_db
+
+            db = await get_db()
+            await db.table("oidc_credentials").insert(
                 {
                     "org_name": org_name,
                     "client_id": client_id,
                     "client_secret": client_secret,
                     "realm_name": realm_name,
-                    "created_at": datetime.utcnow().isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                 }
             ).execute()
-            logger.info(f"Stored OIDC credentials in Supabase for {org_name}")
+            logger.info(f"Stored OIDC credentials for {org_name}")
         except Exception as e:
-            logger.warning(f"Failed to store credentials in Supabase: {e}")
+            logger.warning(f"Failed to store OIDC credentials: {e}")
             # Don't fail the phase if Supabase isn't available (M1-M3 testing)
 
         return client_secret

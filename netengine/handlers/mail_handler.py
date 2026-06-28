@@ -9,7 +9,7 @@ Responsibilities:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 from cryptography.hazmat.backends import default_backend
@@ -84,7 +84,7 @@ class MailHandler:
             "dmarc_enabled": self.mail_config.dmarc.enabled,
             "orgs_configured": orgs_configured,
             "mailboxes_provisioned": mailbox_count,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
 
         self.logger.info(
@@ -200,11 +200,11 @@ maillog_file = /var/log/postfix/postfix.log
         orgs_configured = []
 
         # Get all orgs from world registry
-        if not hasattr(spec, "world_registry") or not spec.world_registry.initial_orgs:
+        if not hasattr(spec, "world_registry") or not spec.world_registry.organizations:
             self.logger.warning("No orgs found in spec.world_registry")
             return orgs_configured
 
-        for org_spec in spec.world_registry.initial_orgs:
+        for org_spec in spec.world_registry.organizations:
             org_name = org_spec.name
             org_domain = f"{org_name}.internal"
 

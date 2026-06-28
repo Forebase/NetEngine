@@ -1,8 +1,9 @@
 import asyncio
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 from netengine.core.pgmq_client import PGMQClient
+from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -29,44 +30,47 @@ class RegistriesPhaseHandler(BasePhaseHandler):
         domain = DomainRegistryHandler()
         await domain.seed_address_pools(spec)
 
-        # 3. Start WHOIS server (in a background task)
+        # 3. Start WHOIS server via ConsumerSupervisor so crashes are visible
+        #    and the task is gracefully shut down with the rest of the system.
         whois = WHOISServer()
-        asyncio.create_task(whois.start())
+        context.consumer_supervisor.register(  # type: ignore[union-attr]
+            "whois_server", whois.start
+        )
 
         # 4. Register TLD delegations from spec
-        tlds = spec.get("domain_registry", {}).get("tld_delegations", [])
-        dns = DNSHandler()  # or get from context
+        tlds = spec.dns.tlds if spec.dns else []
+        dns = DNSHandler()
         for tld in tlds:
-            # Add NS records to root zone
             await dns.add_zone_record(
                 context=context,
                 zone="root.internal",
                 record_type="NS",
-                name=tld["name"],
-                value=tld["ns_server"],
+                name=tld.name,
+                value=f"ns.{tld.name}",
             )
-            # Add A record for the TLD's NS server
             await dns.add_zone_record(
                 context=context,
                 zone="root.internal",
                 record_type="A",
-                name=tld["ns_server"],
-                value=tld["listen_ip"],
+                name=f"ns.{tld.name}",
+                value=tld.listen_ip,
             )
 
-        # 5. Wire pgmq consumers (stub – in production, run a loop)
-        # We'll set up a consumer for DNS updates in a background task.
-        asyncio.create_task(self._consume_dns_updates(context))
+        # 5. Wire pgmq consumer for DNS updates through supervisor
+        context.consumer_supervisor.register(  # type: ignore[union-attr]
+            Queue.DNS_UPDATES,
+            lambda: self._consume_dns_updates(context),
+        )
 
         # 6. Update state
         context.runtime_state.world_registry_output = {
             "seeded": True,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
         context.runtime_state.domain_registry_output = {
             "address_pools_seeded": True,
-            "tld_delegations": tlds,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "tld_delegations": [t.model_dump() for t in tlds],
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
         context.runtime_state.phase_completed["5"] = True
         context.runtime_state.save()
@@ -75,14 +79,11 @@ class RegistriesPhaseHandler(BasePhaseHandler):
     async def healthcheck(self, context: PhaseContext) -> bool:
         """Check if registries are healthy."""
         try:
-            # Verify World Registry is accessible
-            world = WorldRegistryHandler()
-            # Try to query the registry (basic healthcheck)
-            supabase = __import__(
-                "netengine.core.supabase_client", fromlist=["get_supabase"]
-            ).get_supabase()
-            result = await supabase.table("world_registry").select("*").limit(1).execute()
-            return result.status_code == 200 if hasattr(result, "status_code") else True
+            from netengine.core.supabase_client import get_db
+
+            db = await get_db()
+            result = await db.table("world_registry").select("*").limit(1).execute()
+            return hasattr(result, "data")
         except Exception:
             return False
 
@@ -90,28 +91,37 @@ class RegistriesPhaseHandler(BasePhaseHandler):
         """Skip if Phase 5 already completed."""
         return context.runtime_state.phase_completed.get("5", False)
 
-    async def _consume_dns_updates(self, context: PhaseContext):
+    async def _consume_dns_updates(self, context: PhaseContext) -> None:
         """pgmq consumer: domain.registered -> DNSHandler.add_zone_record."""
+        logger = context.logger
         pgmq = PGMQClient()
         dns = DNSHandler()
         while True:
-            msg = await pgmq.receive("dns_updates")
-            if not msg:
-                await asyncio.sleep(1)
-                continue
             try:
-                envelope = EventEnvelope(**json.loads(msg["message"]))
-                payload = envelope.payload
-                # Add zone record for the domain (e.g., acme.internal -> IP)
-                # For MVP, we add an A record pointing to a placeholder or to the AND gateway.
-                # In real use, the IP would come from the AND allocation.
-                await dns.add_zone_record(
-                    context=context,
-                    zone=payload["domain"],
-                    record_type="A",
-                    name="@",
-                    value="10.0.0.1",  # placeholder – would be replaced with actual IP from AND handler
-                )
-                await pgmq.delete("dns_updates", msg["msg_id"])
+                msg = await pgmq.receive(Queue.DNS_UPDATES)
+                if not msg:
+                    await asyncio.sleep(1)
+                    continue
+
+                try:
+                    envelope = EventEnvelope(**json.loads(msg["message"]))
+                    payload = envelope.payload
+                    logger.info(f"Processing DNS update for domain: {payload.get('domain')}")
+
+                    await dns.add_zone_record(
+                        context=context,
+                        zone=payload["domain"],
+                        record_type="A",
+                        name="@",
+                        value="10.0.0.1",
+                    )
+                    await pgmq.delete(Queue.DNS_UPDATES, msg["msg_id"])
+                    logger.info(
+                        f"Successfully processed DNS update for domain: {payload.get('domain')}"
+                    )
+                except Exception as e:
+                    logger.error(f"Error processing DNS update: {e}")
+                    await pgmq.archive_to_dlq(Queue.DNS_UPDATES, msg["msg_id"], str(e))
             except Exception as e:
-                await pgmq.archive_to_dlq("dns_updates", msg["msg_id"], str(e))
+                logger.error(f"Error in DNS update consumer loop: {e}")
+                await asyncio.sleep(5)

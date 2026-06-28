@@ -1,0 +1,137 @@
+version: "3.8"
+
+# Analytics & business intelligence platform for in-world
+# Available at: analytics.platform.internal
+
+services:
+  # Analytics database (separate from main DB)
+  analytics-db:
+    image: postgres:15
+    container_name: netengine_analytics_db
+    environment:
+      POSTGRES_USER: analytics
+      POSTGRES_PASSWORD: ${ANALYTICS_DB_PASSWORD:-analytics_dev}
+      POSTGRES_DB: analytics
+    ports:
+      - "5441:5432"
+    volumes:
+      - analytics_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U analytics"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Metabase - BI dashboard & query builder
+  metabase:
+    image: metabase/metabase:latest
+    container_name: netengine_metabase
+    ports:
+      - "3434:3000"
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: analytics
+      MB_DB_PORT: 5432
+      MB_DB_USER: analytics
+      MB_DB_PASS: ${ANALYTICS_DB_PASSWORD:-analytics_dev}
+      MB_DB_HOST: analytics-db
+      MB_SITE_NAME: NetEngine Analytics
+    volumes:
+      - metabase_data:/metabase-data
+    depends_on:
+      analytics-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Apache Superset - advanced analytics
+  superset:
+    image: apache/superset:latest
+    container_name: netengine_superset
+    ports:
+      - "8088:8088"
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-change-me}
+      SUPERSET_DATABASE_URI: postgresql://analytics:${ANALYTICS_DB_PASSWORD:-analytics_dev}@analytics-db:5432/analytics
+      FLASK_ENV: production
+    volumes:
+      - superset_data:/var/lib/superset
+    depends_on:
+      analytics-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8088/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - superset
+
+  # Jupyter notebooks for data science
+  jupyter:
+    image: jupyter/scipy-notebook:latest
+    container_name: netengine_jupyter
+    ports:
+      - "8888:8888"
+    environment:
+      JUPYTER_ENABLE_LAB: "yes"
+      GRANT_SUDO: "yes"
+    volumes:
+      - jupyter_data:/home/jovyan/work
+      - ./compose/jupyter-config.py:/home/jovyan/.jupyter/jupyter_notebook_config.py:ro
+    command:
+      - start-notebook.sh
+      - --ip=0.0.0.0
+      - --no-browser
+      - --allow-root
+    profiles:
+      - jupyter
+
+  # TimescaleDB for time-series analytics
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: netengine_timescaledb
+    ports:
+      - "5442:5432"
+    environment:
+      POSTGRES_USER: timescale
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-timescale_dev}
+      POSTGRES_DB: metrics
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U timescale"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    profiles:
+      - timescaledb
+
+  # Analytics data pipeline (ETL)
+  pipeline-worker:
+    image: python:3.13-slim
+    container_name: netengine_pipeline_worker
+    environment:
+      ANALYTICS_DB_URL: postgresql://analytics:${ANALYTICS_DB_PASSWORD:-analytics_dev}@analytics-db:5432/analytics
+      SOURCE_DB_URL: postgresql://netengine:${POSTGRES_PASSWORD:-dev_password}@postgres:5432/netengine
+      PIPELINE_INTERVAL: "3600"  # Run hourly
+    volumes:
+      - ./compose/analytics-pipeline.py:/scripts/pipeline.py:ro
+    working_dir: /scripts
+    entrypoint: python
+    command:
+      - pipeline.py
+    depends_on:
+      - analytics-db
+    profiles:
+      - pipeline-worker
+
+volumes:
+  analytics_db_data:
+  metabase_data:
+  superset_data:
+  jupyter_data:
+  timescaledb_data:
