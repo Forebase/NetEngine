@@ -1,0 +1,16 @@
+{
+  "proxies": [
+    {
+      "name": "postgres_chaos",
+      "listen": "[::]:5432",
+      "upstream": "postgres:5432",
+      "enabled": true
+    },
+    {
+      "name": "keycloak_chaos",
+      "listen": "[::]:8180",
+      "upstream": "keycloak:8180",
+      "enabled": true
+    }
+  ]
+}

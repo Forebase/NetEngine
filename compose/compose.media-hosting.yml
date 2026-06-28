@@ -1,0 +1,182 @@
+version: "3.8"
+
+# Media hosting, CDN, image/video processing
+# Available at: media.platform.internal, cdn.platform.internal
+
+services:
+  # Media storage (S3-compatible)
+  media-storage:
+    image: minio/minio:latest
+    container_name: netengine_media_storage
+    environment:
+      MINIO_ROOT_USER: media
+      MINIO_ROOT_PASSWORD: ${MEDIA_STORAGE_PASSWORD:-media_dev}
+    ports:
+      - "9004:9000"
+      - "9005:9001"  # Console
+    volumes:
+      - media_storage_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Media metadata database
+  media-db:
+    image: postgres:15
+    container_name: netengine_media_db
+    environment:
+      POSTGRES_USER: media
+      POSTGRES_PASSWORD: ${MEDIA_DB_PASSWORD:-media_dev}
+      POSTGRES_DB: media
+    ports:
+      - "5448:5432"
+    volumes:
+      - ./compose/media-schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+      - media_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U media"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Image processing service (ImageMagick, ffmpeg)
+  image-processor:
+    image: python:3.13
+    container_name: netengine_image_processor
+    environment:
+      MEDIA_STORAGE_URL: http://media-storage:9000
+      MEDIA_DB_URL: postgresql://media:${MEDIA_DB_PASSWORD:-media_dev}@media-db:5432/media
+      PROCESSING_QUEUE_URL: redis://media-cache:6379
+      PROCESSING_WORKERS: "4"
+    volumes:
+      - ./compose/image-processor.py:/app/processor.py:ro
+      - media_processing_cache:/tmp/processing
+    working_dir: /app
+    entrypoint: python
+    command:
+      - processor.py
+    depends_on:
+      - media-storage
+      - media-db
+      - media-cache
+    profiles:
+      - image-processing
+
+  # Video transcoding service (ffmpeg)
+  video-transcoder:
+    image: python:3.13
+    container_name: netengine_video_transcoder
+    environment:
+      MEDIA_STORAGE_URL: http://media-storage:9000
+      MEDIA_DB_URL: postgresql://media:${MEDIA_DB_PASSWORD:-media_dev}@media-db:5432/media
+      TRANSCODING_QUEUE_URL: redis://media-cache:6379
+      TRANSCODING_PRESETS: "360p,720p,1080p,4k"
+      TRANSCODING_WORKERS: "2"
+    volumes:
+      - ./compose/video-transcoder.py:/app/transcoder.py:ro
+      - media_transcoding_cache:/tmp/transcoding
+    working_dir: /app
+    entrypoint: python
+    command:
+      - transcoder.py
+    depends_on:
+      - media-storage
+      - media-db
+      - media-cache
+    profiles:
+      - video-transcoding
+
+  # Media cache (CDN-like caching layer)
+  media-cache:
+    image: redis:7-alpine
+    container_name: netengine_media_cache
+    ports:
+      - "6383:6379"
+    volumes:
+      - media_cache_data:/data
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - "2gb"
+      - --maxmemory-policy
+      - "allkeys-lru"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Media API gateway
+  media-api:
+    image: node:18-alpine
+    container_name: netengine_media_api
+    ports:
+      - "8097:8097"
+    environment:
+      MEDIA_STORAGE_URL: http://media-storage:9000
+      MEDIA_DB_URL: postgresql://media:${MEDIA_DB_PASSWORD:-media_dev}@media-db:5432/media
+      MEDIA_CACHE_URL: redis://media-cache:6379
+      API_PORT: 8097
+    volumes:
+      - ./compose/media-api.js:/app/api.js:ro
+    working_dir: /app
+    entrypoint: node
+    command:
+      - api.js
+    depends_on:
+      - media-storage
+      - media-db
+      - media-cache
+    profiles:
+      - media-api
+
+  # CDN edge server (nginx)
+  cdn-edge:
+    image: nginx:alpine
+    container_name: netengine_cdn_edge
+    ports:
+      - "8098:80"
+    volumes:
+      - ./compose/nginx-cdn.conf:/etc/nginx/nginx.conf:ro
+      - cdn_cache_data:/var/cache/nginx
+    depends_on:
+      - media-api
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - cdn-edge
+
+  # Analytics for media usage
+  media-analytics:
+    image: python:3.13-slim
+    container_name: netengine_media_analytics
+    environment:
+      MEDIA_DB_URL: postgresql://media:${MEDIA_DB_PASSWORD:-media_dev}@media-db:5432/media
+      ANALYTICS_DB_URL: postgresql://analytics:${ANALYTICS_DB_PASSWORD:-analytics_dev}@analytics-db:5432/analytics
+      ANALYTICS_INTERVAL: "3600"
+    volumes:
+      - ./compose/media-analytics.py:/app/analytics.py:ro
+    working_dir: /app
+    entrypoint: python
+    command:
+      - analytics.py
+    depends_on:
+      - media-db
+    profiles:
+      - media-analytics
+
+volumes:
+  media_storage_data:
+  media_db_data:
+  media_processing_cache:
+  media_transcoding_cache:
+  media_cache_data:
+  cdn_cache_data:

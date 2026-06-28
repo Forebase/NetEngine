@@ -1,6 +1,5 @@
 """Integration tests for M3 bootstrap (Phases 3-4: PKI + Platform Identity)."""
 
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -8,15 +7,6 @@ import pytest
 from netengine.core.orchestrator import Orchestrator
 from netengine.handlers.phase_pki import PKIPhaseHandler
 from netengine.phases.phase_platform_identity import PlatformIdentityPhaseHandler
-from netengine.spec.loader import load_spec
-
-_EXAMPLES = Path(__file__).parent.parent.parent / "examples"
-
-
-@pytest.fixture
-def m3_spec():
-    """Full valid spec for M3 orchestrator tests."""
-    return load_spec(_EXAMPLES / "minimal.yaml")
 
 
 class TestPKIPhaseHandlerContract:

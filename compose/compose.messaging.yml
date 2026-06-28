@@ -1,0 +1,145 @@
+version: "3.8"
+
+# Real-time messaging, chat, and notifications for in-world
+# Available at: chat.platform.internal, messages.platform.internal
+
+services:
+  # Messaging database
+  messaging-db:
+    image: postgres:15
+    container_name: netengine_messaging_db
+    environment:
+      POSTGRES_USER: messaging
+      POSTGRES_PASSWORD: ${MESSAGING_DB_PASSWORD:-messaging_dev}
+      POSTGRES_DB: messages
+    ports:
+      - "5444:5432"
+    volumes:
+      - ./compose/messaging-schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+      - messaging_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U messaging"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Mattermost - team chat & messaging
+  mattermost:
+    image: mattermost/mattermost:latest
+    container_name: netengine_mattermost
+    ports:
+      - "8065:8065"
+    environment:
+      MM_SQLSETTINGS_DRIVERNAME: postgres
+      MM_SQLSETTINGS_DATASOURCE: "postgres://messaging:${MESSAGING_DB_PASSWORD:-messaging_dev}@messaging-db:5432/messages?sslmode=disable"
+      MM_SERVICESETTINGS_LISTENADDRESS: ":8065"
+      MM_GENERAL_SITENAME: "NetEngine World Chat"
+      MM_OIDCSETTINGS_ENABLE: "true"
+      MM_OIDCSETTINGS_DISPLAYNAME: Keycloak
+      MM_OIDCSETTINGS_ISSUERURL: "http://keycloak:8180/realms/platform"
+      MM_OIDCSETTINGS_CLIENTID: mattermost
+      MM_OIDCSETTINGS_CLIENTSECRET: ${MATTERMOST_OIDC_SECRET:-change-me}
+    volumes:
+      - mattermost_data:/mattermost/data
+      - mattermost_logs:/mattermost/logs
+      - mattermost_plugins:/mattermost/plugins
+      - mattermost_client_plugins:/mattermost/client/plugins
+    depends_on:
+      messaging-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8065/api/v4/system/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Rocket.Chat - alternative team chat
+  rocketchat:
+    image: rocket.chat:latest
+    container_name: netengine_rocketchat
+    ports:
+      - "3000:3000"
+    environment:
+      ROOT_URL: "http://rocketchat.platform.internal:3000"
+      MONGO_URL: "mongodb://rocketchat:${ROCKETCHAT_DB_PASSWORD:-rocketchat_dev}@messaging-db:27017/rocketchat"
+      MONGO_OPLOG_URL: "mongodb://rocketchat:${ROCKETCHAT_DB_PASSWORD:-rocketchat_dev}@messaging-db:27017/local"
+      Accounts_OAuth_Keycloak: "true"
+      Accounts_OAuth_Keycloak_id: rocketchat
+      Accounts_OAuth_Keycloak_secret: ${ROCKETCHAT_OIDC_SECRET:-change-me}
+      Accounts_OAuth_Keycloak_auth_path: /realms/platform/protocol/openid-connect/auth
+      Accounts_OAuth_Keycloak_token_path: /realms/platform/protocol/openid-connect/token
+      Accounts_OAuth_Keycloak_userinfo_path: /realms/platform/protocol/openid-connect/userinfo
+      Accounts_OAuth_Keycloak_server_url: "http://keycloak:8180"
+    volumes:
+      - rocketchat_data:/app/uploads
+    depends_on:
+      - messaging-db
+    profiles:
+      - rocketchat
+
+  # Real-time message broker (Redis)
+  message-broker:
+    image: redis:7-alpine
+    container_name: netengine_message_broker
+    ports:
+      - "6382:6379"
+    volumes:
+      - message_broker_data:/data
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Notification gateway (sends notifications via multiple channels)
+  notification-service:
+    image: python:3.13-slim
+    container_name: netengine_notification_service
+    environment:
+      NOTIFICATION_DB_URL: postgresql://messaging:${MESSAGING_DB_PASSWORD:-messaging_dev}@messaging-db:5432/messages
+      MESSAGE_BROKER_URL: redis://message-broker:6379
+      MATTERMOST_API_URL: http://mattermost:8065
+      KEYCLOAK_URL: http://keycloak:8180
+      NOTIFICATION_PORT: 8093
+    ports:
+      - "8093:8093"
+    volumes:
+      - ./compose/notification-service.py:/app/service.py:ro
+    working_dir: /app
+    entrypoint: python
+    command:
+      - service.py
+    depends_on:
+      - messaging-db
+      - message-broker
+      - mattermost
+    profiles:
+      - notifications
+
+  # Email notification backend (SMTP)
+  smtp-relay:
+    image: boky/postfix:latest
+    container_name: netengine_smtp_relay
+    ports:
+      - "25:25"
+    environment:
+      HOSTNAME: smtp.platform.internal
+      ALLOWED_SENDER_DOMAINS: "*.platform.internal"
+    volumes:
+      - smtp_relay_data:/var/spool/postfix
+    profiles:
+      - smtp
+
+volumes:
+  messaging_db_data:
+  mattermost_data:
+  mattermost_logs:
+  mattermost_plugins:
+  mattermost_client_plugins:
+  rocketchat_data:
+  message_broker_data:
+  smtp_relay_data:

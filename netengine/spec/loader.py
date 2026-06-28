@@ -1,6 +1,7 @@
 """YAML spec loading and validation with OmegaConf composition support."""
 
 import ipaddress
+import logging
 from pathlib import Path
 from typing import Any, Optional
 
@@ -10,11 +11,74 @@ from pydantic import ValidationError
 from netengine.config.loader import ConfigLoader
 from netengine.spec.models import NetEngineSpec
 
+logger = logging.getLogger(__name__)
+
 
 class SpecLoadError(Exception):
     """Raised when spec loading or validation fails."""
 
     pass
+
+
+def _warn_unsupported(spec: NetEngineSpec) -> None:
+    """Emit warnings for spec fields that are declared but not yet implemented."""
+    pki = spec.pki
+
+    if pki.dnssec_enabled:
+        logger.warning(
+            "pki.dnssec_enabled is set but DNSSEC is not yet implemented — field will be ignored"
+        )
+    if pki.crl_enabled:
+        logger.warning(
+            "pki.crl_enabled is set but CRL is not yet implemented — field will be ignored"
+        )
+    if pki.ocsp_enabled:
+        logger.warning(
+            "pki.ocsp_enabled is set but OCSP is not yet implemented — field will be ignored"
+        )
+    gw = spec.gateway_portal
+    if gw.real_internet.mode.value != "isolated":
+        logger.warning(
+            f"gateway.real_internet.mode={gw.real_internet.mode.value!r} but real internet"
+            " mode is not yet implemented — gateway will remain isolated"
+        )
+    if gw.real_internet.service_mirrors:
+        logger.warning(
+            "gateway.real_internet.service_mirrors is set but service mirrors are not yet"
+            " implemented — mirrors will be ignored"
+        )
+    if gw.real_internet.upstream_resolver_enabled:
+        logger.warning(
+            "gateway.real_internet.upstream_resolver_enabled is set but upstream resolver"
+            " is not yet implemented — field will be ignored"
+        )
+    if gw.cross_world.mode.value != "none":
+        logger.warning(
+            f"gateway.cross_world.mode={gw.cross_world.mode.value!r} but cross-world"
+            " federation is not yet implemented — gateway will remain isolated"
+        )
+    if gw.cross_world.peers:
+        logger.warning(
+            "gateway.cross_world.peers is set but cross-world federation is not yet"
+            " implemented — peers will be ignored"
+        )
+
+    for profile_name, profile in spec.ands.profiles.items():
+        if profile.dynamic_ip:
+            logger.warning(
+                f"ands.profiles.{profile_name}.dynamic_ip is set but dynamic IP allocation"
+                " is not yet implemented — field will be ignored"
+            )
+        if profile.reverse_dns:
+            logger.warning(
+                f"ands.profiles.{profile_name}.reverse_dns is set but reverse DNS is not"
+                " yet implemented — field will be ignored"
+            )
+        if profile.bgp is not None:
+            logger.warning(
+                f"ands.profiles.{profile_name}.bgp={profile.bgp!r} but BGP configuration"
+                " is not yet implemented — field will be ignored"
+            )
 
 
 def _cross_validate(spec: NetEngineSpec) -> None:
@@ -97,6 +161,7 @@ def load_spec(yaml_path: str | Path) -> NetEngineSpec:
         raise SpecLoadError(f"Spec validation failed: {e}")
 
     _cross_validate(spec)
+    _warn_unsupported(spec)
     return spec
 
 
@@ -156,6 +221,7 @@ def load_spec_with_composition(
         raise SpecLoadError(f"Spec validation failed: {e}")
 
     _cross_validate(spec)
+    _warn_unsupported(spec)
     return spec
 
 
@@ -213,4 +279,5 @@ def load_spec_with_environment(
         raise SpecLoadError(f"Spec validation failed: {e}")
 
     _cross_validate(spec)
+    _warn_unsupported(spec)
     return spec

@@ -8,10 +8,11 @@ Responsibilities:
 - Emit substrate.initialized event on success
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from netengine.errors import SubstrateError
+from netengine.events.queues import queue_for_event_type
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -52,7 +53,7 @@ class SubstrateHandler(BasePhaseHandler):
         substrate_config = spec.substrate
 
         logger.info("Starting Phase 0: Substrate initialization")
-        context.runtime_state.started_at = datetime.utcnow()
+        context.runtime_state.started_at = datetime.now(UTC)
 
         try:
             substrate_output: dict[str, Any] = {}
@@ -80,10 +81,10 @@ class SubstrateHandler(BasePhaseHandler):
             substrate_output["gateway"] = gateway_status
             logger.info("Gateway network stub verified")
 
-            substrate_output["deployed_at"] = datetime.utcnow().isoformat()
+            substrate_output["deployed_at"] = datetime.now(UTC).isoformat()
 
             context.runtime_state.substrate_output = substrate_output
-            context.runtime_state.completed_at = datetime.utcnow()
+            context.runtime_state.completed_at = datetime.now(UTC)
 
             logger.info("Phase 0: Substrate initialization complete")
 
@@ -100,7 +101,7 @@ class SubstrateHandler(BasePhaseHandler):
 
         except Exception as e:
             context.runtime_state.last_error = str(e)
-            context.runtime_state.last_error_at = datetime.utcnow()
+            context.runtime_state.last_error_at = datetime.now(UTC)
             logger.error(f"Phase 0 substrate initialization failed: {e}")
             raise
 
@@ -204,7 +205,7 @@ class SubstrateHandler(BasePhaseHandler):
                     "status": "ready",
                     "healthy": True,
                     "version": "24.0+ (mock)",
-                    "initialized_at": datetime.utcnow().isoformat(),
+                    "initialized_at": datetime.now(UTC).isoformat(),
                 }
 
             # Real: check if already in swarm; init if not
@@ -223,7 +224,7 @@ class SubstrateHandler(BasePhaseHandler):
                 "status": "ready",
                 "healthy": True,
                 "version": version,
-                "initialized_at": datetime.utcnow().isoformat(),
+                "initialized_at": datetime.now(UTC).isoformat(),
             }
 
         elif orchestrator_type == "kubernetes":
@@ -233,7 +234,7 @@ class SubstrateHandler(BasePhaseHandler):
                 "status": "ready",
                 "healthy": True,
                 "version": "1.28+",
-                "initialized_at": datetime.utcnow().isoformat(),
+                "initialized_at": datetime.now(UTC).isoformat(),
             }
 
         else:
@@ -273,7 +274,7 @@ class SubstrateHandler(BasePhaseHandler):
                 "type": net_config.type,
                 "subnet": net_config.subnet,
                 "description": net_config.description,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             }
 
             logger.info(f"Network ready: {net_name} ({net_config.subnet}) id={net_id}")
@@ -295,14 +296,24 @@ class SubstrateHandler(BasePhaseHandler):
                 net = client.networks.get(name)
                 return net.id
             except docker_lib.errors.NotFound:
-                net = client.networks.create(
-                    name=name,
-                    driver=driver if driver != "overlay" else "overlay",
-                    ipam=docker_lib.types.IPAMConfig(
-                        pool_configs=[docker_lib.types.IPAMPool(subnet=subnet)]
-                    ),
-                )
-                return net.id
+                try:
+                    net = client.networks.create(
+                        name=name,
+                        driver=driver if driver != "overlay" else "overlay",
+                        ipam=docker_lib.types.IPAMConfig(
+                            pool_configs=[docker_lib.types.IPAMPool(subnet=subnet)]
+                        ),
+                    )
+                    return net.id
+                except docker_lib.errors.APIError as e:
+                    if "Pool overlaps" in str(e) or "overlap" in str(e).lower():
+                        raise SubstrateError(
+                            f"Cannot create Docker network '{name}' with subnet {subnet}: "
+                            f"that address range is already in use by another network. "
+                            f"Run `docker network ls` to find the conflict, then remove it "
+                            f"or choose a different subnet for '{name}' in your world spec."
+                        ) from e
+                    raise
 
         return await asyncio.to_thread(_sync)
 
@@ -331,7 +342,7 @@ class SubstrateHandler(BasePhaseHandler):
                 "servers": servers,
                 "synchronized": True,
                 "stratum": 2,
-                "configured_at": datetime.utcnow().isoformat(),
+                "configured_at": datetime.now(UTC).isoformat(),
             }
 
         def _sync_ntp() -> bool:
@@ -374,7 +385,7 @@ class SubstrateHandler(BasePhaseHandler):
             "servers": servers,
             "synchronized": synchronized,
             "stratum": 2 if synchronized else 16,
-            "configured_at": datetime.utcnow().isoformat(),
+            "configured_at": datetime.now(UTC).isoformat(),
         }
 
     async def _setup_gateway_stub(
@@ -411,7 +422,7 @@ class SubstrateHandler(BasePhaseHandler):
                 "description": gateway_config.description,
                 "status": "ready",
                 "reachable": True,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             }
 
         # Real mode: verify IPs are reachable via ping/socket
@@ -447,7 +458,7 @@ class SubstrateHandler(BasePhaseHandler):
             "status": "ready",
             "platform_reachable": platform_reachable,
             "core_reachable": core_reachable,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
 
     async def _emit_event(
@@ -480,7 +491,7 @@ class SubstrateHandler(BasePhaseHandler):
         )
         if context.pgmq_client is not None:
             try:
-                await context.pgmq_client.send(event)
+                await context.pgmq_client.send(queue_for_event_type(event_type), event)
                 context.logger.debug(f"Event queued to pgmq: {event_type}")
             except Exception as e:
                 context.logger.warning(f"Failed to queue event to pgmq: {e}")

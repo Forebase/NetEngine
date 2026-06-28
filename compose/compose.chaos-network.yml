@@ -1,0 +1,44 @@
+version: "3.8"
+
+# Chaos engineering: Network failure injection via Toxiproxy
+# Usage: docker compose -f docker-compose.yml -f compose/compose.chaos-network.yml up -d
+#
+# Configure applications to connect to:
+#   - postgres: toxiproxy:5432 (instead of postgres:5432)
+#   - keycloak: toxiproxy:8180 (instead of keycloak:8180)
+#
+# Toxiproxy API at localhost:8474
+# Add latency/packet loss via: curl -X POST http://localhost:8474/proxies/postgres_chaos/toxics
+
+services:
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.4.0
+    container_name: netengine_toxiproxy
+    ports:
+      - "8474:8474"  # Toxiproxy API
+      - "5432:5432"  # Postgres proxy
+      - "8180:8180"  # Keycloak proxy
+    volumes:
+      - ./compose/toxiproxy-config.json:/config/toxiproxy.json:ro
+    command:
+      - -config=/config/toxiproxy.json
+      - -host=0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8474/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Standalone chaos control client (optional)
+  chaos-control:
+    image: alpine:latest
+    container_name: netengine_chaos_control
+    depends_on:
+      - toxiproxy
+    volumes:
+      - ./compose/chaos-scenarios.sh:/scripts/scenarios.sh:ro
+    command:
+      - sh
+      - /scripts/scenarios.sh
+    profiles:
+      - chaos-control  # Start with: docker compose --profile chaos-control up

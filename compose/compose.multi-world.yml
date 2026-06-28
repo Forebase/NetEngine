@@ -1,0 +1,121 @@
+version: "3.8"
+
+# Multi-world federation testing
+# Two independent NetEngine instances with DNS federation
+# Usage: docker compose -f compose/compose.multi-world.yml up -d
+#
+# World 1: .world1.test TLD
+# World 2: .world2.test TLD
+# Cross-world DNS lookups via federation
+
+services:
+  # ────────────────────────────────────────────
+  # World 1: Postgres + Keycloak
+  # ────────────────────────────────────────────
+  postgres_world1:
+    image: postgres:15
+    container_name: netengine_postgres_world1
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-world1_pw}
+      POSTGRES_DB: netengine_world1
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./scripts/install_pgmq.sh:/docker-entrypoint-initdb.d/install_pgmq.sh:ro
+      - postgres_world1_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine -d netengine_world1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak_world1:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: netengine_keycloak_world1
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres_world1:5432/netengine_world1
+      KC_DB_USERNAME: netengine
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-world1_pw}
+      KC_DB_SCHEMA: keycloak
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin_world1
+      KC_HTTP_PORT: 8180
+      KC_HOSTNAME_STRICT: "false"
+    ports:
+      - "8181:8180"
+    depends_on:
+      postgres_world1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8180/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ────────────────────────────────────────────
+  # World 2: Postgres + Keycloak
+  # ────────────────────────────────────────────
+  postgres_world2:
+    image: postgres:15
+    container_name: netengine_postgres_world2
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-world2_pw}
+      POSTGRES_DB: netengine_world2
+    ports:
+      - "5435:5432"
+    volumes:
+      - ./scripts/install_pgmq.sh:/docker-entrypoint-initdb.d/install_pgmq.sh:ro
+      - postgres_world2_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine -d netengine_world2"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak_world2:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: netengine_keycloak_world2
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres_world2:5432/netengine_world2
+      KC_DB_USERNAME: netengine
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-world2_pw}
+      KC_DB_SCHEMA: keycloak
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin_world2
+      KC_HTTP_PORT: 8180
+      KC_HOSTNAME_STRICT: "false"
+    ports:
+      - "8182:8180"
+    depends_on:
+      postgres_world2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8180/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ────────────────────────────────────────────
+  # DNS Federation Broker (optional)
+  # Runs in separate "bridge" network for cross-world lookups
+  # ────────────────────────────────────────────
+  dns_bridge:
+    image: coredns/coredns:latest
+    container_name: netengine_dns_bridge
+    volumes:
+      - ./compose/coredns-bridge-config.txt:/etc/coredns/Corefile:ro
+    ports:
+      - "5355:53/udp"  # World1 forwarder
+      - "5356:53/udp"  # World2 forwarder
+    profiles:
+      - dns-bridge  # Start with: docker compose --profile dns-bridge up
+
+volumes:
+  postgres_world1_data:
+  postgres_world2_data:

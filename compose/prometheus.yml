@@ -1,0 +1,58 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: "netengine"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files: []
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Postgres exporter (if running)
+  - job_name: "postgres"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  # Keycloak metrics (if exposed)
+  - job_name: "keycloak"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["keycloak:8180"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  # Docker daemon metrics
+  - job_name: "docker"
+    static_configs:
+      - targets: ["docker-exporter:9323"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  # Node exporter (host metrics)
+  - job_name: "node"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  # K6 metrics (if running load tests)
+  - job_name: "k6"
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["localhost:9090"]
+    metrics_path: "/api/v1/query"

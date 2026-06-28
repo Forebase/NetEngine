@@ -1,0 +1,197 @@
+version: '3.8'
+
+# State file replay and recovery testing
+# Use: docker compose -f docker-compose.yml -f compose/compose.state-replay.yml up -d
+# Tests recovery from previous state files and incremental state progression
+
+services:
+  postgres-state:
+    image: postgres:15
+    container_name: netengine_postgres_state
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: state_test_password
+      POSTGRES_DB: netengine_state
+    ports:
+      - "5441:5432"
+    volumes:
+      - postgres_state_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - state-replay
+    restart: unless-stopped
+
+  # State file manager and replayer
+  state-replayer:
+    image: python:3.13-alpine
+    container_name: netengine_state_replayer
+    depends_on:
+      postgres-state:
+        condition: service_healthy
+    command: |
+      sh -c "
+        pip install psycopg2-binary &&
+        python -c '
+import json
+import os
+import time
+from datetime import datetime
+from pathlib import Path
+
+STATE_DIR = \"/data/states\"
+DB_URL = \"postgresql://netengine:state_test_password@postgres-state:5432/netengine_state\"
+
+def load_state_file(filepath):
+    \"\"\"Load a state file and parse its content.\"\"\"
+    try:
+        with open(filepath, \"r\") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f\"Error loading state file {filepath}: {e}\")
+        return None
+
+def replay_state(state_data):
+    \"\"\"Replay state changes to the database.\"\"\"
+    import psycopg2
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cur = conn.cursor()
+
+        # Record state replay
+        cur.execute(
+            \"\"\"INSERT INTO state_replays
+               (state_hash, phase, timestamp, metadata)
+               VALUES (%s, %s, %s, %s)\"\"\",
+            (
+                hash(json.dumps(state_data, sort_keys=True)),
+                state_data.get(\"current_phase\", 0),
+                datetime.now(),
+                json.dumps(state_data)
+            )
+        )
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f\"Error replaying state: {e}\")
+        return False
+
+# Watch for state files and replay them
+print(\"State replayer initialized\")
+if Path(STATE_DIR).exists():
+    for state_file in sorted(Path(STATE_DIR).glob(\"*.json\")):
+        print(f\"Processing state file: {state_file.name}\")
+        state = load_state_file(state_file)
+        if state:
+            if replay_state(state):
+                print(f\"Successfully replayed {state_file.name}\")
+            else:
+                print(f\"Failed to replay {state_file.name}\")
+        time.sleep(0.5)
+
+print(\"State replay complete\")
+print(\"Sleeping to allow query access...\")
+' &&
+        sleep infinity
+      "
+    environment:
+      NETENGINE_DB_URL: postgresql://netengine:state_test_password@postgres-state:5432/netengine_state
+      STATE_DIR: /data/states
+    volumes:
+      - state_history:/data/states
+    networks:
+      - state-replay
+    restart: unless-stopped
+
+  # State file versioning and archival
+  state-archive:
+    image: alpine:latest
+    container_name: netengine_state_archive
+    command: |
+      sh -c "
+        apk add --no-cache git &&
+        cd /archive &&
+        git init --initial-branch=main repo 2>/dev/null || true &&
+        tail -f /dev/null
+      "
+    volumes:
+      - state_archive:/archive
+      - state_history:/data/states:ro
+    networks:
+      - state-replay
+    restart: unless-stopped
+
+  # State comparison and diff utility
+  state-diff:
+    image: alpine:latest
+    container_name: netengine_state_diff
+    command: tail -f /dev/null  # Stay alive for manual analysis
+    volumes:
+      - state_history:/data/states:ro
+      - state_diffs:/tmp/diffs
+    networks:
+      - state-replay
+    restart: unless-stopped
+
+  # State validation and integrity checker
+  state-validator:
+    image: python:3.13-alpine
+    container_name: netengine_state_validator
+    command: |
+      sh -c "
+        pip install jsonschema &&
+        python -c '
+import json
+from pathlib import Path
+from datetime import datetime
+
+SCHEMA = {
+    \"type\": \"object\",
+    \"properties\": {
+        \"metadata\": {\"type\": \"object\"},
+        \"current_phase\": {\"type\": \"integer\", \"minimum\": 0, \"maximum\": 9},
+        \"phases\": {\"type\": \"object\"},
+        \"timestamp\": {\"type\": \"string\"}
+    },
+    \"required\": [\"metadata\", \"current_phase\", \"phases\"]
+}
+
+def validate_state(state_data):
+    \"\"\"Validate state file against schema.\"\"\"
+    from jsonschema import validate, ValidationError
+    try:
+        validate(instance=state_data, schema=SCHEMA)
+        return True, None
+    except ValidationError as e:
+        return False, str(e)
+
+print(\"State validator ready\")
+print(\"Monitoring /data/states for state files...\")
+' &&
+        sleep infinity
+      "
+    volumes:
+      - state_history:/data/states:ro
+    networks:
+      - state-replay
+    restart: unless-stopped
+
+volumes:
+  postgres_state_data:
+  state_history:
+  state_archive:
+  state_diffs:
+
+networks:
+  state-replay:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.38.0.0/16

@@ -1,8 +1,9 @@
 import asyncio
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 from netengine.core.pgmq_client import PGMQClient
+from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -57,19 +58,19 @@ class RegistriesPhaseHandler(BasePhaseHandler):
 
         # 5. Wire pgmq consumer for DNS updates through supervisor
         context.consumer_supervisor.register(  # type: ignore[union-attr]
-            "dns_updates",
+            Queue.DNS_UPDATES,
             lambda: self._consume_dns_updates(context),
         )
 
         # 6. Update state
         context.runtime_state.world_registry_output = {
             "seeded": True,
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
         context.runtime_state.domain_registry_output = {
             "address_pools_seeded": True,
             "tld_delegations": [t.model_dump() for t in tlds],
-            "deployed_at": datetime.utcnow().isoformat(),
+            "deployed_at": datetime.now(UTC).isoformat(),
         }
         context.runtime_state.phase_completed["5"] = True
         context.runtime_state.save()
@@ -97,7 +98,7 @@ class RegistriesPhaseHandler(BasePhaseHandler):
         dns = DNSHandler()
         while True:
             try:
-                msg = await pgmq.receive("dns_updates")
+                msg = await pgmq.receive(Queue.DNS_UPDATES)
                 if not msg:
                     await asyncio.sleep(1)
                     continue
@@ -114,13 +115,13 @@ class RegistriesPhaseHandler(BasePhaseHandler):
                         name="@",
                         value="10.0.0.1",
                     )
-                    await pgmq.delete("dns_updates", msg["msg_id"])
+                    await pgmq.delete(Queue.DNS_UPDATES, msg["msg_id"])
                     logger.info(
                         f"Successfully processed DNS update for domain: {payload.get('domain')}"
                     )
                 except Exception as e:
                     logger.error(f"Error processing DNS update: {e}")
-                    await pgmq.archive_to_dlq("dns_updates", msg["msg_id"], str(e))
+                    await pgmq.archive_to_dlq(Queue.DNS_UPDATES, msg["msg_id"], str(e))
             except Exception as e:
                 logger.error(f"Error in DNS update consumer loop: {e}")
                 await asyncio.sleep(5)

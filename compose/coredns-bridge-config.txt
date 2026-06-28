@@ -1,0 +1,32 @@
+# CoreDNS bridge configuration for multi-world federation
+# Forwards queries for world1.test and world2.test to their respective DNS servers
+
+# World 1 zone forwarder
+world1.test {
+  log
+  errors
+  forward . 127.0.0.1:5353 {
+    health_uri "http://localhost:8080/health"
+    policy sequential
+  }
+}
+
+# World 2 zone forwarder
+world2.test {
+  log
+  errors
+  forward . 127.0.0.1:5354 {
+    health_uri "http://localhost:8081/health"
+    policy sequential
+  }
+}
+
+# Fallback for unknown zones (optional)
+. {
+  log
+  errors
+  forward . 8.8.8.8 8.8.4.4 {
+    max_concurrent 1000
+  }
+  cache
+}

@@ -1,0 +1,221 @@
+version: '3.8'
+
+# Performance benchmarking environment
+# Use: docker compose -f docker-compose.yml -f compose/compose.benchmarks.yml up -d
+# Provides pgbench, DNS profiler, certificate timing, and other performance baseline tools
+
+services:
+  postgres-bench:
+    image: postgres:15
+    container_name: netengine_postgres_bench
+    environment:
+      POSTGRES_USER: netengine
+      POSTGRES_PASSWORD: benchmark_password
+      POSTGRES_DB: netengine_bench
+    ports:
+      - "5440:5432"
+    volumes:
+      - postgres_bench_data:/var/lib/postgresql/data
+      - ./bench-init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netengine"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - benchmarks
+    restart: unless-stopped
+
+  # pgbench - PostgreSQL benchmarking tool
+  pgbench-runner:
+    image: postgres:15
+    container_name: netengine_pgbench_runner
+    depends_on:
+      postgres-bench:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres-bench
+      PGUSER: netengine
+      PGPASSWORD: benchmark_password
+      PGDATABASE: netengine_bench
+    command: |
+      sh -c "
+        # Initialize pgbench database
+        pgbench -i -s 100 &&
+
+        # Run benchmark with different scenarios
+        echo 'Starting pgbench benchmarks...' &&
+
+        # Scenario 1: Simple SELECT
+        pgbench -c 10 -j 2 -t 10000 -f /tmp/bench-select.sql --report-latencies >/tmp/bench-select-result.txt 2>&1 &&
+
+        # Scenario 2: Mixed workload
+        pgbench -c 10 -j 2 -t 5000 --report-latencies >/tmp/bench-mixed-result.txt 2>&1 &&
+
+        # Scenario 3: Write-heavy
+        pgbench -c 5 -j 2 -t 5000 -f /tmp/bench-write.sql --report-latencies >/tmp/bench-write-result.txt 2>&1 &&
+
+        echo 'Benchmarks complete. Results saved to /tmp/bench-*-result.txt' &&
+        sleep infinity
+      "
+    volumes:
+      - ./pgbench-queries.sql:/tmp/bench-select.sql
+      - ./pgbench-write-queries.sql:/tmp/bench-write.sql
+      - bench_results:/tmp
+    networks:
+      - benchmarks
+    restart: unless-stopped
+
+  # CoreDNS with query profiling
+  coredns-benchmark:
+    image: coredns/coredns:latest
+    container_name: netengine_coredns_benchmark
+    command: -conf /etc/coredns/Corefile
+    ports:
+      - "5356:53/udp"
+      - "5356:53/tcp"
+      - "9155:9153"  # Prometheus metrics
+    volumes:
+      - ./coredns-benchmark.conf:/etc/coredns/Corefile
+      - coredns_bench_data:/root/zones
+    healthcheck:
+      test: ["CMD-SHELL", "dig @localhost -p 53 bench.internal || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - benchmarks
+    restart: unless-stopped
+
+  # DNS query profiler
+  dns-query-profiler:
+    image: mafintosh/dns-speed:latest
+    container_name: netengine_dns_query_profiler
+    depends_on:
+      coredns-benchmark:
+        condition: service_healthy
+    command: |
+      sh -c "
+        # Run DNS query benchmarks
+        echo 'Running DNS query benchmarks...' &&
+        sleep infinity
+      "
+    environment:
+      DNS_SERVER: coredns-benchmark
+      DNS_PORT: 53
+    networks:
+      - benchmarks
+    restart: unless-stopped
+
+  # Certificate generation profiler
+  cert-bench:
+    image: python:3.13-alpine
+    container_name: netengine_cert_bench
+    command: |
+      sh -c "
+        pip install cryptography &&
+        python -c '
+import time
+from cryptography import x509
+from cryptography.x509.oid import NameOID
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric import rsa
+from datetime import datetime, timedelta
+
+print(\"Starting certificate generation benchmarks...\")
+
+# Benchmark RSA key generation
+for key_size in [2048, 4096]:
+    start = time.time()
+    for i in range(10):
+        rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=key_size,
+            backend=default_backend()
+        )
+    elapsed = time.time() - start
+    avg_time = elapsed / 10
+    print(f\"RSA {key_size}-bit key generation: {avg_time:.3f}s avg ({10} iterations)\")
+
+# Benchmark certificate signing
+key = rsa.generate_private_key(
+    public_exponent=65537,
+    key_size=2048,
+    backend=default_backend()
+)
+
+subject = issuer = x509.Name([
+    x509.NameAttribute(NameOID.COUNTRY_NAME, u\"US\"),
+    x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u\"CA\"),
+    x509.NameAttribute(NameOID.ORGANIZATION_NAME, u\"NetEngine\"),
+    x509.NameAttribute(NameOID.COMMON_NAME, u\"benchmark.local\"),
+])
+
+cert = x509.CertificateBuilder().subject_name(
+    subject
+).issuer_name(
+    issuer
+).public_key(
+    key.public_key()
+).serial_number(
+    x509.random_serial_number()
+).not_valid_before(
+    datetime.utcnow()
+).not_valid_after(
+    datetime.utcnow() + timedelta(days=365)
+).sign(key, hashes.SHA256(), default_backend())
+
+print(f\"Certificate created: {cert.subject}\")
+print(\"Benchmarks complete.\")
+' &&
+        sleep infinity
+      "
+    networks:
+      - benchmarks
+    restart: unless-stopped
+
+  # Overall system benchmarking
+  sysbench:
+    image: severalnines/sysbench:latest
+    container_name: netengine_sysbench
+    command: |
+      sh -c "
+        echo 'System benchmarking:' &&
+        sysbench --version &&
+        # CPU benchmark
+        sysbench cpu --cpu-max-prime=20000 run &&
+        # Memory benchmark
+        sysbench memory --memory-total-size=1G run &&
+        sleep infinity
+      "
+    networks:
+      - benchmarks
+    restart: unless-stopped
+
+  # Benchmark results analyzer and reporter
+  benchmark-analyzer:
+    image: python:3.13-alpine
+    container_name: netengine_benchmark_analyzer
+    command: tail -f /dev/null  # Stay alive for analysis
+    environment:
+      RESULTS_DIR: /tmp/bench_results
+    volumes:
+      - bench_results:/tmp/bench_results
+    networks:
+      - benchmarks
+    restart: unless-stopped
+
+volumes:
+  postgres_bench_data:
+  coredns_bench_data:
+  bench_results:
+
+networks:
+  benchmarks:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.37.0.0/16

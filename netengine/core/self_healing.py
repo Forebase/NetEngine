@@ -100,7 +100,7 @@ class SelfHealingStrategy:
         Returns:
             List of SelfHealResult for dependent phases
         """
-        results = []
+        results: list[SelfHealResult] = []
         phase_key = str(changed_phase_num)
 
         if not self.orchestrator.runtime_state.phase_completed.get(phase_key):

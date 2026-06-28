@@ -1,0 +1,201 @@
+version: '3.8'
+
+# Air-gapped / offline environment configuration
+# Use: docker compose -f docker-compose.yml -f compose/compose.offline.yml up -d
+# For environments with no external internet access - uses local registries and pre-cached images
+
+services:
+  # Private Docker Registry (for caching images)
+  private-registry:
+    image: registry:2
+    container_name: netengine_private_registry
+    ports:
+      - "5000:5000"
+    environment:
+      REGISTRY_HTTP_ADDR: 0.0.0.0:5000
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+      REGISTRY_HEALTH_STORAGEDRIVER_ENABLED: "true"
+    volumes:
+      - registry_storage:/var/lib/registry
+      - ./registry-config.yml:/etc/docker/registry/config.yml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/v2/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - offline
+    restart: unless-stopped
+
+  # Private PyPI repository (for Python packages)
+  private-pypi:
+    image: pypa/bandersnatch:latest
+    container_name: netengine_private_pypi
+    command: mirror
+    volumes:
+      - pypi_cache:/data
+      - ./bandersnatch.conf:/etc/bandersnatch/bandersnatch.conf
+    ports:
+      - "3141:3141"
+    healthcheck:
+      test: ["CMD-SHELL", "test -d /data || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - offline
+    restart: unless-stopped
+
+  # Private APK/APT package cache (Alpine/Debian packages)
+  package-cache:
+    image: ubuntu:22.04
+    container_name: netengine_package_cache
+    command: |
+      bash -c "
+        apt-get update &&
+        apt-get install -y apt-cacher-ng &&
+        service apt-cacher-ng start &&
+        tail -f /var/log/apt-cacher-ng/apt-cacher.log
+      "
+    ports:
+      - "3142:3142"
+    volumes:
+      - apt_cache:/var/cache/apt-cacher-ng
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3142/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - offline
+    restart: unless-stopped
+
+  # DNS server for offline resolution (no external lookups)
+  offline-dns:
+    image: coredns/coredns:latest
+    container_name: netengine_offline_dns
+    command: -conf /etc/coredns/Corefile
+    ports:
+      - "5358:53/udp"
+      - "5358:53/tcp"
+    volumes:
+      - ./coredns-offline.conf:/etc/coredns/Corefile
+      - dns_offline_data:/root/zones
+    healthcheck:
+      test: ["CMD-SHELL", "dig @localhost -p 53 offline.local || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - offline
+    restart: unless-stopped
+
+  # Local artifact/asset server
+  artifact-server:
+    image: nginx:alpine
+    container_name: netengine_artifact_server
+    volumes:
+      - ./artifacts:/usr/share/nginx/html:ro
+      - ./offline-nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - offline
+    restart: unless-stopped
+
+  # Configuration mirror for NetEngine specs
+  config-mirror:
+    image: alpine:latest
+    container_name: netengine_config_mirror
+    command: |
+      sh -c "
+        apk add --no-cache nginx &&
+        mkdir -p /configs/specs /configs/schemas &&
+        nginx -g 'daemon off;'
+      "
+    volumes:
+      - ./offline-nginx.conf:/etc/nginx/nginx.conf:ro
+      - config_mirror:/configs
+    ports:
+      - "8081:8081"
+    networks:
+      - offline
+    restart: unless-stopped
+
+  # Offline setup validator
+  offline-validator:
+    image: python:3.13-alpine
+    container_name: netengine_offline_validator
+    depends_on:
+      private-registry:
+        condition: service_healthy
+      private-pypi:
+        condition: service_healthy
+      offline-dns:
+        condition: service_healthy
+      artifact-server:
+        condition: service_healthy
+    command: |
+      sh -c "
+        pip install requests &&
+        python -c '
+import requests
+import sys
+
+endpoints = [
+    (\"Registry\", \"http://private-registry:5000/v2/\"),
+    (\"PyPI\", \"http://private-pypi:3141/simple/\"),
+    (\"DNS\", \"http://offline-dns:8888/health\"),
+    (\"Artifacts\", \"http://artifact-server:8080/health\"),
+]
+
+print(\"Validating offline environment...\")
+all_ok = True
+for name, url in endpoints:
+    try:
+        r = requests.get(url, timeout=5)
+        if r.status_code < 400:
+            print(f\"✓ {name}: OK\")
+        else:
+            print(f\"✗ {name}: HTTP {r.status_code}\")
+            all_ok = False
+    except Exception as e:
+        print(f\"✗ {name}: {str(e)}\")
+        all_ok = False
+
+if all_ok:
+    print(\"\\nOffline environment validated successfully\")
+    sys.exit(0)
+else:
+    print(\"\\nOffline environment validation FAILED\")
+    sys.exit(1)
+' &&
+        sleep infinity
+      "
+    networks:
+      - offline
+    restart: unless-stopped
+
+volumes:
+  registry_storage:
+  pypi_cache:
+  apt_cache:
+  dns_offline_data:
+  config_mirror:
+
+networks:
+  offline:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.40.0.0/16

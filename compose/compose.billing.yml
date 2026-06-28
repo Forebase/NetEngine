@@ -1,0 +1,138 @@
+version: "3.8"
+
+# Billing, metering, and cost tracking for in-world
+# Available at: billing.platform.internal
+
+services:
+  # Billing database
+  billing-db:
+    image: postgres:15
+    container_name: netengine_billing_db
+    environment:
+      POSTGRES_USER: billing
+      POSTGRES_PASSWORD: ${BILLING_DB_PASSWORD:-billing_dev}
+      POSTGRES_DB: billing
+    ports:
+      - "5445:5432"
+    volumes:
+      - ./compose/billing-schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+      - billing_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U billing"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Stripe/payment processor integration
+  payment-gateway:
+    image: python:3.13-slim
+    container_name: netengine_payment_gateway
+    environment:
+      BILLING_DB_URL: postgresql://billing:${BILLING_DB_PASSWORD:-billing_dev}@billing-db:5432/billing
+      STRIPE_API_KEY: ${STRIPE_API_KEY:-sk_test_dummy}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_test}
+      PAYMENT_PORT: 8094
+    ports:
+      - "8094:8094"
+    volumes:
+      - ./compose/payment-gateway.py:/app/gateway.py:ro
+      - payment_data:/app/data
+    working_dir: /app
+    entrypoint: python
+    command:
+      - gateway.py
+    depends_on:
+      - billing-db
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8094/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - payment-gateway
+
+  # Usage metering & metrics collector
+  metering-service:
+    image: python:3.13-slim
+    container_name: netengine_metering_service
+    environment:
+      BILLING_DB_URL: postgresql://billing:${BILLING_DB_PASSWORD:-billing_dev}@billing-db:5432/billing
+      METRICS_DB_URL: postgresql://netengine:${POSTGRES_PASSWORD:-dev_password}@postgres:5432/netengine
+      METERING_INTERVAL: "300"  # Collect every 5 minutes
+    volumes:
+      - ./compose/metering-service.py:/app/service.py:ro
+    working_dir: /app
+    entrypoint: python
+    command:
+      - service.py
+    depends_on:
+      - billing-db
+    profiles:
+      - metering
+
+  # Invoice generation engine
+  invoice-engine:
+    image: python:3.13-slim
+    container_name: netengine_invoice_engine
+    environment:
+      BILLING_DB_URL: postgresql://billing:${BILLING_DB_PASSWORD:-billing_dev}@billing-db:5432/billing
+      INVOICE_INTERVAL: "2592000"  # Monthly
+      INVOICE_FORMAT: pdf
+    volumes:
+      - ./compose/invoice-engine.py:/app/engine.py:ro
+      - invoices_data:/app/invoices
+    working_dir: /app
+    entrypoint: python
+    command:
+      - engine.py
+    depends_on:
+      - billing-db
+    profiles:
+      - invoice-engine
+
+  # Cost analytics dashboard
+  cost-dashboard:
+    image: grafana/grafana:latest
+    container_name: netengine_cost_dashboard
+    ports:
+      - "3403:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - cost_dashboard_data:/var/lib/grafana
+      - ./compose/grafana-billing-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    depends_on:
+      - billing-db
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - cost-dashboard
+
+  # Quota enforcement
+  quota-enforcer:
+    image: python:3.13-slim
+    container_name: netengine_quota_enforcer
+    environment:
+      BILLING_DB_URL: postgresql://billing:${BILLING_DB_PASSWORD:-billing_dev}@billing-db:5432/billing
+      KEYCLOAK_URL: http://keycloak:8180
+      ENFORCEMENT_INTERVAL: "60"  # Check every minute
+    volumes:
+      - ./compose/quota-enforcer.py:/app/enforcer.py:ro
+    working_dir: /app
+    entrypoint: python
+    command:
+      - enforcer.py
+    depends_on:
+      - billing-db
+    profiles:
+      - quota-enforcer
+
+volumes:
+  billing_db_data:
+  payment_data:
+  invoices_data:
+  cost_dashboard_data:

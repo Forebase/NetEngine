@@ -9,9 +9,10 @@ Responsibilities:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
+from netengine.events.queues import Queue, queue_for_event_type
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
@@ -62,7 +63,7 @@ class ServicesPhaseHandler(BasePhaseHandler):
         # Validate prerequisites
         self._validate_prerequisites(runtime_state, logger)
 
-        runtime_state.started_at = datetime.utcnow()
+        runtime_state.started_at = datetime.now(UTC)
 
         try:
             services_output: dict[str, Any] = {}
@@ -92,9 +93,9 @@ class ServicesPhaseHandler(BasePhaseHandler):
                 logger.info("Storage deployment complete")
 
             # Record deployment info
-            services_output["deployed_at"] = datetime.utcnow().isoformat()
+            services_output["deployed_at"] = datetime.now(UTC).isoformat()
             runtime_state.world_services_output = services_output
-            runtime_state.completed_at = datetime.utcnow()
+            runtime_state.completed_at = datetime.now(UTC)
 
             logger.info("Phase 8 complete: world services ready")
 
@@ -123,7 +124,7 @@ class ServicesPhaseHandler(BasePhaseHandler):
 
         except Exception as e:
             runtime_state.last_error = str(e)
-            runtime_state.last_error_at = datetime.utcnow()
+            runtime_state.last_error_at = datetime.now(UTC)
             logger.error(f"Phase 8 deployment failed: {e}")
             raise
 
@@ -300,7 +301,7 @@ class ServicesPhaseHandler(BasePhaseHandler):
 
         while True:
             try:
-                msg = await context.pgmq_client.receive("services_admissions")
+                msg = await context.pgmq_client.receive(Queue.SERVICES_ADMISSIONS)
                 if not msg:
                     await asyncio.sleep(1)
                     continue
@@ -310,7 +311,7 @@ class ServicesPhaseHandler(BasePhaseHandler):
                 logger.debug("Processing org.admitted event for services provisioning")
 
                 # Mark message as processed
-                await context.pgmq_client.delete("services_admissions", msg["msg_id"])
+                await context.pgmq_client.delete(Queue.SERVICES_ADMISSIONS, msg["msg_id"])
 
             except Exception as e:
                 logger.error(f"Org admission consumer error: {e}")
@@ -347,7 +348,7 @@ class ServicesPhaseHandler(BasePhaseHandler):
         # Queue to pgmq for downstream processing
         if context.pgmq_client is not None:
             try:
-                await context.pgmq_client.send(event)
+                await context.pgmq_client.send(queue_for_event_type(event_type), event)
                 context.logger.debug(f"Event queued to pgmq: {event_type}")
             except Exception as e:
                 context.logger.warning(f"Failed to queue event to pgmq: {e}")
