@@ -59,7 +59,7 @@ class GatewayPortalHandler(BasePhaseHandler):
             )
             return
 
-        docker = context.docker_client if context.docker_client is not None else DockerHandler()  # type: ignore[no-untyped-call]
+        docker = context.docker_client or DockerHandler()  # type: ignore[no-untyped-call]
         gateway = GatewayHandler(docker)
 
         # ── Real Internet ───────────────────────────────────────────────────
