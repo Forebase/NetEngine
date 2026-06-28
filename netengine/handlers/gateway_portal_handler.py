@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any
 
 from netengine.errors import GatewayError, PKIError
+from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -316,6 +317,6 @@ class GatewayPortalHandler(BasePhaseHandler):
         context.logger.info(f"Event emitted: {event_type}")
         if context.pgmq_client is not None:
             try:
-                await context.pgmq_client.send("gateway_portal_events", event)
+                await context.pgmq_client.send(Queue.GATEWAY_PORTAL_EVENTS, event)
             except Exception as exc:
                 context.logger.warning(f"Failed to queue gateway portal event: {exc}")
