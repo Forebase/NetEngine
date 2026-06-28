@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from netengine.api.auth import require_admin, require_auth
 from netengine.core.reload import ReloadResult, apply_reload, check_immutability, compute_diff
 from netengine.core.state import RuntimeState
-from netengine.events.queues import PRIMARY_QUEUES, dlq_for
+from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import SpecLoadError, load_spec
@@ -805,8 +805,13 @@ async def replay_dlq(queue_name: str, user: dict = Depends(require_auth)) -> dic
     """Move all messages from a DLQ back to the main queue for retry."""
     from netengine.core.pgmq_client import PGMQClient
 
+    try:
+        queue = Queue(queue_name)
+        dlq = dlq_for(queue)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown queue: {queue_name}") from exc
+
     client = PGMQClient()
-    dlq = f"{queue_name}_dlq"
     replayed = 0
     errors: list[str] = []
     while True:
@@ -821,7 +826,7 @@ async def replay_dlq(queue_name: str, user: dict = Depends(require_auth)) -> dic
 
             envelope = EventEnvelope(**_json.loads(msg["message"]))
             envelope.retry_count = 0  # reset retry counter
-            await client.send(queue_name, envelope)
+            await client.send(queue, envelope)
             await client.delete(dlq, msg["msg_id"])
             replayed += 1
         except Exception as exc:

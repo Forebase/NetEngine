@@ -18,7 +18,7 @@ class PGMQClient:
             self._db = await get_db()
         return self._db
 
-    async def send(self, queue_name: str, event: EventEnvelope) -> int:
+    async def send(self, queue_name: Queue, event: EventEnvelope) -> int:
         """Enqueue an event; returns message ID."""
         db = await self._get_db()
         payload = event.to_dict()
@@ -29,20 +29,28 @@ class PGMQClient:
             raise RuntimeError(f"pgmq_send returned no data for queue '{queue_name}'")
         return result.data[0]
 
-    async def receive(self, queue_name: str, timeout: int = 5) -> Optional[Dict[str, Any]]:
+    async def receive(
+        self, queue_name: Queue, timeout: int = 5
+    ) -> Optional[Dict[str, Any]]:
         """Pop a message from the queue."""
         db = await self._get_db()
-        result = await db.rpc("pgmq_pop", {"queue_name": queue_name, "timeout": timeout}).execute()
+        result = await db.rpc(
+            "pgmq_pop", {"queue_name": queue_name, "timeout": timeout}
+        ).execute()
         if result.data:
             return result.data[0]
         return None
 
-    async def delete(self, queue_name: str, msg_id: int) -> None:
+    async def delete(self, queue_name: Queue, msg_id: int) -> None:
         """Acknowledge and delete a processed message."""
         db = await self._get_db()
-        await db.rpc("pgmq_delete", {"queue_name": queue_name, "msg_id": msg_id}).execute()
+        await db.rpc(
+            "pgmq_delete", {"queue_name": queue_name, "msg_id": msg_id}
+        ).execute()
 
-    async def read_by_id(self, queue_name: str, msg_id: int) -> Optional[Dict[str, Any]]:
+    async def read_by_id(
+        self, queue_name: Queue, msg_id: int
+    ) -> Optional[Dict[str, Any]]:
         """Read a specific message by ID without consuming it."""
         db = await self._get_db()
         result = await db.rpc(
@@ -52,7 +60,7 @@ class PGMQClient:
             return result.data[0]
         return None
 
-    async def archive_to_dlq(self, queue_name: str, msg_id: int, reason: str) -> None:
+    async def archive_to_dlq(self, queue_name: Queue, msg_id: int, reason: str) -> None:
         """Re-queue with incremented retry count, or move to DLQ after MAX_RETRIES."""
         msg = await self.read_by_id(queue_name, msg_id)
         if not msg:

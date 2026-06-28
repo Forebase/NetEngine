@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from netengine.errors import RegistryError
+from netengine.events.queues import Queue
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -68,8 +69,8 @@ class TestWorldRegistryHandler:
         await handler.admit_org("acme", [], "residential")
         assert handler.pgmq.send.call_count == 2
         queues = {call.args[0] for call in handler.pgmq.send.call_args_list}
-        assert "oidc_provisioning" in queues
-        assert "and_provisioning" in queues
+        assert Queue.OIDC_PROVISIONING in queues
+        assert Queue.AND_PROVISIONING in queues
 
     async def test_seed_from_spec_admits_each_org(self, handler: MagicMock) -> None:
         org1 = MagicMock()
@@ -147,7 +148,7 @@ class TestDomainRegistryHandler:
     async def test_register_domain_sends_dns_update_event(self, handler: MagicMock) -> None:
         await handler.register_domain("acme.internal", "acme", [])
         handler.pgmq.send.assert_called_once()
-        assert handler.pgmq.send.call_args.args[0] == "dns_updates"
+        assert handler.pgmq.send.call_args.args[0] == Queue.DNS_UPDATES
 
     async def test_seed_address_pools_upserts_each_pool(
         self, handler: MagicMock, sb: MagicMock
