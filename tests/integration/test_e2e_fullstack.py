@@ -173,9 +173,9 @@ async def test_e2e_substrate_and_dns(tmp_path, monkeypatch):
         # Verify the declared listen IP was assigned on the core network
         container_ip = _get_container_ip(coredns, "core")
         expected_ip = spec.dns.root.listen_ip
-        assert container_ip == expected_ip, (
-            f"CoreDNS IP on 'core' network is {container_ip!r}, expected {expected_ip!r}"
-        )
+        assert (
+            container_ip == expected_ip
+        ), f"CoreDNS IP on 'core' network is {container_ip!r}, expected {expected_ip!r}"
 
         # ── Live DNS validation ──────────────────────────────────────────────
         # Brief pause for CoreDNS to finish binding

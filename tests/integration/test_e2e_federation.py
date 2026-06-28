@@ -35,7 +35,12 @@ from netengine.handlers.gateway_portal_handler import GatewayPortalHandler
 from netengine.handlers.substrate import SubstrateHandler
 from netengine.logging import get_logger
 from netengine.spec.loader import load_spec
-from netengine.spec.models import CrossWorldConfig, CrossWorldPeer, GatewayPortal, RealInternetConfig
+from netengine.spec.models import (
+    CrossWorldConfig,
+    CrossWorldPeer,
+    GatewayPortal,
+    RealInternetConfig,
+)
 from netengine.spec.types import GatewayCrossWorldMode, GatewayRealInternetMode
 
 EXAMPLES_DIR = Path(__file__).parent.parent.parent / "examples"
@@ -176,15 +181,15 @@ async def test_e2e_cross_world_federation(tmp_path, monkeypatch):
             f"Expected 'world-b.internal' stub in CoreDNS Corefile but not found.\n"
             f"Corefile:\n{corefile}"
         )
-        assert "192.0.2.1" in corefile, (
-            f"Expected peer IP '192.0.2.1' in CoreDNS Corefile.\nCorefile:\n{corefile}"
-        )
+        assert (
+            "192.0.2.1" in corefile
+        ), f"Expected peer IP '192.0.2.1' in CoreDNS Corefile.\nCorefile:\n{corefile}"
 
         # CoreDNS should still be running (SIGHUP did not crash it)
         coredns.reload()
-        assert coredns.status == "running", (
-            f"CoreDNS crashed after Corefile update (status={coredns.status})"
-        )
+        assert (
+            coredns.status == "running"
+        ), f"CoreDNS crashed after Corefile update (status={coredns.status})"
 
     finally:
         _cleanup_docker(client)
@@ -227,9 +232,9 @@ async def test_e2e_federation_none_mode_no_changes(tmp_path, monkeypatch):
 
         corefile_after = _read_corefile_from_container(client, "netengine_coredns")
         # Corefile must not have changed — no stubs should have been added
-        assert corefile_before == corefile_after, (
-            "Corefile was modified even though cross_world mode is NONE"
-        )
+        assert (
+            corefile_before == corefile_after
+        ), "Corefile was modified even though cross_world mode is NONE"
 
     finally:
         _cleanup_docker(client)

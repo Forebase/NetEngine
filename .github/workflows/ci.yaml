@@ -141,6 +141,14 @@ jobs:
       - name: Install dependencies
         run: poetry install
 
+      - name: Configure Docker default address pools
+        run: |
+          sudo mkdir -p /etc/docker
+          echo '{"default-address-pools": [{"base": "192.168.128.0/18", "size": 24}]}' \
+            | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+          sleep 2
+
       - name: Pull CoreDNS image (cache warm-up)
         run: docker pull coredns/coredns:1.11.3
 
