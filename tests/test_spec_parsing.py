@@ -147,7 +147,10 @@ class TestUnsupportedFieldWarnings:
         from pathlib import Path
         import yaml
 
-        base = yaml.safe_load((Path(__file__).parent.parent / "examples" / "minimal.yaml").read_text())
+        base = yaml.safe_load(
+            (Path(__file__).parent.parent / "examples" / "minimal.yaml").read_text()
+        )
+
         # deep-merge overrides
         def _merge(a, b):
             for k, v in b.items():
@@ -155,6 +158,7 @@ class TestUnsupportedFieldWarnings:
                     _merge(a[k], v)
                 else:
                     a[k] = v
+
         _merge(base, overrides)
         spec = NetEngineSpec(**base)
         _cross_validate(spec)
@@ -162,56 +166,70 @@ class TestUnsupportedFieldWarnings:
 
     def test_dnssec_warns(self, caplog) -> None:
         import logging
+
         spec = self._make_spec({"pki": {"dnssec_enabled": True}})
         with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
             from netengine.spec.loader import _warn_unsupported
+
             _warn_unsupported(spec)
         assert any("dnssec_enabled" in r.message for r in caplog.records)
 
     def test_crl_warns(self, caplog) -> None:
         import logging
+
         spec = self._make_spec({"pki": {"crl_enabled": True}})
         with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
             from netengine.spec.loader import _warn_unsupported
+
             _warn_unsupported(spec)
         assert any("crl_enabled" in r.message for r in caplog.records)
 
     def test_ocsp_warns(self, caplog) -> None:
         import logging
+
         spec = self._make_spec({"pki": {"ocsp_enabled": True}})
         with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
             from netengine.spec.loader import _warn_unsupported
+
             _warn_unsupported(spec)
         assert any("ocsp_enabled" in r.message for r in caplog.records)
 
     def test_intermediate_ca_warns(self, caplog) -> None:
         import logging
+
         spec = self._make_spec({"pki": {"intermediate_ca_enabled": True}})
         with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
             from netengine.spec.loader import _warn_unsupported
+
             _warn_unsupported(spec)
         assert any("intermediate_ca_enabled" in r.message for r in caplog.records)
 
     def test_real_internet_mode_warns(self, caplog) -> None:
         import logging
+
         spec = self._make_spec({"gateway_portal": {"real_internet": {"mode": "mirrored"}}})
         with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
             from netengine.spec.loader import _warn_unsupported
+
             _warn_unsupported(spec)
         assert any("real_internet.mode" in r.message for r in caplog.records)
 
     def test_cross_world_mode_warns(self, caplog) -> None:
         import logging
+
         spec = self._make_spec({"gateway_portal": {"cross_world": {"mode": "peered"}}})
         with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
             from netengine.spec.loader import _warn_unsupported
+
             _warn_unsupported(spec)
         assert any("cross_world.mode" in r.message for r in caplog.records)
 
     def test_no_warnings_for_default_spec(self, caplog, minimal_spec) -> None:
         import logging
+
         with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
             from netengine.spec.loader import _warn_unsupported
+
             _warn_unsupported(minimal_spec)
         # dnssec_enabled defaults to True in the model, so one warning is expected for that
         assert all("crl" not in r.message and "ocsp" not in r.message for r in caplog.records)
