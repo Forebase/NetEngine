@@ -60,66 +60,11 @@ def _db_url_from_env() -> str | None:
 
 
 async def _run_migrations(db_url: str) -> None:
-    """Apply pending SQL migrations against the given Postgres URL."""
-    service = MigrationService(db_url, MIGRATIONS_DIR)
-    applied = await service.apply_pending()
-    if applied:
-        logger.info(f"Applied {len(applied)} migration(s)")
-    else:
-        logger.info("No pending migrations")
+    """Run all SQL migration files in order against the given Postgres URL."""
+    from netengine.utils.migration_service import MigrationService
 
-
-def _require_db_url() -> str:
-    db_url = _db_url_from_env()
-    if not db_url:
-        click.echo("Database URL is required: set NETENGINE_DB_URL or DATABASE_URL.", err=True)
-        sys.exit(2)
-    return db_url
-
-
-def _print_migration_status(status: MigrationStatus) -> None:
-    click.echo("Migration status")
-    click.echo(f"  Applied: {len(status.applied)}")
-    for record in status.applied:
-        applied_at = record.applied_at.isoformat() if record.applied_at else "unknown time"
-        click.echo(f"    ✓ {record.version} {record.name} ({applied_at})")
-
-    click.echo(f"  Pending: {len(status.pending)}")
-    for migration in status.pending:
-        click.echo(f"    • {migration.version} {migration.name} ({migration.path.name})")
-
-    click.echo(f"  Failed: {len(status.failed)}")
-    for record in status.failed:
-        detail = f": {record.error}" if record.error else ""
-        click.echo(f"    ✗ {record.version} {record.name}{detail}")
-
-    click.echo(f"  Checksum drift: {len(status.checksum_drifted)}")
-    for migration, record in status.checksum_drifted:
-        click.echo(
-            f"    ! {migration.version} {migration.name}: "
-            f"database={record.checksum or 'unknown'} file={migration.checksum}"
-        )
-
-    click.echo("  pgmq prerequisites:")
-    click.echo(f"    Extension available: {'yes' if status.pgmq_available else 'no'}")
-    click.echo(f"    Extension installed: {'yes' if status.pgmq_installed else 'no'}")
-    if status.missing_queues:
-        click.echo(f"    Missing queues: {', '.join(status.missing_queues)}")
-    else:
-        click.echo("    Missing queues: none")
-    from netengine.utils.migrations import apply_migration_files
-
-    migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
-    if not migration_files:
-        logger.info("No migration files found")
-        return
-
-    conn = await asyncpg.connect(db_url)
-    try:
-        applied_count = await apply_migration_files(conn, migration_files)
-        logger.info(f"Applied {applied_count} migration(s)")
-    finally:
-        await conn.close()
+    service = MigrationService(db_url, MIGRATIONS_DIR, logger.info)
+    await service.apply()
 
 
 @click.group()
