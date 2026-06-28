@@ -55,22 +55,10 @@ def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
 
 async def _run_migrations(db_url: str) -> None:
     """Run all SQL migration files in order against the given Postgres URL."""
-    import asyncpg  # type: ignore[import]
+    from netengine.utils.migration_service import MigrationService
 
-    migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
-    if not migration_files:
-        logger.info("No migration files found")
-        return
-
-    conn = await asyncpg.connect(db_url)
-    try:
-        for migration_path in migration_files:
-            sql = migration_path.read_text()
-            logger.info(f"Running migration: {migration_path.name}")
-            await conn.execute(sql)
-        logger.info(f"Applied {len(migration_files)} migration(s)")
-    finally:
-        await conn.close()
+    service = MigrationService(db_url, MIGRATIONS_DIR, logger.info)
+    await service.apply()
 
 
 @click.group()
