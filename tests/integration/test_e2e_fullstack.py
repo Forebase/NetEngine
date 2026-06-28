@@ -32,8 +32,8 @@ import pytest
 
 from netengine.core.state import RuntimeState
 from netengine.handlers.context import PhaseContext
-from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.dns import DNSHandler
+from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.phase_pki import PKIPhaseHandler
 from netengine.handlers.substrate import SubstrateHandler
 from netengine.logging import get_logger
