@@ -493,7 +493,7 @@ async def create_and(body: ANDCreateRequest, user: dict = Depends(require_auth))
     state = RuntimeState.load()
     ands_out = state.ands_output or {}
     instances: list[dict[str, Any]] = ands_out.get("instances", [])
-    if not any(i.get("name") == body.name for i in instances):
+    if not any(i.get("and_name") == body.name for i in instances):
         instances.append(record)
         ands_out["instances"] = instances
         state.ands_output = ands_out
@@ -546,6 +546,9 @@ async def remove_and(and_name: str, user: dict = Depends(require_auth)) -> dict[
     from netengine.core.supabase_client import get_db
 
     db = await get_db()
+    existing = await db.table("and_instances").select("and_name").eq("and_name", and_name).execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail=f"AND {and_name} not found")
     await db.table("and_instances").delete().eq("and_name", and_name).execute()
 
     state = RuntimeState.load()
