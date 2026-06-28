@@ -671,8 +671,6 @@ class DNSHandler(BasePhaseHandler):
             # All retries exhausted — capture CoreDNS container logs for diagnosis.
             logger.error(f"DNS SOA query failed for {root_zone_name} at {root_ip} (6 attempts)")
             try:
-                import docker as docker_lib
-
                 client = context.docker_client.client  # type: ignore[union-attr]
                 container = client.containers.get(COREDNS_CONTAINER_NAME)
                 coredns_logs = container.logs(tail=80).decode("utf-8", errors="replace")
