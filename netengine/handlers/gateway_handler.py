@@ -230,8 +230,8 @@ table inet netengine_internet {
         for mirror in config.service_mirrors:
             # Allow traffic destined for the in-world service counterpart
             mirror_accepts += (
-                f'\n        ip daddr {mirror.in_world_service} tcp dport {{ 80, 443 }}'
-                ' ct state new accept'
+                f"\n        ip daddr {mirror.in_world_service} tcp dport {{ 80, 443 }}"
+                " ct state new accept"
             )
 
         return f"""\

@@ -172,9 +172,7 @@ class PKIPhaseHandler(BasePhaseHandler):
                     rotation_interval_hours=interval,
                     expiry_warning_days=warning,
                     rotation_callback=(
-                        self._prepare_app_cert_rotation
-                        if cert_type in _callback_types
-                        else None
+                        self._prepare_app_cert_rotation if cert_type in _callback_types else None
                     ),
                 )
             )

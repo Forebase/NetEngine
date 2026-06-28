@@ -20,7 +20,6 @@ from netengine.handlers.phase_pki import PKIPhaseHandler
 from netengine.handlers.pki_handler import PKIHandler
 from netengine.workers.pki_cert_rotation_worker import CertTypeRotationConfig
 
-
 # ─────────────────────────────────────────────
 # Fixtures
 # ─────────────────────────────────────────────
@@ -87,9 +86,7 @@ class TestIntermediateCACert:
         # _read_file_from_volume remaps /home/step → /data
         assert "intermediate_ca.crt" in " ".join(cmd)
 
-    async def test_bootstrap_stores_intermediate_cert_when_enabled(
-        self, mock_docker, state
-    ):
+    async def test_bootstrap_stores_intermediate_cert_when_enabled(self, mock_docker, state):
         spec = {
             "pki": {
                 "acme": {"listen_ip": "10.0.0.6", "canonical_name": "ca.platform.internal"},
@@ -103,9 +100,15 @@ class TestIntermediateCACert:
         def side_effect(**kwargs):
             cmd = kwargs.get("command", [])
             if "intermediate_ca.crt" in " ".join(cmd):
-                return {"exit_code": 0, "logs": "-----BEGIN CERTIFICATE-----\nINTERMEDIATE\n-----END CERTIFICATE-----"}
+                return {
+                    "exit_code": 0,
+                    "logs": "-----BEGIN CERTIFICATE-----\nINTERMEDIATE\n-----END CERTIFICATE-----",
+                }
             if "ca.crt" in " ".join(cmd):
-                return {"exit_code": 0, "logs": "-----BEGIN CERTIFICATE-----\nROOT\n-----END CERTIFICATE-----"}
+                return {
+                    "exit_code": 0,
+                    "logs": "-----BEGIN CERTIFICATE-----\nROOT\n-----END CERTIFICATE-----",
+                }
             if "password.txt" in " ".join(cmd) and cmd[0] == "cat":
                 return {"exit_code": 0, "logs": "secret-password"}
             return {"exit_code": 0, "logs": ""}
@@ -178,9 +181,7 @@ class TestOCSPConfig:
                 return {"exit_code": 0, "logs": json.dumps(ca_config)}
             return {"exit_code": 0, "logs": ""}
 
-        mock_docker.run_container_one_off = AsyncMock(
-            side_effect=lambda **kw: capture_write(**kw)
-        )
+        mock_docker.run_container_one_off = AsyncMock(side_effect=lambda **kw: capture_write(**kw))
 
         with patch("tempfile.NamedTemporaryFile") as mock_tmp, patch("os.unlink"):
             mock_file = MagicMock()
@@ -220,7 +221,9 @@ class TestDNSSEC:
                 {"exit_code": 0, "logs": "Kinternal.+013+05678"},
             ]
         )
-        result = await pki_handler.setup_dnssec("internal", ksk_lifetime_days=365, zsk_lifetime_days=30)
+        result = await pki_handler.setup_dnssec(
+            "internal", ksk_lifetime_days=365, zsk_lifetime_days=30
+        )
         assert result["zone"] == "internal"
         assert result["ksk_name"] == "Kinternal.+013+01234"
         assert result["zsk_name"] == "Kinternal.+013+05678"
@@ -262,6 +265,7 @@ class TestDNSSEC:
 
     async def test_pki_flag_reads_from_pydantic_model(self):
         from unittest.mock import MagicMock
+
         spec = MagicMock()
         spec.pki.dnssec_enabled = True
         handler = PKIHandler(MagicMock(), RuntimeState(), spec)
@@ -331,9 +335,9 @@ class TestPKIRotationPolicyWiring:
         assert "mail" in types
 
     def test_override_values_are_applied_to_cert_type(self):
-        ctx, spec = self._make_context({
-            "app": {"rotation_interval_hours": 6, "expiry_warning_days": 7}
-        })
+        ctx, spec = self._make_context(
+            {"app": {"rotation_interval_hours": 6, "expiry_warning_days": 7}}
+        )
         configs = self._run_and_capture(ctx, spec, PKIPhaseHandler())
         app_cfg = next(c for c in configs if c.cert_type == "app")
         assert app_cfg.rotation_interval_hours == 6

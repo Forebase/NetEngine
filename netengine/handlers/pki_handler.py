@@ -353,9 +353,12 @@ class PKIHandler:
             image=bind_image,
             command=[
                 "dnssec-keygen",
-                "-f", "KSK",
-                "-a", "ECDSAP256SHA256",
-                "-n", "ZONE",
+                "-f",
+                "KSK",
+                "-a",
+                "ECDSAP256SHA256",
+                "-n",
+                "ZONE",
                 zone,
             ],
             volumes=volumes,
@@ -363,9 +366,7 @@ class PKIHandler:
             working_dir="/keys",
         )
         if ksk_result["exit_code"] != 0:
-            raise PKIError(
-                f"DNSSEC KSK generation failed for zone '{zone}': {ksk_result['logs']}"
-            )
+            raise PKIError(f"DNSSEC KSK generation failed for zone '{zone}': {ksk_result['logs']}")
         ksk_name = ksk_result["logs"].strip()
 
         # ZSK — signs all other RRsets
@@ -373,8 +374,10 @@ class PKIHandler:
             image=bind_image,
             command=[
                 "dnssec-keygen",
-                "-a", "ECDSAP256SHA256",
-                "-n", "ZONE",
+                "-a",
+                "ECDSAP256SHA256",
+                "-n",
+                "ZONE",
                 zone,
             ],
             volumes=volumes,
@@ -382,9 +385,7 @@ class PKIHandler:
             working_dir="/keys",
         )
         if zsk_result["exit_code"] != 0:
-            raise PKIError(
-                f"DNSSEC ZSK generation failed for zone '{zone}': {zsk_result['logs']}"
-            )
+            raise PKIError(f"DNSSEC ZSK generation failed for zone '{zone}': {zsk_result['logs']}")
         zsk_name = zsk_result["logs"].strip()
 
         return {

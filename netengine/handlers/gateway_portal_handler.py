@@ -54,10 +54,12 @@ class GatewayPortalHandler(BasePhaseHandler):
                 "deployed_at": datetime.utcnow().isoformat(),
             }
             context.runtime_state.save()
-            await self._emit_event(context, "gateway_portal.ready", context.runtime_state.gateway_portal_output)
+            await self._emit_event(
+                context, "gateway_portal.ready", context.runtime_state.gateway_portal_output
+            )
             return
 
-        docker = context.docker_client if context.docker_client is not None else DockerHandler()
+        docker = context.docker_client if context.docker_client is not None else DockerHandler()  # type: ignore[no-untyped-call]
         gateway = GatewayHandler(docker)
 
         # ── Real Internet ───────────────────────────────────────────────────
@@ -100,7 +102,7 @@ class GatewayPortalHandler(BasePhaseHandler):
         context: PhaseContext,
         gateway: GatewayHandler,
         portal: GatewayPortal,
-    ) -> dict:
+    ) -> dict[str, Any]:
         config = portal.real_internet
         context.logger.info(f"Real-internet mode: {config.mode.value}")
 
@@ -109,9 +111,7 @@ class GatewayPortalHandler(BasePhaseHandler):
         output: dict[str, Any] = {"mode": config.mode.value}
 
         if config.upstream_resolver_enabled and config.upstream_resolver_ip:
-            await self._configure_upstream_resolver(
-                context, config.upstream_resolver_ip
-            )
+            await self._configure_upstream_resolver(context, config.upstream_resolver_ip)
             output["upstream_resolver"] = config.upstream_resolver_ip
 
         if config.mode == GatewayRealInternetMode.MIRRORED and config.service_mirrors:
@@ -122,9 +122,7 @@ class GatewayPortalHandler(BasePhaseHandler):
 
         return output
 
-    async def _configure_upstream_resolver(
-        self, context: PhaseContext, resolver_ip: str
-    ) -> None:
+    async def _configure_upstream_resolver(self, context: PhaseContext, resolver_ip: str) -> None:
         """Inject an upstream forwarder into the CoreDNS root Corefile.
 
         Adds a ``forward . <resolver_ip>`` directive so that names not
@@ -137,25 +135,21 @@ class GatewayPortalHandler(BasePhaseHandler):
 
         try:
             corefile_patch = (
-                f"\n# Upstream internet resolver (gateway portal)\n"
-                f"forward . {resolver_ip}\n"
+                f"\n# Upstream internet resolver (gateway portal)\n" f"forward . {resolver_ip}\n"
             )
             corefile_append_cmd = [
-                "sh", "-c",
+                "sh",
+                "-c",
                 f"echo '{corefile_patch}' >> /etc/coredns/Corefile",
             ]
             exit_code, output = await context.docker_client.exec_command(
                 "netengine_coredns", corefile_append_cmd
             )
             if exit_code != 0:
-                context.logger.warning(
-                    f"Could not append upstream resolver to CoreDNS: {output}"
-                )
+                context.logger.warning(f"Could not append upstream resolver to CoreDNS: {output}")
             else:
                 # Reload CoreDNS to pick up the change
-                await context.docker_client.exec_command(
-                    "netengine_coredns", ["kill", "-HUP", "1"]
-                )
+                await context.docker_client.exec_command("netengine_coredns", ["kill", "-HUP", "1"])
                 context.logger.info(f"Upstream resolver configured: {resolver_ip}")
         except Exception as exc:
             context.logger.warning(f"Upstream resolver setup skipped: {exc}")
@@ -170,7 +164,7 @@ class GatewayPortalHandler(BasePhaseHandler):
         gateway: GatewayHandler,
         docker: DockerHandler,
         portal: GatewayPortal,
-    ) -> dict:
+    ) -> dict[str, Any]:
         cross_world = portal.cross_world
 
         if cross_world.mode == GatewayCrossWorldMode.NONE:
@@ -178,8 +172,7 @@ class GatewayPortalHandler(BasePhaseHandler):
             return {"mode": GatewayCrossWorldMode.NONE.value, "peers": []}
 
         context.logger.info(
-            f"Cross-world mode: {cross_world.mode.value} "
-            f"({len(cross_world.peers)} peer(s))"
+            f"Cross-world mode: {cross_world.mode.value} " f"({len(cross_world.peers)} peer(s))"
         )
 
         peers_output = []
@@ -198,7 +191,7 @@ class GatewayPortalHandler(BasePhaseHandler):
         gateway: GatewayHandler,
         docker: DockerHandler,
         peer: CrossWorldPeer,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Wire up a single cross-world peer: trust anchor + routing + DNS."""
         context.logger.info(f"Setting up cross-world peer: {peer.name} ({peer.endpoint})")
         result: dict[str, Any] = {
@@ -213,9 +206,7 @@ class GatewayPortalHandler(BasePhaseHandler):
                 await self._install_trust_anchor(context, docker, peer.name, peer.trust_anchor_cert)
                 result["trust_anchor_installed"] = True
             except Exception as exc:
-                context.logger.warning(
-                    f"Trust anchor install failed for peer {peer.name}: {exc}"
-                )
+                context.logger.warning(f"Trust anchor install failed for peer {peer.name}: {exc}")
                 result["trust_anchor_installed"] = False
                 result["trust_anchor_error"] = str(exc)
         else:
@@ -272,15 +263,11 @@ class GatewayPortalHandler(BasePhaseHandler):
             "netengine_gateway", ["update-ca-certificates"]
         )
         if exit_code != 0:
-            raise PKIError(
-                f"update-ca-certificates failed for peer {peer_name}: {output}"
-            )
+            raise PKIError(f"update-ca-certificates failed for peer {peer_name}: {output}")
 
         context.logger.info(f"Trust anchor installed for peer: {peer_name}")
 
-    async def _configure_peer_dns(
-        self, context: PhaseContext, peer: CrossWorldPeer
-    ) -> None:
+    async def _configure_peer_dns(self, context: PhaseContext, peer: CrossWorldPeer) -> None:
         """Add a CoreDNS forwarding zone for the peer world's TLD.
 
         Derives the peer TLD from ``<peer.name>.internal`` and adds a
@@ -304,9 +291,7 @@ class GatewayPortalHandler(BasePhaseHandler):
             ["sh", "-c", f"echo '{corefile_stub}' >> /etc/coredns/Corefile"],
         )
         if exit_code != 0:
-            raise GatewayError(
-                f"Could not configure DNS forwarding for peer {peer.name}: {output}"
-            )
+            raise GatewayError(f"Could not configure DNS forwarding for peer {peer.name}: {output}")
 
         # Signal CoreDNS to reload config
         await context.docker_client.exec_command("netengine_coredns", ["kill", "-HUP", "1"])
@@ -316,7 +301,9 @@ class GatewayPortalHandler(BasePhaseHandler):
     # Event emission
     # ─────────────────────────────────────────────
 
-    async def _emit_event(self, context: PhaseContext, event_type: str, payload: dict) -> None:
+    async def _emit_event(
+        self, context: PhaseContext, event_type: str, payload: dict[str, Any]
+    ) -> None:
         event = EventEnvelope.create(
             event_type=event_type,
             emitted_by="gateway_portal_handler",
@@ -327,6 +314,6 @@ class GatewayPortalHandler(BasePhaseHandler):
         context.logger.info(f"Event emitted: {event_type}")
         if context.pgmq_client is not None:
             try:
-                await context.pgmq_client.send(event)
+                await context.pgmq_client.send("gateway_portal_events", event)
             except Exception as exc:
                 context.logger.warning(f"Failed to queue gateway portal event: {exc}")

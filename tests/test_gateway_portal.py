@@ -16,9 +16,14 @@ from netengine.core.state import RuntimeState
 from netengine.errors import GatewayError
 from netengine.handlers.gateway_handler import GatewayHandler
 from netengine.handlers.gateway_portal_handler import GatewayPortalHandler
-from netengine.spec.models import CrossWorldConfig, CrossWorldPeer, GatewayPortal, RealInternetConfig, ServiceMirror
+from netengine.spec.models import (
+    CrossWorldConfig,
+    CrossWorldPeer,
+    GatewayPortal,
+    RealInternetConfig,
+    ServiceMirror,
+)
 from netengine.spec.types import GatewayCrossWorldMode, GatewayRealInternetMode
-
 
 # ─────────────────────────────────────────────
 # Fixtures
@@ -143,6 +148,7 @@ class TestApplyInternetPolicy:
         def capture_open(path, mode="r", **kw):
             if isinstance(path, str) and path.endswith(".nft") and "w" in mode:
                 import io
+
                 buf = io.StringIO()
                 buf.name = path
                 written_content.append(buf)
@@ -151,12 +157,15 @@ class TestApplyInternetPolicy:
 
         with patch("tempfile.NamedTemporaryFile") as mock_tmp, patch("os.unlink"):
             import io
+
             buf = io.StringIO()
             buf.name = "/tmp/fake.nft"
-            mock_tmp.return_value.__enter__ = MagicMock(return_value=MagicMock(
-                write=lambda s: written_content.append(s),
-                name="/tmp/fake.nft",
-            ))
+            mock_tmp.return_value.__enter__ = MagicMock(
+                return_value=MagicMock(
+                    write=lambda s: written_content.append(s),
+                    name="/tmp/fake.nft",
+                )
+            )
             mock_tmp.return_value.__exit__ = MagicMock(return_value=False)
             await gateway.apply_internet_policy(config)
 
@@ -339,6 +348,7 @@ class TestRuntimeStateNewFields:
 
     def test_new_fields_survive_save_load_cycle(self, tmp_path, monkeypatch):
         import os
+
         state_path = tmp_path / "state.json"
         monkeypatch.setenv("NETENGINE_STATE_FILE", str(state_path))
 
