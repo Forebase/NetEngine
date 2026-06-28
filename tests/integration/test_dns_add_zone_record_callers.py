@@ -29,6 +29,17 @@ async def test_phase_3_pki_inserts_ca_dns_record(context_with_zone_files):
         ca_ip="10.0.0.6",
         ca_dns="ca.platform.internal",
         bootstrap=AsyncMock(),
+        setup_dnssec=AsyncMock(
+            return_value={
+                "zone": "internal",
+                "ksk_name": "Kinternal.+013+00001",
+                "zsk_name": "Kinternal.+013+00002",
+                "volume": "netengines_dnssec_keys",
+                "algorithm": "ECDSAP256SHA256",
+                "ksk_lifetime_days": 365,
+                "zsk_lifetime_days": 30,
+            }
+        ),
     )
 
     with (
