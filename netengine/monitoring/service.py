@@ -6,6 +6,7 @@ from typing import Any
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.diagnostic import ProbeResult, ProbeStatus, build_runner
+from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 from netengine.spec.models import NetEngineSpec
 
@@ -87,7 +88,7 @@ class MonitoringService:
         )
 
         try:
-            msg_id = await self._pgmq.send("world_health", event)
+            msg_id = await self._pgmq.send(Queue.WORLD_HEALTH, event)
             logger.debug(f"Published world_health event (msg_id: {msg_id})")
         except Exception as e:
             logger.error(f"Failed to publish world_health event: {e}", exc_info=True)

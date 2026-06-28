@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Any, Optional
 
 from netengine.core.orchestrator import Orchestrator
+from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 
@@ -330,7 +331,7 @@ class DriftDetectionController:
                 emitted_by="drift_controller",
                 payload=payload,
             )
-            await self.orchestrator.context.pgmq_client.send("drift_events", event)
+            await self.orchestrator.context.pgmq_client.send(Queue.DRIFT_EVENTS, event)
             logger.debug(f"Drift event emitted: {event_type}")
         except Exception as e:
             logger.error(f"Failed to emit drift event: {e}")

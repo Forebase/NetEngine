@@ -7,6 +7,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.core.state import RuntimeState
+from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 from netengine.handlers.pki_handler import PKIHandler
 
@@ -180,6 +181,6 @@ class PKICertRotationWorker:
                 emitted_by="pki_cert_rotation_worker",
                 payload=payload,
             )
-            await self.pgmq.send("pki_cert_rotation_events", event)
+            await self.pgmq.send(Queue.PKI_CERT_ROTATION_EVENTS, event)
         except Exception as e:
             self.logger.debug(f"Failed to emit rotation event: {e}")
