@@ -53,22 +53,23 @@ def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
     return overrides
 
 
-async def _run_migrations(db_url: str) -> MigrationRunResult:
-    """Run SQL migrations using the shared migration service."""
-    result = await run_migrations(db_url)
-    for migration in result.results:
-        if migration.status == "applied":
-            logger.info(
-                f"Applied migration: {migration.filename} "
-                f"({migration.duration_seconds:.3f}s)"
-            )
-        elif migration.status == "skipped":
-            logger.info(f"Skipped migration: {migration.filename} (already applied)")
-    logger.info(
-        f"Migrations complete: {result.applied_count} applied, "
-        f"{result.skipped_count} skipped, {result.failed_count} failed"
-    )
-    return result
+async def _run_migrations(db_url: str) -> None:
+    """Run all SQL migration files in order against the given Postgres URL."""
+    import asyncpg  # type: ignore[import]
+
+    from netengine.utils.migrations import apply_migration_files
+
+    migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
+    if not migration_files:
+        logger.info("No migration files found")
+        return
+
+    conn = await asyncpg.connect(db_url)
+    try:
+        applied_count = await apply_migration_files(conn, migration_files)
+        logger.info(f"Applied {applied_count} migration(s)")
+    finally:
+        await conn.close()
 
 
 @click.group()
