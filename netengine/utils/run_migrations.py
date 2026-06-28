@@ -1,3 +1,13 @@
+"""Compatibility wrapper for applying NetEngine database migrations."""
+
+import os
+from pathlib import Path
+
+from netengine.core.migrations import MigrationService, apply_migration_files
+
+
+async def apply_migrations() -> None:
+    """Apply pending SQL migrations using the shared migration service.
 import os
 from pathlib import Path
 
@@ -6,9 +16,15 @@ from netengine.utils.migrations import apply_migration_files
 
 from __future__ import annotations
 
-    Reads NETENGINE_DB_URL (e.g. postgresql://user:pass@host:5432/db).
-    Falls back to SUPABASE_DB_* variables for backward compat with cloud setups.
+    Reads NETENGINE_DB_URL first, then DATABASE_URL for consistency with the
+    CLI's startup and migration commands.
     """
+    db_url = os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+    if not db_url:
+        raise RuntimeError("Database URL is required: set NETENGINE_DB_URL or DATABASE_URL.")
+
+    migrations_dir = Path(__file__).parent.parent.parent / "migrations"
+    await MigrationService(db_url, migrations_dir).apply_pending()
     import asyncpg  # type: ignore[import]
 
     db_url = os.environ.get("NETENGINE_DB_URL")
