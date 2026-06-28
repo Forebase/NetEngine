@@ -39,7 +39,7 @@ from netengine.handlers.substrate import SubstrateHandler
 from netengine.logging import get_logger
 from netengine.spec.loader import load_spec
 
-EXAMPLES_DIR = Path(__file__).parent.parent.parent / "examples"
+FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
 
 # ─────────────────────────────────────────────
@@ -144,7 +144,7 @@ async def test_e2e_substrate_and_dns(tmp_path, monkeypatch):
     if client is None:
         pytest.skip("Docker daemon not available")
 
-    spec = load_spec(EXAMPLES_DIR / "minimal.yaml")
+    spec = load_spec(FIXTURES_DIR / "e2e-spec.yaml")
     ctx = _build_context(spec, str(tmp_path / "coredns"))
 
     try:
@@ -215,7 +215,7 @@ async def test_e2e_pki_acme_directory(tmp_path, monkeypatch):
     if client is None:
         pytest.skip("Docker daemon not available")
 
-    spec = load_spec(EXAMPLES_DIR / "minimal.yaml")
+    spec = load_spec(FIXTURES_DIR / "e2e-spec.yaml")
     ctx = _build_context(spec, str(tmp_path / "coredns"))
 
     try:

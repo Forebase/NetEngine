@@ -43,7 +43,7 @@ from netengine.spec.models import (
 )
 from netengine.spec.types import GatewayCrossWorldMode, GatewayRealInternetMode
 
-EXAMPLES_DIR = Path(__file__).parent.parent.parent / "examples"
+FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
 
 # ─────────────────────────────────────────────
@@ -108,7 +108,7 @@ async def test_e2e_cross_world_federation(tmp_path, monkeypatch):
     if client is None:
         pytest.skip("Docker daemon not available")
 
-    spec = load_spec(EXAMPLES_DIR / "minimal.yaml")
+    spec = load_spec(FIXTURES_DIR / "e2e-spec.yaml")
     docker_handler = DockerHandler()
     state = RuntimeState()
     ctx = PhaseContext(
@@ -205,7 +205,7 @@ async def test_e2e_federation_none_mode_no_changes(tmp_path, monkeypatch):
     if client is None:
         pytest.skip("Docker daemon not available")
 
-    spec = load_spec(EXAMPLES_DIR / "minimal.yaml")
+    spec = load_spec(FIXTURES_DIR / "e2e-spec.yaml")
     docker_handler = DockerHandler()
     state = RuntimeState()
     ctx = PhaseContext(
