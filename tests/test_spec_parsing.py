@@ -143,9 +143,11 @@ class TestUnsupportedFieldWarnings:
     """_warn_unsupported emits the right warnings for enabled-but-unimplemented fields."""
 
     def _make_spec(self, overrides: dict) -> NetEngineSpec:
-        from netengine.spec.loader import _cross_validate
         from pathlib import Path
+
         import yaml
+
+        from netengine.spec.loader import _cross_validate
 
         base = yaml.safe_load(
             (Path(__file__).parent.parent / "examples" / "minimal.yaml").read_text()
