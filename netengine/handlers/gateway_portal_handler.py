@@ -247,8 +247,8 @@ class GatewayPortalHandler(BasePhaseHandler):
         then runs ``update-ca-certificates`` so that TLS connections to the peer
         are automatically trusted by any process running in the gateway.
         """
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".crt", delete=False) as f:
             f.write(cert_pem)
