@@ -144,6 +144,11 @@ touching any live state.
 
 ### Inspecting event queues
 
+NetEngine's pgmq queue inventory is defined in
+`netengine/events/queues.py::PRIMARY_QUEUES`. There are currently 11 primary
+queues, and each primary queue has one matching dead-letter queue (`*_dlq`) for
+failed messages.
+
 ```bash
 # Show all queue depths
 poetry run netengine events
