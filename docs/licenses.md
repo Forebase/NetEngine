@@ -50,6 +50,7 @@ Generated from installed Python package metadata. Re-run with `python scripts/ge
 | omegaconf | 2.3.1 | UNKNOWN | https://github.com/omry/omegaconf |
 | packaging | 26.2 | Apache-2.0 OR BSD-2-Clause | UNKNOWN |
 | pathspec | 1.1.1 | UNKNOWN | UNKNOWN |
+| pip | 25.1.1 | MIT | UNKNOWN |
 | platformdirs | 4.10.0 | MIT | UNKNOWN |
 | pluggy | 1.6.0 | MIT | UNKNOWN |
 | postgrest | 2.31.0 | MIT | UNKNOWN |

@@ -229,3 +229,10 @@ jobs:
           else
             echo "trivy not available; skipping vulnerability scan"
           fi
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"

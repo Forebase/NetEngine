@@ -121,6 +121,8 @@ def _parse_compose_port(raw_port: object) -> tuple[int, str] | None:
         if published is None:
             return None
         proto = str(raw_port.get("protocol") or "tcp").lower()
+        if published is None:
+            return None
         try:
             return int(published), proto
         except (TypeError, ValueError):
@@ -604,6 +606,12 @@ def _check_filesystem(ctx: DoctorContext) -> list[DoctorCheckResult]:
     ]
 
 
+def _check_pgmq_runtime_state(ctx: DoctorContext) -> DoctorCheckResult:
+    from netengine.diagnostic.db_doctor import check_pgmq_runtime_state
+
+    return check_pgmq_runtime_state(ctx.state_file)
+
+
 def standard_probes() -> tuple[DoctorProbe, ...]:
     """Return host-readiness probes; each accepts only ``DoctorContext``."""
     return (
@@ -614,6 +622,7 @@ def standard_probes() -> tuple[DoctorProbe, ...]:
         lambda ctx: _check_docker_daemon(),
         lambda ctx: _check_compose(),
         _check_database,
+        _check_pgmq_runtime_state,
         _check_ports,
         _check_filesystem,
         _check_docker_conflicts,

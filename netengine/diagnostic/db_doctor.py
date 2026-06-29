@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Iterable
+from pathlib import Path
 from urllib.parse import urlparse
 
 from netengine.diagnostic.preflight import DoctorCheckResult, DoctorStatus
+from netengine.events.emitter import _PGMQ_DISABLED_QUEUE
 from netengine.events.queues import PRIMARY_QUEUES, dlq_for
 
 DB_URL_HINT = (
@@ -15,6 +18,10 @@ DB_URL_HINT = (
 )
 PGMQ_HINT = "Run database migrations or install pgmq before normal alpha boot."
 QUEUE_HINT = "Run `netengine migrate up`; migrations may create missing pgmq queues."
+PGMQ_RUNTIME_HINT = (
+    "pgmq_client was not wired during the last world run — events were silently dropped. "
+    "Ensure database migrations ran and pgmq is healthy, then re-run `netengine up`."
+)
 
 
 def _parse_db_url(db_url: str | None) -> DoctorCheckResult:
@@ -163,3 +170,56 @@ def check_database(db_url: str | None, *, timeout: float = 3.0) -> list[DoctorCh
     if not db_url or parsed.status != DoctorStatus.OK:
         return checks
     return checks + asyncio.run(_inspect_database(db_url, timeout=timeout))
+
+
+def check_pgmq_runtime_state(state_file: Path) -> DoctorCheckResult:
+    """Check the runtime state file for events dropped because pgmq_client was not wired.
+
+    This surfaces the ephemeral pgmq-disabled condition that is otherwise only
+    visible at WARNING log level during a live run.
+    """
+    if not state_file.exists():
+        return DoctorCheckResult(
+            "pgmq runtime state",
+            DoctorStatus.SKIP,
+            "no runtime state file found (world not yet booted)",
+            group="database",
+            required=False,
+        )
+
+    try:
+        data = json.loads(state_file.read_text())
+    except Exception as exc:
+        return DoctorCheckResult(
+            "pgmq runtime state",
+            DoctorStatus.WARN,
+            f"could not read runtime state file: {exc}",
+            "Inspect the state file manually or re-run `netengine up`.",
+            group="database",
+            required=False,
+        )
+
+    failures: list[dict[str, object]] = data.get("event_send_failures") or []
+    disabled_drops = [f for f in failures if f.get("queue") == _PGMQ_DISABLED_QUEUE]
+    if disabled_drops:
+        return DoctorCheckResult(
+            "pgmq runtime state",
+            DoctorStatus.WARN,
+            (
+                f"{len(disabled_drops)} event(s) silently dropped in last run "
+                f"because pgmq_client was not wired "
+                f"(most recent: {disabled_drops[-1].get('event_type', 'unknown')} "
+                f"at {disabled_drops[-1].get('failed_at', 'unknown')})"
+            ),
+            PGMQ_RUNTIME_HINT,
+            group="database",
+            required=False,
+        )
+
+    return DoctorCheckResult(
+        "pgmq runtime state",
+        DoctorStatus.OK,
+        "no pgmq-disabled drops recorded in last run",
+        group="database",
+        required=False,
+    )
