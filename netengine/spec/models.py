@@ -272,7 +272,7 @@ class PKIPhase(SpecModel):
         default=False, feature_state=PKI_FEATURE_STATES["pki.intermediate_ca_enabled"]
     )
     dnssec_enabled: bool = feature_state_field(
-        default=True, feature_state=PKI_FEATURE_STATES["pki.dnssec_enabled"]
+        default=False, feature_state=PKI_FEATURE_STATES["pki.dnssec_enabled"]
     )
     dnssec_ksk_lifetime_days: int = feature_state_field(
         default=365, feature_state=PKI_FEATURE_STATES["pki.dnssec_ksk_lifetime_days"]

@@ -56,9 +56,8 @@ pki:
     enabled: true
     listen_ip: 10.0.0.6
     canonical_name: ca.platform.internal
+  # DNSSEC is unsupported in alpha; leave disabled until key generation is integrated with zone signing.
   dnssec_enabled: false
-  dnssec_ksk_lifetime_days: 365
-  dnssec_zsk_lifetime_days: 30
 
 identity_platform:
   oidc_provider: keycloak

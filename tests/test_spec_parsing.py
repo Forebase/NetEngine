@@ -122,6 +122,7 @@ class TestSpecDefaults:
         assert minimal_spec.substrate.orchestrator.value == "swarm"
         assert minimal_spec.dns.root.listen_ip == "10.0.0.2"
         assert minimal_spec.pki.root_ca.cert_lifetime_days == 3650
+        assert minimal_spec.pki.dnssec_enabled is False
         assert minimal_spec.gateway_portal.enabled is True
 
     def test_networks_defaults(self, minimal_spec: NetEngineSpec) -> None:
@@ -231,4 +232,5 @@ class TestFeatureStateValidation:
             from netengine.spec.loader import _validate_feature_states
 
             _validate_feature_states(minimal_spec)
+        assert minimal_spec.pki.dnssec_enabled is False
         assert not caplog.records

@@ -60,6 +60,7 @@ pki:
     enabled: true
     listen_ip: 10.0.0.6
     canonical_name: ca.platform.internal
+  # DNSSEC is unsupported in alpha; leave disabled until key generation is integrated with zone signing.
   dnssec_enabled: false
 
 identity_platform:
