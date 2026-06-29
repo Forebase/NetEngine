@@ -188,21 +188,10 @@ def _cross_validate(spec: NetEngineSpec) -> None:
         )
 
 
-def validate_spec_data(
-    data: dict[str, Any], *, validate_feature_states: bool = True
+def _validate_spec_data(
+    data: dict[str, Any], *, validate_feature_states: bool
 ) -> NetEngineSpec:
-    """Validate already-composed spec data into a ``NetEngineSpec``.
-
-    Args:
-        data: Composed raw specification dictionary
-        validate_feature_states: Whether to enforce feature-state metadata
-
-    Returns:
-        Validated, immutable NetEngineSpec object
-
-    Raises:
-        SpecLoadError: If the composed spec data is invalid
-    """
+    """Validate loaded spec data and return a NetEngineSpec model."""
     if not isinstance(data, dict):
         raise SpecLoadError("Spec must be a YAML object (dict)")
 
@@ -227,6 +216,35 @@ def validate_spec_data(
     if validate_feature_states:
         _validate_feature_states(spec)
     return spec
+
+
+def load_spec(yaml_path: str | Path, *, validate_feature_states: bool = True) -> NetEngineSpec:
+    """Load and validate a NetEngine YAML specification.
+
+    Args:
+        data: Composed raw specification dictionary
+        validate_feature_states: Whether to enforce feature-state metadata
+
+    Returns:
+        Validated, immutable NetEngineSpec object
+
+    Raises:
+        SpecLoadError: If the composed spec data is invalid
+    """
+    yaml_path = Path(yaml_path)
+
+    if not yaml_path.exists():
+        raise SpecLoadError(f"Spec file not found: {yaml_path}")
+
+    try:
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        raise SpecLoadError(f"Failed to parse YAML: {e}")
+    except IOError as e:
+        raise SpecLoadError(f"Failed to read file: {e}")
+
+    return _validate_spec_data(data, validate_feature_states=validate_feature_states)
 
 
 def load_spec(yaml_path: str | Path, *, validate_feature_states: bool = True) -> NetEngineSpec:
@@ -305,7 +323,7 @@ def load_spec_with_composition(
     except IOError as e:
         raise SpecLoadError(f"Failed to read file: {e}")
 
-    return validate_spec_data(data, validate_feature_states=validate_feature_states)
+    return _validate_spec_data(data, validate_feature_states=validate_feature_states)
 
 
 def load_spec_with_environment(
@@ -354,4 +372,4 @@ def load_spec_with_environment(
     except IOError as e:
         raise SpecLoadError(f"Failed to read file: {e}")
 
-    return validate_spec_data(data, validate_feature_states=validate_feature_states)
+    return _validate_spec_data(data, validate_feature_states=validate_feature_states)
