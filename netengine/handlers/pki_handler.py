@@ -99,19 +99,26 @@ class PKIHandler:
                 "NetEngines Root CA",
                 "--dns",
                 self.ca_dns,
-                "--ip",
-                self.ca_ip,
                 "--provisioner",
                 "acme",
                 "--password-file",
                 "/tmp/pass/password.txt",
                 "--no-start",
             ]
+            logger.info(f"Running step ca init with command: {' '.join(cmd)}")
             result = await self.docker.run_container_one_off(
                 image=self.image, command=cmd, volumes=volumes, environment={}
             )
             if result["exit_code"] != 0:
-                raise PKIError(f"step ca init failed: {result['logs']}")
+                logger.error(f"step ca init failed with exit code {result['exit_code']}")
+                logger.error(f"Command: {' '.join(cmd)}")
+                logger.error(f"Output: {result['logs']}")
+                raise PKIError(
+                    f"step ca init failed: {result['logs']}. "
+                    f"Ensure step CLI version is compatible (current image: {self.image}). "
+                    f"The '--ip' flag is not supported in newer step versions; "
+                    f"container IP is assigned by Docker networking instead."
+                )
 
             # Persist password to volume so _start_server can retrieve it
             persist_result = await self.docker.run_container_one_off(

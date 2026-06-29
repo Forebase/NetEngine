@@ -455,6 +455,53 @@ def _check_optional_commands(ctx: DoctorContext) -> list[DoctorCheckResult]:
     return [_check_command(name, required=False) for name in ctx.optional_commands]
 
 
+def _check_step_version() -> DoctorCheckResult:
+    """Check step CLI version for PKI compatibility."""
+    import shutil
+
+    step_path = shutil.which("step")
+    if not step_path:
+        return DoctorCheckResult(
+            "step version",
+            DoctorStatus.SKIP,
+            "step CLI not found; PKI features will be unavailable",
+            None,
+            "host",
+            required=False,
+        )
+
+    try:
+        result = _run(["step", "version"])
+        if result.returncode == 0:
+            version_output = result.stdout.strip()
+            return DoctorCheckResult(
+                "step version",
+                DoctorStatus.OK,
+                f"step CLI available: {version_output.split()[0] if version_output else 'unknown'}",
+                None,
+                "host",
+                required=False,
+            )
+    except Exception as exc:
+        return DoctorCheckResult(
+            "step version",
+            DoctorStatus.WARN,
+            f"Could not determine step version: {exc}",
+            "Ensure step CLI is installed and working correctly.",
+            "host",
+            required=False,
+        )
+
+    return DoctorCheckResult(
+        "step version",
+        DoctorStatus.WARN,
+        "step version check failed",
+        "Ensure step CLI is properly installed.",
+        "host",
+        required=False,
+    )
+
+
 def _check_database(ctx: DoctorContext) -> list[DoctorCheckResult]:
     if (ctx.feature_flags or {}).get("skip_db", False):
         return [
@@ -505,6 +552,7 @@ def standard_probes() -> tuple[DoctorProbe, ...]:
         lambda ctx: _check_python(),
         _check_required_commands,
         _check_optional_commands,
+        lambda ctx: _check_step_version(),
         lambda ctx: _check_docker_daemon(),
         lambda ctx: _check_compose(),
         _check_database,
