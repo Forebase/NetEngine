@@ -270,7 +270,7 @@ def _statement_context(statement: str, max_length: int = 240) -> str:
 
 def _asyncpg() -> Any:
     try:
-        import asyncpg  # type: ignore[import-untyped]
+        import asyncpg
     except ModuleNotFoundError as exc:
         raise RuntimeError("asyncpg is required to run database migrations") from exc
     return asyncpg

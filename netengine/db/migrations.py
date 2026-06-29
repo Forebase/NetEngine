@@ -131,7 +131,7 @@ async def run_migrations(
     migrations_dir: Path | str = MIGRATIONS_DIR,
 ) -> MigrationRunResult:
     """Apply all pending SQL migrations and return structured outcomes."""
-    import asyncpg  # type: ignore[import-untyped]
+    import asyncpg
 
     resolved_dir = Path(migrations_dir)
     migration_files = discover_migrations(resolved_dir)
@@ -233,7 +233,7 @@ async def migration_status(
     migrations_dir: Path | str = MIGRATIONS_DIR,
 ) -> MigrationStatusReport:
     """Inspect migration state without applying pending migration files."""
-    import asyncpg  # type: ignore[import-untyped]
+    import asyncpg
 
     resolved_dir = Path(migrations_dir)
     migration_files = discover_migrations(resolved_dir)

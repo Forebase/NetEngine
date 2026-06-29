@@ -77,7 +77,7 @@ class MigrationService:
 
     async def apply_pending(self) -> list[MigrationRecord]:
         """Apply pending migrations and return records applied in this invocation."""
-        import asyncpg  # type: ignore[import-untyped]
+        import asyncpg
 
         conn = await asyncpg.connect(self.db_url)
         try:
@@ -113,7 +113,7 @@ class MigrationService:
             await conn.close()
 
     async def status(self) -> MigrationStatus:
-        import asyncpg  # type: ignore[import-untyped]
+        import asyncpg
 
         conn = await asyncpg.connect(self.db_url)
         try:

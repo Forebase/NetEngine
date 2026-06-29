@@ -20,7 +20,7 @@ import tempfile
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Any, Callable, Iterable
 from urllib.parse import urlparse
 
 import click
@@ -72,7 +72,7 @@ def _run(command: list[str], *, timeout: float = 8.0) -> subprocess.CompletedPro
     return subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
 
 
-def _compose_config(project_root: Path | None = None) -> dict[str, object]:
+def _compose_config(project_root: Path | None = None) -> dict[str, Any]:
     compose_file = (project_root or _repo_root()) / "docker-compose.yml"
     try:
         return yaml.safe_load(compose_file.read_text()) or {}
