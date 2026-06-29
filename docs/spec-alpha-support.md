@@ -31,21 +31,22 @@ Feature states:
 | `gateway_portal.real_internet.upstream_resolver_enabled` | `experimental` | `false` | `netengine.handlers.gateway_portal_handler`, `netengine.spec.loader` | CoreDNS upstream forwarding stubs are appended and reloaded; duplicate-stub reconciliation remains alpha. |
 | `gateway_portal.cross_world.mode` | `experimental` | `none` | `netengine.handlers.gateway_handler`, `netengine.handlers.gateway_portal_handler`, `netengine.spec.loader` | PEERED/FEDERATED lifecycle hooks install peer routing, DNS stubs, trust anchors, runtime artifacts, rollback, and healthchecks; interoperability remains alpha. |
 | `gateway_portal.cross_world.peers` | `experimental` | `[]` | `netengine.handlers.gateway_handler`, `netengine.handlers.gateway_portal_handler`, `netengine.spec.loader` | Peer add/update/remove, trust-anchor rotation, and routing reapply are implemented with mocked two-world DNS coverage; live multi-host federation is not yet guaranteed. |
-| `ands.profiles.*.dynamic_ip` | `unsupported` | profile default | `netengine.spec.loader` | Dynamic IP allocation in AND profiles is not implemented. |
-| `ands.profiles.*.reverse_dns` | `unsupported` | profile default | `netengine.spec.loader` | Reverse DNS delegation from AND profiles is not implemented. |
-| `ands.profiles.*.bgp` | `unsupported` | profile default | `netengine.spec.loader` | BGP profile configuration is not implemented. |
+| `ands.profiles.*.dynamic_ip` | `experimental` | profile default | `netengine.phases.phase_ands`, `netengine.handlers.gateway_handler` | DHCP setup is wired through dnsmasq in the gateway container; requires dnsmasq in the gateway image and remains alpha. |
+| `ands.profiles.*.reverse_dns` | `experimental` | profile default | `netengine.phases.phase_ands`, `netengine.handlers.dns` | in-addr.arpa zone provisioning is available for AND profiles; propagation to external resolvers is not provided. |
+| `ands.profiles.*.bgp` | `experimental` | profile default | `netengine.phases.phase_ands`, `netengine.handlers.gateway_handler` | Bird2 sidecar provisioning is wired; optional mode tolerates startup failure, required mode aborts provisioning, and the image must be available. |
 
 ## PKI alpha notes
 
 - **DNSSEC lifetimes**: `pki.dnssec_ksk_lifetime_days` and
   `pki.dnssec_zsk_lifetime_days` are persisted as generated-key metadata by
-  `PKIHandler.setup_dnssec`, but they do not schedule rotation and do not wire
-  generated keys into signed CoreDNS zones.
+  `PKIHandler.setup_dnssec` and used by the rotation worker; CoreDNS online
+  signing is wired, but signed-zone cutover validation remains alpha.
 - **CRL**: `pki.crl_enabled` reaches step-ca config injection code, but alpha
-  support does not provide complete CRL publication, distribution-point
-  integration, or client validation guarantees.
+  publishes the configured distribution URL in Phase 3 output; client validation
+  guarantees are still being hardened.
 - **OCSP**: `pki.ocsp_enabled` reaches step-ca config injection code, but alpha
-  support does not provide a fully managed OCSP responder lifecycle.
+  publishes the configured responder URL in Phase 3 output; responder lifecycle
+  verification is still being hardened.
 - **Intermediate CA**: `pki.intermediate_ca_enabled` stores and exposes the
   generated intermediate certificate when available, but remains stabilizing and
   should not be treated as a stable trust-chain management interface.
