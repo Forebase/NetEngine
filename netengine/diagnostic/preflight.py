@@ -20,7 +20,7 @@ import tempfile
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable, Iterable, NamedTuple
 from urllib.parse import urlparse
 
 import click
@@ -64,6 +64,38 @@ class DoctorContext:
 DoctorProbe = Callable[[DoctorContext], DoctorCheckResult | Iterable[DoctorCheckResult]]
 
 
+class KnownPort(NamedTuple):
+    """A local host port NetEngine alpha may need to bind."""
+
+    port: int
+    proto: str
+    label: str
+
+
+# Inventory of alpha resources that are known even when compose metadata cannot be read.
+# Keep these in sync with docker-compose.yml and runtime-managed DNS resources.
+KNOWN_LOCAL_PORTS: tuple[KnownPort, ...] = (
+    KnownPort(5432, "tcp", "Postgres"),
+    KnownPort(53, "tcp", "DNS"),
+    KnownPort(53, "udp", "DNS"),
+    KnownPort(8180, "tcp", "Keycloak/OIDC"),
+    KnownPort(8080, "tcp", "NetEngine API"),
+)
+
+KNOWN_DOCKER_CONTAINERS: frozenset[str] = frozenset(
+    {"netengine_postgres", "netengine_keycloak", "netengine_api"}
+)
+KNOWN_DOCKER_VOLUMES: frozenset[str] = frozenset(
+    {"postgres_data", "netengine_data", "netengines_pki_data"}
+)
+KNOWN_DOCKER_NETWORKS: frozenset[str] = frozenset()
+
+_DNS_PORT_HINT = (
+    "Port 53 is commonly held by a local DNS resolver. Stop or reconfigure systemd-resolved, "
+    "dnsmasq, named/CoreDNS, or another DNS server, or change the NetEngine DNS bind port."
+)
+
+
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -80,25 +112,46 @@ def _compose_config(project_root: Path | None = None) -> dict:
         return {}
 
 
+def _parse_compose_port(raw_port: object) -> tuple[int, str] | None:
+    """Return the published host port/protocol from a compose port entry."""
+    if isinstance(raw_port, int):
+        return raw_port, "tcp"
+    if isinstance(raw_port, dict):
+        published = raw_port.get("published") or raw_port.get("target")
+        proto = str(raw_port.get("protocol") or "tcp").lower()
+        try:
+            return int(published), proto
+        except (TypeError, ValueError):
+            return None
+
+    raw = str(raw_port).strip()
+    if not raw:
+        return None
+    port_part, _, proto_part = raw.partition("/")
+    proto = (proto_part or "tcp").lower()
+    published = port_part.rsplit(":", 1)[0] if ":" in port_part else port_part
+    if published.isdigit():
+        return int(published), proto
+    return None
+
+
 def _compose_ports_and_resources(
     project_root: Path | None = None,
 ) -> tuple[set[tuple[int, str]], set[str], set[str], set[str]]:
     config = _compose_config(project_root)
-    ports: set[tuple[int, str]] = set()
-    containers: set[str] = set()
-    volumes: set[str] = set((config.get("volumes") or {}).keys())
-    networks: set[str] = set((config.get("networks") or {}).keys())
+    ports: set[tuple[int, str]] = {(p.port, p.proto) for p in KNOWN_LOCAL_PORTS}
+    containers: set[str] = set(KNOWN_DOCKER_CONTAINERS)
+    volumes: set[str] = set(KNOWN_DOCKER_VOLUMES) | set((config.get("volumes") or {}).keys())
+    networks: set[str] = set(KNOWN_DOCKER_NETWORKS) | set((config.get("networks") or {}).keys())
     for service_name, service in (config.get("services") or {}).items():
         containers.add(service.get("container_name") or f"netengine-{service_name}-1")
         for volume in service.get("volumes") or []:
             if isinstance(volume, str) and volume and not volume.startswith((".", "/", "~")):
                 volumes.add(volume.split(":", 1)[0])
         for port in service.get("ports") or []:
-            raw = str(port)
-            published = raw.split(":", 1)[0] if ":" in raw else raw
-            if published.isdigit():
-                ports.add((int(published), "tcp"))
-    ports.update({(5432, "tcp"), (53, "tcp"), (53, "udp")})
+            parsed = _parse_compose_port(port)
+            if parsed:
+                ports.add(parsed)
     return ports, containers, volumes, networks
 
 
@@ -275,26 +328,36 @@ def _can_bind(port: int, proto: str) -> bool:
 
 
 def _check_port(port: int, proto: str) -> DoctorCheckResult:
+    name = f"port:{port}/{proto}"
+    label = next(
+        (p.label for p in KNOWN_LOCAL_PORTS if p.port == port and p.proto == proto), None
+    )
+    detail_suffix = f" ({label})" if label else ""
     try:
         _can_bind(port, proto)
         return DoctorCheckResult(
-            f"port:{port}/{proto}", DoctorStatus.OK, "available on 127.0.0.1", group="ports"
+            name, DoctorStatus.OK, f"available on 127.0.0.1{detail_suffix}", group="ports"
         )
     except PermissionError as exc:
         return DoctorCheckResult(
-            f"port:{port}/{proto}",
+            name,
             DoctorStatus.WARN,
-            f"permission denied while probing: {exc}",
-            "Run with privileges or check listeners manually.",
+            f"permission denied while probing{detail_suffix}: {exc}",
+            _DNS_PORT_HINT if port == 53 else "Run with privileges or check listeners manually.",
             "ports",
             required=False,
         )
     except OSError as exc:
+        hint = (
+            _DNS_PORT_HINT
+            if port == 53
+            else f"Stop the process using {port}/{proto} or change the compose/spec port."
+        )
         return DoctorCheckResult(
-            f"port:{port}/{proto}",
+            name,
             DoctorStatus.FAIL,
-            f"unavailable on 127.0.0.1: {exc}",
-            f"Stop the process using {port}/{proto} or change the compose/spec port.",
+            f"unavailable on 127.0.0.1{detail_suffix}: {exc}",
+            hint,
             "ports",
         )
 
@@ -302,11 +365,11 @@ def _check_port(port: int, proto: str) -> DoctorCheckResult:
 def _docker_names(kind: str) -> set[str]:
     try:
         if kind == "container":
-            result = _run(["docker", "ps", "-a", "--format", "{{.Names}}"])
+            result = _run(["docker", "ps", "--format", "{{.Names}}"], timeout=2.0)
         elif kind == "volume":
-            result = _run(["docker", "volume", "ls", "--format", "{{.Name}}"])
+            result = _run(["docker", "volume", "ls", "--format", "{{.Name}}"], timeout=2.0)
         else:
-            result = _run(["docker", "network", "ls", "--format", "{{.Name}}"])
+            result = _run(["docker", "network", "ls", "--format", "{{.Name}}"], timeout=2.0)
     except Exception:
         return set()
     return (
@@ -324,15 +387,26 @@ def _check_docker_conflicts(ctx: DoctorContext) -> list[DoctorCheckResult]:
         checks.append(
             DoctorCheckResult(
                 f"Docker {kind} names",
-                DoctorStatus.WARN if conflicts else DoctorStatus.OK,
+                (
+                    DoctorStatus.FAIL
+                    if kind == "container" and conflicts
+                    else DoctorStatus.WARN
+                    if conflicts
+                    else DoctorStatus.OK
+                ),
                 ", ".join(conflicts) if conflicts else "no known name conflicts",
                 (
-                    "Run `netengine down` or remove stale Docker resources if these belong to an old run."
+                    "Stop/remove conflicting containers before startup."
+                    if kind == "container" and conflicts
+                    else (
+                        "Run `netengine down` or remove stale Docker resources if these "
+                        "belong to an old run."
+                    )
                     if conflicts
                     else None
                 ),
                 "docker",
-                required=False,
+                required=kind == "container",
             )
         )
     return checks
