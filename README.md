@@ -87,6 +87,60 @@ Worlds are defined in YAML. See `examples/` for reference:
 | `examples/single-org.yaml` | One organisation with residential AND |
 | `examples/dev-sandbox.yaml` | Full dev setup with orgs, ANDs, mail, storage |
 
+### Alpha golden paths
+
+These are the official alpha operator paths. Run them after the Quickstart setup to validate the supported lifecycle.
+
+#### Path A — Minimal smoke world
+
+```bash
+poetry run netengine up examples/minimal.yaml
+poetry run netengine up examples/minimal.yaml
+poetry run netengine status
+poetry run netengine diagnose examples/minimal.yaml
+poetry run netengine down --dry-run
+poetry run netengine down --yes
+```
+
+The second `up` proves idempotency.
+
+#### Path B — Single-org world
+
+Uses `examples/single-org.yaml` to prove org identity, DNS delegation, AND profile basics, and registry records.
+
+```bash
+poetry run netengine up examples/single-org.yaml
+poetry run netengine up examples/single-org.yaml
+poetry run netengine status
+poetry run netengine diagnose examples/single-org.yaml
+poetry run netengine down --dry-run
+poetry run netengine down --yes
+```
+
+#### Path C — Dev sandbox
+
+Uses `examples/dev-sandbox.yaml` as the feature-rich alpha demo. It is more experimental than Paths A/B if some integrations are still stabilizing.
+
+```bash
+poetry run netengine up examples/dev-sandbox.yaml
+poetry run netengine up examples/dev-sandbox.yaml
+poetry run netengine status
+poetry run netengine diagnose examples/dev-sandbox.yaml
+poetry run netengine down --dry-run
+poetry run netengine down --yes
+```
+
+#### Acceptance checklist
+
+- Fresh install works
+- Boot completes
+- Re-running `up` is idempotent
+- `status` is accurate
+- `diagnose` explains failures
+- `reload` rejects immutable changes
+- `down --dry-run` lists resources
+- `down --yes` leaves no project-owned Docker resources behind
+
 ### Spec composition
 
 Large specs can be split across files:
