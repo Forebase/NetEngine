@@ -668,7 +668,6 @@ class DNSHandler(BasePhaseHandler):
                 return True
 
             # Real mode: query the root zone for its SOA record, with retries.
-            root_ip = dns_output["root_zone"].get("listen_ip", "10.10.0.2")
             root_zone_name = dns_output["root_zone"].get("name", "root.internal")
 
             logger.debug(f"Attempting DNS verification: querying {root_zone_name} at localhost:53")
@@ -765,8 +764,9 @@ class DNSHandler(BasePhaseHandler):
                         # Likely "Permission denied" (port 53 already in use) or unreachable
                         if "Permission denied" in str(e) or "Operation not permitted" in str(e):
                             raise RuntimeError(
-                                f"Cannot bind to port 53. This usually means port 53/udp is already "
-                                f"in use on the host. Run 'lsof -i :53' or 'netstat -an | grep 53' to check."
+                                "Cannot bind to port 53. This usually means port 53/udp is already "
+                                "in use on the host. Run 'lsof -i :53' or 'netstat -an | grep 53' "
+                                "to check."
                             ) from e
                         raise
                     data, _ = s.recvfrom(512)
