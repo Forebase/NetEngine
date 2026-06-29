@@ -365,7 +365,9 @@ async def _up(
         )
 
     def _on_skip(phase_num: int, phase_name: str) -> None:
-        click.echo(click.style(f"  –  Phase {phase_num}: {phase_name} (already done)", fg="bright_black"))
+        click.echo(
+            click.style(f"  –  Phase {phase_num}: {phase_name} (already done)", fg="bright_black")
+        )
 
     def _on_error(phase_num: int, phase_name: str, exc: Exception) -> None:
         click.echo(

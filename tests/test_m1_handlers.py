@@ -213,9 +213,9 @@ class TestDNSHandler:
 
         root_zone_file = phase_context.runtime_state.dns_output["zone_files"]["root.internal"]
         for tld in phase_context.spec.dns.tlds:
-            assert f"{tld.name}. NS" in root_zone_file, (
-                f"Root zone file missing NS delegation for TLD '{tld.name}'"
-            )
+            assert (
+                f"{tld.name}. NS" in root_zone_file
+            ), f"Root zone file missing NS delegation for TLD '{tld.name}'"
 
     async def test_root_zone_file_has_glue_record_per_tld(
         self, phase_context: PhaseContext
@@ -240,13 +240,13 @@ class TestDNSHandler:
         await handler.execute(phase_context)
 
         root_zone_file = phase_context.runtime_state.dns_output["zone_files"]["root.internal"]
-        assert "platform.internal. 3600 IN NS" in root_zone_file, (
-            "Root zone file missing NS delegation for platform.internal"
-        )
+        assert (
+            "platform.internal. 3600 IN NS" in root_zone_file
+        ), "Root zone file missing NS delegation for platform.internal"
         platform_ip = phase_context.runtime_state.dns_output["platform_zone"]["listen_ip"]
-        assert platform_ip in root_zone_file, (
-            "Root zone file missing platform.internal glue A record"
-        )
+        assert (
+            platform_ip in root_zone_file
+        ), "Root zone file missing platform.internal glue A record"
 
     async def test_tld_output_has_listen_ip_per_tld(self, phase_context: PhaseContext) -> None:
         """Each TLD in dns_output must have a listen_ip matching its spec config."""
@@ -273,9 +273,9 @@ class TestDNSHandler:
             assert tld.name in zone_files, f"Zone file missing for TLD '{tld.name}'"
             content = zone_files[tld.name]
             assert "SOA" in content, f"TLD zone '{tld.name}' missing SOA record"
-            assert f"{tld.name}. 3600 IN NS" in content, (
-                f"TLD zone '{tld.name}' missing self NS record"
-            )
+            assert (
+                f"{tld.name}. 3600 IN NS" in content
+            ), f"TLD zone '{tld.name}' missing self NS record"
 
 
 class TestSubstrateAndDNSIntegration:

@@ -494,9 +494,9 @@ class TestFullMVPLifecycle:
 
         state = orchestrator.runtime_state
         for phase in range(10):
-            assert state.phase_completed.get(str(phase)), (
-                f"Phase {phase} not complete after MVP bootstrap"
-            )
+            assert state.phase_completed.get(
+                str(phase)
+            ), f"Phase {phase} not complete after MVP bootstrap"
 
         # DNSHandler covers phases 1+2 in one handler, so 9 handler invocations total
         started = [n for event, n in phase_events if event == "start"]
