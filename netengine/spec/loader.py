@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from netengine.config.loader import ConfigLoader
 from netengine.spec.models import SUPPORTED_SPEC_SCHEMA_VERSIONS, NetEngineSpec
+from netengine.spec.types import GatewayRealInternetMode
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +155,32 @@ def _cross_validate(spec: NetEngineSpec) -> None:
         for name_b, net_b in parsed_nets[i + 1 :]:
             if net_a.overlaps(net_b):
                 errors.append(f"subnet overlap: {name_a} ({net_a}) overlaps {name_b} ({net_b})")
+
+    # 5. Mirrored real-internet mode needs explicit IP allowlist targets.
+    # The alpha gateway implementation renders nftables `ip daddr` rules from
+    # service_mirrors, so hostnames would generate invalid nftables policy until
+    # DNS aliasing/resolution is implemented.
+    real_internet = spec.gateway_portal.real_internet
+    if real_internet.mode == GatewayRealInternetMode.MIRRORED:
+        if not real_internet.service_mirrors:
+            errors.append(
+                "gateway_portal.real_internet.service_mirrors: "
+                "at least one service mirror is required when mode is 'mirrored'"
+            )
+    elif real_internet.service_mirrors:
+        errors.append(
+            "gateway_portal.real_internet.service_mirrors: "
+            "service mirrors require real_internet.mode: 'mirrored'"
+        )
+
+    for idx, mirror in enumerate(real_internet.service_mirrors):
+        try:
+            ipaddress.IPv4Address(mirror.in_world_service)
+        except ValueError:
+            errors.append(
+                f"gateway_portal.real_internet.service_mirrors[{idx}].in_world_service: "
+                "must be an IPv4 address for alpha mirrored gateway nftables rules"
+            )
 
     if errors:
         raise SpecLoadError(
