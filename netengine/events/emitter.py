@@ -3,12 +3,14 @@
 from datetime import UTC, datetime
 from typing import Any
 
+from netengine.core.state import EventSendFailure
+
 from netengine.events.queues import Queue, queue_for_event_type
 from netengine.events.schema import EventEnvelope
 from netengine.handlers.context import PhaseContext
 
 
-def _failure_record(event: EventEnvelope, queue: Queue | str, exc: Exception) -> dict[str, Any]:
+def _failure_record(event: EventEnvelope, queue: Queue | str, exc: Exception) -> EventSendFailure:
     """Build the structured runtime-state record for an event send failure."""
     return {
         "event_type": event.event_type,
@@ -27,7 +29,7 @@ def record_event_send_failure(
     event: EventEnvelope,
     queue: Queue | str,
     exc: Exception,
-) -> dict[str, Any]:
+) -> EventSendFailure:
     """Persist structured details about a failed event send in runtime state.
 
     The list is intentionally small and state-file friendly. It gives callers and

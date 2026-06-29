@@ -4,7 +4,7 @@ import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional, TypedDict, cast
 
 from netengine.logging import get_logger
 
@@ -14,6 +14,149 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 DEFAULT_STATE_FILE = "netengines_state.json"
+
+
+JsonPrimitive = str | int | float | bool | None
+JsonValue = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
+
+
+class EventSendFailure(TypedDict):
+    event_type: str
+    queue: str
+    emitted_by: str
+    exception: str
+    event_id: str
+    correlation_id: str | None
+    parent_event_id: str | None
+    failed_at: str
+
+
+class PhaseOutputBase(TypedDict, total=False):
+    deployed_at: str
+    event_send_failures: list[EventSendFailure]
+
+
+class OrchestratorOutput(TypedDict, total=False):
+    type: str
+    status: str
+    healthy: bool
+    version: str
+    initialized_at: str
+
+
+class NetworkOutput(TypedDict, total=False):
+    id: str
+    name: str
+    cidr: str
+    gateway: str
+    driver: str
+
+
+class GatewayOutput(TypedDict, total=False):
+    networks: dict[str, str]
+    ip_addresses: dict[str, str]
+    healthy: bool
+    status: str
+
+
+class NTPOutput(TypedDict, total=False):
+    enabled: bool
+    servers: list[str]
+    synchronized: bool
+    status: str
+
+
+class SubstrateOutput(PhaseOutputBase, total=False):
+    orchestrator: OrchestratorOutput
+    networks: dict[str, NetworkOutput]
+    gateway: GatewayOutput
+    ntp: NTPOutput
+
+
+class DNSZoneOutput(TypedDict, total=False):
+    name: str
+    soa: str
+    records: list[dict[str, JsonValue]]
+    listen_ip: str
+    healthy: bool
+
+
+class TLDOutput(TypedDict, total=False):
+    name: str
+    listen_ip: str
+    records: list[dict[str, JsonValue]]
+
+
+class DNSOutput(PhaseOutputBase, total=False):
+    root_zone: DNSZoneOutput
+    platform_zone: DNSZoneOutput
+    tlds: dict[str, TLDOutput]
+    zone_files: dict[str, str]
+    coredns_container_id: str
+    healthy: bool
+
+
+class PKIOutput(PhaseOutputBase, total=False):
+    ca_ip: str
+    ca_dns: str
+    container_id: str | None
+    bootstrapped: bool
+    mock: bool
+    crl_url: str
+    crl_enabled: bool
+    ocsp_url: str
+    ocsp_enabled: bool
+    intermediate_ca_enabled: bool
+    intermediate_ca_cert_available: bool
+    intermediate_ca_cert: str
+    dnssec_enabled: bool
+    dnssec_zone: str
+    dnssec_ksk: str
+    dnssec_zsk: str
+
+
+class IdentityPlatformOutput(PhaseOutputBase, total=False):
+    keycloak_container_id: str
+    platform_realm_id: str
+    admin_user_id: str
+    platform_client_id: str
+    platform_client_auth_id: str
+    platform_client_secret: str
+
+
+class WorldRegistryOutput(PhaseOutputBase, total=False):
+    seeded: bool
+
+
+class DomainRegistryOutput(PhaseOutputBase, total=False):
+    address_pools_seeded: bool
+    tld_delegations: list[dict[str, JsonValue]]
+
+
+class GenericPhaseOutput(PhaseOutputBase, total=False):
+    status: str
+    healthy: bool
+
+
+class DriftHistoryEvent(TypedDict):
+    phase_num: int
+    detected_at: str
+    healed_at: str | None
+    healing_failed: bool
+    error: str | None
+
+
+class IssuedCertificateMetadata(TypedDict):
+    cert_type: str
+    issued_at: str | datetime
+    expires_at: str | datetime
+    sans: list[str]
+    rotated_at: str | datetime | None
+    version: int
+
+
+class PKIRotationState(TypedDict, total=False):
+    last_check_by_type: dict[str, str | datetime]
 
 
 def get_state_file() -> Path:
@@ -37,16 +180,16 @@ class RuntimeState:
     phase_completed: Dict[str, bool] = field(default_factory=dict)
 
     # Phase outputs (one dict per phase, populated on completion)
-    substrate_output: Optional[Dict[str, Any]] = None
-    dns_output: Optional[Dict[str, Any]] = None
-    pki_output: Optional[Dict[str, Any]] = None
-    identity_platform_output: Optional[Dict[str, Any]] = None
-    world_registry_output: Optional[Dict[str, Any]] = None
-    domain_registry_output: Optional[Dict[str, Any]] = None
-    identity_inworld_output: Optional[Dict[str, Any]] = None
-    ands_output: Optional[Dict[str, Any]] = None
-    world_services_output: Optional[Dict[str, Any]] = None
-    org_apps_output: Optional[Dict[str, Any]] = None
+    substrate_output: Optional[SubstrateOutput] = None
+    dns_output: Optional[DNSOutput] = None
+    pki_output: Optional[PKIOutput] = None
+    identity_platform_output: Optional[IdentityPlatformOutput] = None
+    world_registry_output: Optional[WorldRegistryOutput] = None
+    domain_registry_output: Optional[DomainRegistryOutput] = None
+    identity_inworld_output: Optional[GenericPhaseOutput] = None
+    ands_output: Optional[GenericPhaseOutput] = None
+    world_services_output: Optional[GenericPhaseOutput] = None
+    org_apps_output: Optional[GenericPhaseOutput] = None
 
     # Legacy container ID fields (kept for backward compat with existing handlers)
     gateway_container_id: Optional[str] = None
@@ -66,12 +209,12 @@ class RuntimeState:
     platform_client_secret: Optional[str] = None
 
     # Drift detection and self-healing
-    drift_history: list[Dict[str, Any]] = field(default_factory=list)
+    drift_history: list[DriftHistoryEvent] = field(default_factory=list)
     last_drift_check_at: Optional[datetime] = None
     current_drift_phases: list[int] = field(default_factory=list)
     # PKI certificate rotation tracking
-    issued_certificates: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    pki_rotation_state: Dict[str, Any] = field(default_factory=dict)
+    issued_certificates: Dict[str, IssuedCertificateMetadata] = field(default_factory=dict)
+    pki_rotation_state: PKIRotationState = field(default_factory=lambda: cast(PKIRotationState, {}))
 
     # Extended PKI state
     intermediate_ca_cert: Optional[str] = None
@@ -81,7 +224,7 @@ class RuntimeState:
     gateway_portal_output: Optional[Dict[str, Any]] = None
 
     # Recent structured failures from best-effort PGMQ event emission.
-    event_send_failures: list[Dict[str, Any]] = field(default_factory=list)
+    event_send_failures: list[EventSendFailure] = field(default_factory=list)
 
     @classmethod
     def load(cls) -> "RuntimeState":
@@ -123,22 +266,23 @@ class RuntimeState:
     def _discard_completion_flags_without_outputs(self) -> None:
         """Ignore completion flags that do not have their matching phase output."""
         phase_outputs = {
-            "0": ("substrate_output",),
-            "1": ("dns_output",),
-            "2": ("dns_output",),
-            "3": ("pki_bootstrapped",),
-            "4": ("identity_platform_output",),
-            "5": ("world_registry_output", "domain_registry_output"),
-            "6": ("identity_inworld_output",),
-            "7": ("ands_output",),
-            "8": ("world_services_output",),
-            "9": ("org_apps_output",),
+            "0": (self.substrate_output,),
+            "1": (self.dns_output,),
+            "2": (self.dns_output,),
+            "3": (self.pki_output,),
+            "4": (self.identity_platform_output,),
+            "5": (self.world_registry_output, self.domain_registry_output),
+            "6": (self.identity_inworld_output,),
+            "7": (self.ands_output,),
+            "8": (self.world_services_output,),
+            "9": (self.org_apps_output,),
         }
-        for phase, output_fields in phase_outputs.items():
-            if self.phase_completed.get(phase) is True and not all(
-                getattr(self, output_field, None) for output_field in output_fields
-            ):
+        for phase, outputs in phase_outputs.items():
+            if self.phase_completed.get(phase) is True and any(output is None for output in outputs):
                 self.phase_completed.pop(phase, None)
+
+        if self.pki_output is None and self.phase_completed.get("3") is True:
+            self.phase_completed.pop("3", None)
 
     def save(self) -> None:
         self._discard_completion_flags_without_outputs()

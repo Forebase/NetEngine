@@ -14,8 +14,9 @@ Responsibilities:
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from netengine.core.state import DNSOutput
 from netengine.errors import DNSError
 from netengine.events.emitter import emit_event
 from netengine.handlers._base import BasePhaseHandler
@@ -118,7 +119,7 @@ class DNSHandler(BasePhaseHandler):
 
             dns_output["deployed_at"] = datetime.now(UTC).isoformat()
 
-            context.runtime_state.dns_output = dns_output
+            context.runtime_state.dns_output = cast(DNSOutput, dns_output)
             context.runtime_state.phase_completed["1"] = True
             context.runtime_state.phase_completed["2"] = True
             context.runtime_state.completed_at = datetime.now(UTC)

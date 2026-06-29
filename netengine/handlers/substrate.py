@@ -9,10 +9,11 @@ Responsibilities:
 """
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from netengine.errors import SubstrateError
 from netengine.events.emitter import emit_event
+from netengine.core.state import SubstrateOutput
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 
@@ -82,7 +83,7 @@ class SubstrateHandler(BasePhaseHandler):
 
             substrate_output["deployed_at"] = datetime.now(UTC).isoformat()
 
-            context.runtime_state.substrate_output = substrate_output
+            context.runtime_state.substrate_output = cast(SubstrateOutput, substrate_output)
             context.runtime_state.completed_at = datetime.now(UTC)
 
             logger.info("Phase 0: Substrate initialization complete")
