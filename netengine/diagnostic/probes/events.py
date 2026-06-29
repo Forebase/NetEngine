@@ -5,6 +5,10 @@ from netengine.diagnostic.runner import ProbeResult, ProbeStatus
 from netengine.spec.models import NetEngineSpec
 
 _PROBE_NAME = "Events"
+_PHASE = 0
+_RESOURCE = "PGMQ event pipeline"
+_LOGS = ["netengine logs", "docker logs netengines_postgres"]
+_RETRY = "netengine diagnose"
 
 
 async def probe(spec: NetEngineSpec) -> ProbeResult:
