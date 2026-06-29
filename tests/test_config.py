@@ -6,6 +6,8 @@ from tempfile import TemporaryDirectory
 
 import pytest
 import yaml
+from omegaconf import OmegaConf
+from omegaconf.errors import InterpolationResolutionError
 
 from netengine.config.loader import ConfigLoader, ConfigOverrideError, parse_dotted_overrides
 from netengine.config.spec_config import SpecConfig
@@ -188,10 +190,12 @@ class TestParseDottedOverrides:
 
     def test_nested_overrides(self) -> None:
         """Dotted paths should become nested dictionaries."""
-        overrides = parse_dotted_overrides([
-            "metadata.environment=dev",
-            "operator.api.port=9090",
-        ])
+        overrides = parse_dotted_overrides(
+            [
+                "metadata.environment=dev",
+                "operator.api.port=9090",
+            ]
+        )
 
         assert overrides == {
             "metadata": {"environment": "dev"},
@@ -200,12 +204,14 @@ class TestParseDottedOverrides:
 
     def test_yaml_scalar_and_list_parsing(self) -> None:
         """Override values should be parsed with YAML semantics."""
-        overrides = parse_dotted_overrides([
-            "feature.enabled=true",
-            "limits.retries=3",
-            "dns.servers=[1.1.1.1, 8.8.8.8]",
-            "empty=null",
-        ])
+        overrides = parse_dotted_overrides(
+            [
+                "feature.enabled=true",
+                "limits.retries=3",
+                "dns.servers=[1.1.1.1, 8.8.8.8]",
+                "empty=null",
+            ]
+        )
 
         assert overrides["feature"]["enabled"] is True
         assert overrides["limits"]["retries"] == 3
@@ -285,6 +291,60 @@ class TestConfigLoader:
         assert config.name == "file"
         assert config.metadata.environment == "override"
         assert config.metadata.owner == "file-owner"
+
+    def test_load_config_resolves_custom_env_interpolation(
+        self, temp_spec_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """NetEngine should support its explicit ${env:VAR} resolver alias."""
+        monkeypatch.setenv("NETENGINE_OWNER", "env-owner")
+        config_file = temp_spec_dir / "config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump({"metadata": {"owner": "${env:NETENGINE_OWNER}"}}, f)
+
+        config = ConfigLoader.load_config(_PrecedenceConfig, config_file=config_file)
+
+        assert config.metadata.owner == "env-owner"
+
+    def test_load_config_resolves_builtin_oc_env_interpolation(
+        self, temp_spec_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """OmegaConf's built-in ${oc.env:VAR} syntax remains supported."""
+        monkeypatch.setenv("NETENGINE_ENVIRONMENT", "oc-env-value")
+        config_file = temp_spec_dir / "config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump({"metadata": {"environment": "${oc.env:NETENGINE_ENVIRONMENT}"}}, f)
+
+        config = ConfigLoader.load_config(_PrecedenceConfig, config_file=config_file)
+
+        assert config.metadata.environment == "oc-env-value"
+
+    @pytest.mark.parametrize("syntax", ["${env:NETENGINE_MISSING}", "${oc.env:NETENGINE_MISSING}"])
+    def test_load_config_rejects_missing_env_interpolation(
+        self, temp_spec_dir: Path, monkeypatch: pytest.MonkeyPatch, syntax: str
+    ) -> None:
+        """Missing variables should fail for both supported environment syntaxes."""
+        monkeypatch.delenv("NETENGINE_MISSING", raising=False)
+        config_file = temp_spec_dir / "config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump({"metadata": {"owner": syntax}}, f)
+
+        with pytest.raises(InterpolationResolutionError, match="NETENGINE_MISSING"):
+            ConfigLoader.load_config(_PrecedenceConfig, config_file=config_file)
+
+    def test_resolve_env_vars_supports_custom_and_builtin_env_interpolation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Direct resolver utility should resolve both documented syntaxes."""
+        monkeypatch.setenv("NETENGINE_CUSTOM", "custom-value")
+        monkeypatch.setenv("NETENGINE_BUILTIN", "builtin-value")
+        cfg = OmegaConf.create(
+            {"custom": "${env:NETENGINE_CUSTOM}", "builtin": "${oc.env:NETENGINE_BUILTIN}"}
+        )
+
+        resolved = ConfigLoader.resolve_env_vars(cfg)
+
+        assert resolved.custom == "custom-value"
+        assert resolved.builtin == "builtin-value"
 
     def test_merge_configs_nested_precedence_contract(self) -> None:
         """Later merge layers should win nested conflicts while preserving siblings."""
@@ -497,9 +557,7 @@ class TestSpecLoaderIntegration:
         with pytest.raises(SpecLoadError, match="Unsupported spec metadata.schema_version"):
             load_spec_with_environment(base_file, environment="dev")
 
-    def test_load_spec_with_environment_precedence_nested_merge(
-        self, temp_spec_dir: Path
-    ) -> None:
+    def test_load_spec_with_environment_precedence_nested_merge(self, temp_spec_dir: Path) -> None:
         """Validated environment loading should apply base < env file < overrides."""
         base = _minimal_spec()
         base["metadata"]["environment"] = "base"
@@ -658,8 +716,9 @@ def test_cli_config_option_passes_runtime_config_to_logging(tmp_path):
     config_file = tmp_path / "app.yaml"
     config_file.write_text("logging:\n  log_level: ERROR\n  environment: ci\n")
 
-    with patch("netengine.config.runtime.LoggerFactory.initialize") as initialize, patch(
-        "netengine.config.runtime.LoggerFactory.shutdown"
+    with (
+        patch("netengine.config.runtime.LoggerFactory.initialize") as initialize,
+        patch("netengine.config.runtime.LoggerFactory.shutdown"),
     ):
         result = CliRunner().invoke(cli_main.cli, ["--config", str(config_file), "status"])
 

@@ -1,11 +1,30 @@
 """Configuration loading and merging utilities."""
 
 from collections.abc import Iterable
+import os
 from pathlib import Path
 from typing import Any, Optional, Type, TypeVar, cast
 
 import yaml
 from omegaconf import OmegaConf
+
+
+def _get_required_env_var(name: str) -> str:
+    """Return an environment variable or raise for missing values."""
+    try:
+        return os.environ[name]
+    except KeyError as exc:
+        raise KeyError(f"Environment variable '{name}' not found") from exc
+
+
+def register_env_resolver() -> None:
+    """Register NetEngine's custom ``${env:VAR}`` OmegaConf resolver."""
+    if not OmegaConf.has_resolver("env"):
+        OmegaConf.register_new_resolver("env", _get_required_env_var)
+
+
+register_env_resolver()
+
 
 class ConfigOverrideError(ValueError):
     """Raised when a dotted configuration override cannot be parsed."""
@@ -49,9 +68,7 @@ def parse_dotted_overrides(values: Iterable[str]) -> dict[str, Any]:
             elif isinstance(existing, dict):
                 cursor = existing
             else:
-                raise ConfigOverrideError(
-                    f"cannot set nested key under non-object path '{part}'"
-                )
+                raise ConfigOverrideError(f"cannot set nested key under non-object path '{part}'")
         cursor[parts[-1]] = value
 
     return overrides
@@ -96,7 +113,12 @@ class ConfigLoader:
 
         Merge precedence is: structured schema defaults < ``defaults`` <
         ``config_file`` < ``overrides``. Later layers win for the same field,
-        while nested dictionaries are deep-merged.
+        while nested dictionaries are deep-merged. Environment variables may be
+        interpolated with OmegaConf's built-in ``${oc.env:VAR}`` syntax or
+        NetEngine's equivalent ``${env:VAR}`` alias. For example, a YAML file
+        containing ``metadata: {owner: "${env:NETENGINE_OWNER}"}`` resolves
+        ``owner`` from the ``NETENGINE_OWNER`` environment variable. Missing
+        variables raise an interpolation error.
 
         Args:
             config_schema: OmegaConf dataclass schema
@@ -122,6 +144,7 @@ class ConfigLoader:
             overrides_cfg = OmegaConf.create(overrides)
             cfg = OmegaConf.merge(cfg, overrides_cfg)
 
+        register_env_resolver()
         OmegaConf.resolve(cfg)
         return cast(T, OmegaConf.to_object(cfg))
 
@@ -154,11 +177,18 @@ class ConfigLoader:
     def resolve_env_vars(cfg: Any) -> Any:
         """Resolve environment variable interpolation in config.
 
+        Supports both OmegaConf's built-in ``${oc.env:VAR}`` syntax and
+        NetEngine's custom ``${env:VAR}`` alias. For example,
+        ``OmegaConf.create({"token": "${env:NETENGINE_TOKEN}"})`` resolves
+        ``token`` from ``NETENGINE_TOKEN``. Missing variables raise an
+        interpolation error.
+
         Args:
-            cfg: Configuration object with potential ${env:VAR} interpolations
+            cfg: Configuration object with potential environment interpolations
 
         Returns:
             Configuration with resolved environment variables
         """
+        register_env_resolver()
         OmegaConf.resolve(cfg)
         return cfg
