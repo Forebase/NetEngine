@@ -13,7 +13,7 @@ import json
 import secrets
 import ssl
 from datetime import UTC, datetime
-from typing import Any, Optional
+from typing import Any
 
 import aiohttp
 
@@ -25,7 +25,7 @@ from netengine.handlers.context import PhaseContext
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.oidc_handler import OIDCHandler
 from netengine.handlers.pki_handler import PKIHandler
-from netengine.logging import get_logger
+from logs import get_logger
 
 logger = get_logger(__name__)
 

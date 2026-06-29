@@ -10,7 +10,6 @@ Tests cover:
 """
 
 import json
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,9 +17,8 @@ import pytest
 from netengine.core.state import RuntimeState
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
-from netengine.logging import get_logger
+from logs import get_logger
 from netengine.phases.phase_ands import ANDsPhaseHandler
-from netengine.spec.models import ANDInstance, ANDProfileDef, ANDsPhase, BGPFabricConfig
 
 
 class TestM7ANDsInterfaceCompliance:

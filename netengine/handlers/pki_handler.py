@@ -1,5 +1,4 @@
 # netengine/handlers/pki_handler.py
-import asyncio
 import os
 import ssl
 import subprocess
@@ -13,7 +12,7 @@ import aiohttp
 from netengine.core.state import RuntimeState
 from netengine.errors import PKIError
 from netengine.handlers.protocols import DockerAdapterProtocol
-from netengine.logging import get_logger
+from logs import get_logger
 
 logger = get_logger(__name__)
 

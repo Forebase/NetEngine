@@ -6,7 +6,7 @@ triggers self-healing by re-running execute() on drifted phases.
 """
 
 import asyncio
-import logging
+import logs
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Optional
@@ -17,7 +17,7 @@ from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 
-logger = logging.getLogger(__name__)
+logger = logs.getLogger(__name__)
 
 
 @dataclass

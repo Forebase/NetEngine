@@ -1,6 +1,6 @@
 # netengine/workers/pki_cert_rotation_worker.py
 import asyncio
-import logging
+import logs
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, List, Optional, cast
@@ -11,7 +11,7 @@ from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 from netengine.handlers.pki_handler import PKIHandler
 
-logger = logging.getLogger(__name__)
+logger = logs.getLogger(__name__)
 
 # Built-in cert types always managed by the rotation worker.
 _BUILTIN_CERT_TYPES = ["platform_identity", "inworld_identity", "app", "storage"]
@@ -46,7 +46,7 @@ class PKICertRotationWorker:
         self._callbacks: Dict[str, Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]]] = {
             cfg.cert_type: cfg.rotation_callback for cfg in cert_type_configs
         }
-        self.logger = logging.getLogger(__name__)
+        self.logger = logs.getLogger(__name__)
 
     def _resolve_configs(self, state: RuntimeState) -> Dict[str, CertTypeRotationConfig]:
         """Return the current rotation config, refreshed from world_spec if available.

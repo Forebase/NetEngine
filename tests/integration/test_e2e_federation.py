@@ -34,7 +34,7 @@ from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.gateway_portal_handler import GatewayPortalHandler
 from netengine.handlers.substrate import SubstrateHandler
-from netengine.logging import get_logger
+from logs import get_logger
 from netengine.spec.loader import load_spec
 from netengine.spec.models import (
     CrossWorldConfig,

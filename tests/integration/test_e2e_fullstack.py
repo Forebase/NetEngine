@@ -36,7 +36,7 @@ from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.phase_pki import PKIPhaseHandler
 from netengine.handlers.substrate import SubstrateHandler
-from netengine.logging import get_logger
+from logs import get_logger
 from netengine.spec.loader import load_spec
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"

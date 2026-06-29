@@ -5,18 +5,15 @@ Phases 1-2 (DNS) execution, including zone record updates, event emission,
 and dependency validation.
 """
 
-import logging
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
-from netengine.errors import DNSError, SubstrateError
+from netengine.errors import DNSError
 from netengine.handlers.context import PhaseContext, RuntimeState
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.substrate import SubstrateHandler
-from netengine.logging import get_logger
-from netengine.spec.loader import load_spec
+from logs import get_logger
 from netengine.spec.models import NetEngineSpec
 
 

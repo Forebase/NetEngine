@@ -13,7 +13,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from netengine.core.state import RuntimeState
-from netengine.logging import get_logger
+from logs import get_logger
 from netengine.spec.models import NetEngineSpec
 
 logger = get_logger(__name__)

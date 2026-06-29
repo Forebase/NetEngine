@@ -1,7 +1,7 @@
 """YAML spec loading and validation with OmegaConf composition support."""
 
 import ipaddress
-import logging
+import logs
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Optional
@@ -13,7 +13,7 @@ from netengine.config.loader import ConfigLoader
 from netengine.spec.models import SUPPORTED_SPEC_SCHEMA_VERSIONS, NetEngineSpec
 from netengine.spec.types import GatewayRealInternetMode
 
-logger = logging.getLogger(__name__)
+logger = logs.getLogger(__name__)
 
 
 class SpecLoadError(Exception):

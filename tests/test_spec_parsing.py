@@ -165,14 +165,14 @@ class TestFeatureStateValidation:
         return spec_file
 
     def test_experimental_pki_field_logs_warning_not_error(self, tmp_path, caplog) -> None:
-        import logging
+        import logs
 
         # DNSSEC/CRL/OCSP were promoted from unsupported to experimental once the
         # CoreDNS online-signing + step-ca config paths were wired (WS-A). They
         # now load with a warning instead of being rejected.
         spec_file = self._write_spec(tmp_path, {"pki": {"dnssec_enabled": True}})
 
-        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
+        with caplog.at_level(logs.WARNING, logger="netengine.spec.loader"):
             spec = load_spec(spec_file)
 
         assert spec.pki.dnssec_enabled is True
@@ -181,7 +181,7 @@ class TestFeatureStateValidation:
         )
 
     def test_experimental_gateway_mode_logs_warning_not_raises(self, tmp_path, caplog) -> None:
-        import logging
+        import logs
 
         spec_file = self._write_spec(
             tmp_path,
@@ -197,7 +197,7 @@ class TestFeatureStateValidation:
             },
         )
 
-        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
+        with caplog.at_level(logs.WARNING, logger="netengine.spec.loader"):
             spec = load_spec(spec_file)
 
         assert spec.gateway_portal.real_internet.mode.value == "mirrored"
@@ -255,7 +255,7 @@ class TestFeatureStateValidation:
 
 
     def test_experimental_profile_field_logs_warning_not_raises(self, tmp_path, caplog) -> None:
-        import logging
+        import logs
 
         spec_file = self._write_spec(
             tmp_path,
@@ -274,7 +274,7 @@ class TestFeatureStateValidation:
             },
         )
 
-        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
+        with caplog.at_level(logs.WARNING, logger="netengine.spec.loader"):
             spec = load_spec(spec_file)
 
         assert spec.ands is not None
@@ -284,11 +284,11 @@ class TestFeatureStateValidation:
         )
 
     def test_experimental_enabled_field_logs_warning(self, tmp_path, caplog) -> None:
-        import logging
+        import logs
 
         spec_file = self._write_spec(tmp_path, {"pki": {"intermediate_ca_enabled": True}})
 
-        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
+        with caplog.at_level(logs.WARNING, logger="netengine.spec.loader"):
             spec = load_spec(spec_file)
 
         assert spec.pki.intermediate_ca_enabled is True
@@ -298,9 +298,9 @@ class TestFeatureStateValidation:
         )
 
     def test_no_warnings_for_default_spec(self, caplog, minimal_spec) -> None:
-        import logging
+        import logs
 
-        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
+        with caplog.at_level(logs.WARNING, logger="netengine.spec.loader"):
             from netengine.spec.loader import _validate_feature_states
 
             _validate_feature_states(minimal_spec)
