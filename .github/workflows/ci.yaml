@@ -210,7 +210,7 @@ jobs:
         run: git diff --exit-code -- docs/licenses.md
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0.17.8
+        uses: anchore/sbom-action@v0.24.0
         with:
           path: .
           format: spdx-json
