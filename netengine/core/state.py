@@ -80,6 +80,9 @@ class RuntimeState:
     # Gateway portal state
     gateway_portal_output: Optional[Dict[str, Any]] = None
 
+    # Recent structured failures from best-effort PGMQ event emission.
+    event_send_failures: list[Dict[str, Any]] = field(default_factory=list)
+
     @classmethod
     def load(cls) -> "RuntimeState":
         state_file = get_state_file()

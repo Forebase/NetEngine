@@ -60,7 +60,17 @@ class DiagnosticRunner:
 
 def build_runner(spec: NetEngineSpec) -> DiagnosticRunner:
     """Build a DiagnosticRunner with all standard probes registered."""
-    from netengine.diagnostic.probes import acme, dns, mail, network, oidc, pki, storage, whois
+    from netengine.diagnostic.probes import (
+        acme,
+        dns,
+        events,
+        mail,
+        network,
+        oidc,
+        pki,
+        storage,
+        whois,
+    )
 
     runner = DiagnosticRunner(spec)
     for probe_fn in [
@@ -72,6 +82,7 @@ def build_runner(spec: NetEngineSpec) -> DiagnosticRunner:
         mail.probe,
         storage.probe,
         whois.probe,
+        events.probe,
     ]:
         runner.register(probe_fn)
     return runner

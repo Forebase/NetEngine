@@ -16,7 +16,7 @@ from typing import Any
 
 from netengine.errors import GatewayError, PKIError
 from netengine.events.queues import Queue
-from netengine.events.schema import EventEnvelope
+from netengine.events.emitter import emit_event
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.docker_handler import DockerHandler
@@ -307,16 +307,10 @@ class GatewayPortalHandler(BasePhaseHandler):
     async def _emit_event(
         self, context: PhaseContext, event_type: str, payload: dict[str, Any]
     ) -> None:
-        event = EventEnvelope.create(
+        await emit_event(
+            context,
             event_type=event_type,
             emitted_by="gateway_portal_handler",
             payload=payload,
-            correlation_id=getattr(context.runtime_state, "correlation_id", None),
-            parent_event_id=getattr(context.runtime_state, "parent_event_id", None),
+            queue=Queue.GATEWAY_PORTAL_EVENTS,
         )
-        context.logger.info(f"Event emitted: {event_type}")
-        if context.pgmq_client is not None:
-            try:
-                await context.pgmq_client.send(Queue.GATEWAY_PORTAL_EVENTS, event)
-            except Exception as exc:
-                context.logger.warning(f"Failed to queue gateway portal event: {exc}")
