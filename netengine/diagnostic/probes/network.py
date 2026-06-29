@@ -7,6 +7,10 @@ from netengine.diagnostic.runner import ProbeResult, ProbeStatus
 from netengine.spec.models import NetEngineSpec
 
 _PROBE_NAME = "Network"
+_PHASE = 0
+_RESOURCE = "Docker networks / nftables"
+_LOGS = ["docker network ls", "sudo nft list ruleset"]
+_RETRY = "netengine heal --phase 0"
 
 
 async def probe(spec: NetEngineSpec) -> ProbeResult:

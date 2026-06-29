@@ -7,6 +7,10 @@ from netengine.spec.models import NetEngineSpec
 
 _PROBE_NAME = "WHOIS"
 _TIMEOUT = 5.0
+_PHASE = 5
+_RESOURCE = "WHOIS server"
+_LOGS = ["docker logs netengines_whois"]
+_RETRY = "netengine heal --phase 5"
 
 
 async def probe(spec: NetEngineSpec) -> ProbeResult:

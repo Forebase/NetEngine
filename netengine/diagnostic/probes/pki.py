@@ -9,6 +9,10 @@ from netengine.spec.models import NetEngineSpec
 
 _PROBE_NAME = "PKI"
 _WARN_DAYS = 30
+_PHASE = 3
+_RESOURCE = "step-ca / CA certificate"
+_LOGS = ["docker logs netengines_step_ca"]
+_RETRY = "netengine heal --phase 3"
 
 
 async def probe(spec: NetEngineSpec) -> ProbeResult:
