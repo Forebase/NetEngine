@@ -435,7 +435,13 @@ def test_validate_valid_spec_exits_zero() -> None:
 
 def test_validate_experimental_gateway_mode_exits_zero_with_explanation(tmp_path: Path) -> None:
     """Mirrored gateway mode is wired but remains experimental during alpha."""
-    spec_file = _write_cli_validate_spec(tmp_path, gateway_portal__real_internet__mode="mirrored")
+    spec_file = _write_cli_validate_spec(
+        tmp_path,
+        gateway_portal__real_internet__mode="mirrored",
+        gateway_portal__real_internet__service_mirrors=[
+            {"real_hostname": "github.com", "in_world_service": "10.0.1.20"}
+        ],
+    )
 
     result = CliRunner().invoke(cli_main.cli, ["validate", str(spec_file), "--explain"])
 

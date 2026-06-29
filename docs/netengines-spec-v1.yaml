@@ -447,11 +447,13 @@ gateway_portal:
     # custom    — explicit rule list (use when presets don't fit)
 
     # Required if mode: mirrored
+    # Alpha: in_world_service must be an IPv4 address because gateway rules
+    # render nftables ip daddr allowlists; DNS aliasing for names is planned.
     # service_mirrors:
     #   - real_hostname: s3.amazonaws.com
-    #     in_world_service: storage.platform.internal
+    #     in_world_service: 10.0.0.11
     #   - real_hostname: github.com
-    #     in_world_service: gitea.acme.internal
+    #     in_world_service: 10.0.1.20
 
     # Required if mode: custom
     # rules: []

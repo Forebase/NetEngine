@@ -184,17 +184,75 @@ class TestFeatureStateValidation:
         import logging
 
         spec_file = self._write_spec(
-            tmp_path, {"gateway_portal": {"real_internet": {"mode": "mirrored"}}}
+            tmp_path,
+            {
+                "gateway_portal": {
+                    "real_internet": {
+                        "mode": "mirrored",
+                        "service_mirrors": [
+                            {"real_hostname": "github.com", "in_world_service": "10.0.1.20"}
+                        ],
+                    }
+                }
+            },
         )
 
         with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
             spec = load_spec(spec_file)
 
         assert spec.gateway_portal.real_internet.mode.value == "mirrored"
+        assert spec.gateway_portal.real_internet.service_mirrors[0].in_world_service == "10.0.1.20"
         assert any(
             "gateway_portal.real_internet.mode is experimental in alpha" in r.message
             for r in caplog.records
         )
+
+    def test_mirrored_gateway_requires_service_mirrors(self, tmp_path) -> None:
+        spec_file = self._write_spec(
+            tmp_path, {"gateway_portal": {"real_internet": {"mode": "mirrored"}}}
+        )
+
+        with pytest.raises(SpecLoadError, match="at least one service mirror is required"):
+            load_spec(spec_file)
+
+    def test_service_mirrors_require_mirrored_gateway_mode(self, tmp_path) -> None:
+        spec_file = self._write_spec(
+            tmp_path,
+            {
+                "gateway_portal": {
+                    "real_internet": {
+                        "service_mirrors": [
+                            {"real_hostname": "github.com", "in_world_service": "10.0.1.20"}
+                        ]
+                    }
+                }
+            },
+        )
+
+        with pytest.raises(SpecLoadError, match="service mirrors require"):
+            load_spec(spec_file)
+
+    def test_service_mirror_targets_must_be_ipv4_for_alpha_nftables(self, tmp_path) -> None:
+        spec_file = self._write_spec(
+            tmp_path,
+            {
+                "gateway_portal": {
+                    "real_internet": {
+                        "mode": "mirrored",
+                        "service_mirrors": [
+                            {
+                                "real_hostname": "github.com",
+                                "in_world_service": "gitea.acme.internal",
+                            }
+                        ],
+                    }
+                }
+            },
+        )
+
+        with pytest.raises(SpecLoadError, match="must be an IPv4 address"):
+            load_spec(spec_file)
+
 
     def test_experimental_profile_field_logs_warning_not_raises(self, tmp_path, caplog) -> None:
         import logging
