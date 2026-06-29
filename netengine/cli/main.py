@@ -10,8 +10,6 @@ from pathlib import Path
 from typing import Any
 
 import click
-import yaml
-
 from netengine.cli.doctor import doctor
 from netengine.diagnostic.preflight import (
     DoctorCheckResult,
@@ -20,6 +18,7 @@ from netengine.diagnostic.preflight import (
     run_preflight,
 )
 from netengine.cli.env import db_url_from_env
+from netengine.config.loader import ConfigOverrideError, parse_dotted_overrides
 from netengine.core.migrations import MigrationService, MigrationStatus
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState, get_state_file
@@ -48,35 +47,10 @@ LOCAL_SETUP_DB_URL = "postgresql://netengine:dev_password@localhost:5432/netengi
 
 def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
     """Convert repeatable dotted key=value CLI overrides into a nested dictionary."""
-    overrides: dict[str, Any] = {}
-
-    for item in set_values:
-        key, separator, raw_value = item.partition("=")
-        if not separator:
-            raise click.BadParameter("must be in key=value form", param_hint="--set")
-
-        parts = key.split(".")
-        if any(part == "" for part in parts):
-            raise click.BadParameter("keys must be non-empty dotted paths", param_hint="--set")
-
-        value = yaml.safe_load(raw_value)
-        cursor = overrides
-        for part in parts[:-1]:
-            existing = cursor.get(part)
-            if existing is None:
-                nested: dict[str, Any] = {}
-                cursor[part] = nested
-                cursor = nested
-            elif isinstance(existing, dict):
-                cursor = existing
-            else:
-                raise click.BadParameter(
-                    f"cannot set nested key under non-object path '{part}'",
-                    param_hint="--set",
-                )
-        cursor[parts[-1]] = value
-
-    return overrides
+    try:
+        return parse_dotted_overrides(set_values)
+    except ConfigOverrideError as exc:
+        raise click.BadParameter(str(exc), param_hint="--set") from exc
 
 
 def _load_spec_for_cli(

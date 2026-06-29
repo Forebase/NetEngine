@@ -1,10 +1,61 @@
 """Configuration loading and merging utilities."""
 
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional, Type, TypeVar, cast
 
 import yaml
 from omegaconf import OmegaConf
+
+class ConfigOverrideError(ValueError):
+    """Raised when a dotted configuration override cannot be parsed."""
+
+
+def parse_dotted_overrides(values: Iterable[str]) -> dict[str, Any]:
+    """Convert dotted ``key=value`` overrides into a nested dictionary.
+
+    Values are parsed with ``yaml.safe_load`` so CLI strings such as
+    ``true``, ``42``, or ``[a, b]`` become YAML-native scalars/lists.
+
+    Args:
+        values: Override strings in dotted ``key=value`` form.
+
+    Returns:
+        Nested dictionary suitable for merging into a configuration.
+
+    Raises:
+        ConfigOverrideError: If an override is malformed or attempts to nest
+            beneath a scalar value already set by another override.
+    """
+    overrides: dict[str, Any] = {}
+
+    for item in values:
+        key, separator, raw_value = item.partition("=")
+        if not separator:
+            raise ConfigOverrideError("must be in key=value form")
+
+        parts = key.split(".")
+        if any(part == "" for part in parts):
+            raise ConfigOverrideError("keys must be non-empty dotted paths")
+
+        value = yaml.safe_load(raw_value)
+        cursor = overrides
+        for part in parts[:-1]:
+            existing = cursor.get(part)
+            if existing is None:
+                nested: dict[str, Any] = {}
+                cursor[part] = nested
+                cursor = nested
+            elif isinstance(existing, dict):
+                cursor = existing
+            else:
+                raise ConfigOverrideError(
+                    f"cannot set nested key under non-object path '{part}'"
+                )
+        cursor[parts[-1]] = value
+
+    return overrides
+
 
 T = TypeVar("T")
 

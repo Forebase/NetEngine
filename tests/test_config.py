@@ -1,13 +1,12 @@
 """Tests for configuration management."""
 
-import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pytest
 import yaml
 
-from netengine.config.loader import ConfigLoader
+from netengine.config.loader import ConfigLoader, ConfigOverrideError, parse_dotted_overrides
 from netengine.config.spec_config import SpecConfig
 from netengine.spec.loader import (
     SpecLoadError,
@@ -167,6 +166,58 @@ def dev_spec_file(temp_spec_dir: Path) -> Path:
     with open(spec_file, "w") as f:
         yaml.dump(spec, f)
     return spec_file
+
+
+class TestParseDottedOverrides:
+    """Tests for reusable dotted override parsing."""
+
+    def test_nested_overrides(self) -> None:
+        """Dotted paths should become nested dictionaries."""
+        overrides = parse_dotted_overrides([
+            "metadata.environment=dev",
+            "operator.api.port=9090",
+        ])
+
+        assert overrides == {
+            "metadata": {"environment": "dev"},
+            "operator": {"api": {"port": 9090}},
+        }
+
+    def test_yaml_scalar_and_list_parsing(self) -> None:
+        """Override values should be parsed with YAML semantics."""
+        overrides = parse_dotted_overrides([
+            "feature.enabled=true",
+            "limits.retries=3",
+            "dns.servers=[1.1.1.1, 8.8.8.8]",
+            "empty=null",
+        ])
+
+        assert overrides["feature"]["enabled"] is True
+        assert overrides["limits"]["retries"] == 3
+        assert overrides["dns"]["servers"] == ["1.1.1.1", "8.8.8.8"]
+        assert overrides["empty"] is None
+
+    @pytest.mark.parametrize(
+        "value, message",
+        [
+            ("metadata.name", "must be in key=value form"),
+            ("metadata..name=test", "keys must be non-empty dotted paths"),
+            (".metadata.name=test", "keys must be non-empty dotted paths"),
+            ("metadata.name.=test", "keys must be non-empty dotted paths"),
+        ],
+    )
+    def test_malformed_inputs(self, value: str, message: str) -> None:
+        """Malformed override strings should be rejected."""
+        with pytest.raises(ConfigOverrideError, match=message):
+            parse_dotted_overrides([value])
+
+    def test_scalar_nested_conflict(self) -> None:
+        """Nested keys cannot be added under an existing scalar value."""
+        with pytest.raises(
+            ConfigOverrideError,
+            match="cannot set nested key under non-object path 'metadata'",
+        ):
+            parse_dotted_overrides(["metadata=scalar", "metadata.name=test-network"])
 
 
 class TestConfigLoader:
