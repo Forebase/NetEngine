@@ -348,8 +348,39 @@ async def _up(
 
     orchestrator = Orchestrator(spec, mock_mode=mock)
     click.echo(f"Booting world from {spec_file} (phases 0–{up_to})…")
+
+    import time
+
+    _phase_start_times: dict[int, float] = {}
+
+    def _on_start(phase_num: int, phase_name: str) -> None:
+        _phase_start_times[phase_num] = time.monotonic()
+        click.echo(f"  ⧗  Phase {phase_num}: {phase_name}…")
+
+    def _on_complete(phase_num: int, phase_name: str) -> None:
+        elapsed = time.monotonic() - _phase_start_times.get(phase_num, time.monotonic())
+        click.echo(
+            click.style(f"  ✓  Phase {phase_num}: {phase_name}", fg="green")
+            + click.style(f"  ({elapsed:.1f}s)", fg="bright_black")
+        )
+
+    def _on_skip(phase_num: int, phase_name: str) -> None:
+        click.echo(click.style(f"  –  Phase {phase_num}: {phase_name} (already done)", fg="bright_black"))
+
+    def _on_error(phase_num: int, phase_name: str, exc: Exception) -> None:
+        click.echo(
+            click.style(f"  ✗  Phase {phase_num}: {phase_name} — {exc}", fg="red", bold=True),
+            err=True,
+        )
+
     try:
-        await orchestrator.execute_phases(up_to_phase=up_to)
+        await orchestrator.execute_phases(
+            up_to_phase=up_to,
+            on_phase_start=_on_start,
+            on_phase_complete=_on_complete,
+            on_phase_skip=_on_skip,
+            on_phase_error=_on_error,
+        )
     except Exception as exc:
         click.echo(f"Bootstrap failed: {exc}", err=True)
         sys.exit(1)
