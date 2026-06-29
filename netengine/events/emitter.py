@@ -9,7 +9,6 @@ from netengine.events.queues import Queue, queue_for_event_type
 from netengine.events.schema import EventEnvelope
 from netengine.handlers.context import PhaseContext
 
-
 _PGMQ_DISABLED_QUEUE = "<pgmq_disabled>"
 
 

@@ -69,7 +69,7 @@ def _queue_name(row: object) -> str | None:
 
 async def _inspect_database(db_url: str, *, timeout: float) -> list[DoctorCheckResult]:
     try:
-        import asyncpg  # type: ignore[import]
+        import asyncpg  # type: ignore[import-untyped]
     except ImportError:
         return [
             DoctorCheckResult(
@@ -164,9 +164,7 @@ async def _inspect_database(db_url: str, *, timeout: float) -> list[DoctorCheckR
         await conn.close()
 
 
-def check_database(
-    db_url: str | None, *, timeout: float = 3.0
-) -> list[DoctorCheckResult]:
+def check_database(db_url: str | None, *, timeout: float = 3.0) -> list[DoctorCheckResult]:
     """Return actionable doctor checks for Postgres, pgmq, and event queues."""
     checks = [parsed := _parse_db_url(db_url)]
     if not db_url or parsed.status != DoctorStatus.OK:
@@ -201,7 +199,7 @@ def check_pgmq_runtime_state(state_file: Path) -> DoctorCheckResult:
             required=False,
         )
 
-    failures: list[dict] = data.get("event_send_failures") or []
+    failures: list[dict[str, object]] = data.get("event_send_failures") or []
     disabled_drops = [f for f in failures if f.get("queue") == _PGMQ_DISABLED_QUEUE]
     if disabled_drops:
         return DoctorCheckResult(
