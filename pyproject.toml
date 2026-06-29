@@ -53,12 +53,10 @@ exclude = [
     "netengine/handlers/oidc_handler\\.py",
     "netengine/handlers/docker_handler\\.py",
     "netengine/handlers/and_handler\\.py",
-    "netengine/handlers/domain_registry_handler\\.py",
     "netengine/handlers/mail_handler\\.py",
     "netengine/handlers/minio_handler\\.py",
     "netengine/handlers/app_handler\\.py",
     "netengine/handlers/whois_server\\.py",
-    "netengine/handlers/world_registry_handler\\.py",
     "netengine/logging/middleware\\.py",
     "netengine/logging/sinks\\.py",
 ]

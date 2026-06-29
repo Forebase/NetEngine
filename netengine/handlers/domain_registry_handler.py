@@ -1,18 +1,18 @@
 # netengine/handlers/domain_registry_handler.py
-from typing import Any, List
+from typing import Any, List, cast
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.errors import RegistryError
+from netengine.events import factory as event_factory
 from netengine.events.queues import Queue
-from netengine.events.schema import EventEnvelope
 
 
 class DomainRegistryHandler:
-    def __init__(self):
+    def __init__(self) -> None:
         self._db = None
         self.pgmq = PGMQClient()
 
-    async def _get_db(self):
+    async def _get_db(self) -> Any:
         if self._db is None:
             from netengine.core.supabase_client import get_db
 
@@ -36,7 +36,7 @@ class DomainRegistryHandler:
             raise RegistryError(f"No address pool for profile {profile}")
         pool_cidr = result.data[0]["cidr"]
         await db.table("address_leases").upsert({"and_name": and_name, "cidr": pool_cidr}).execute()
-        return pool_cidr
+        return cast(str, pool_cidr)
 
     async def register_domain(self, domain: str, org_name: str, ns_records: List[str]) -> None:
         """Register a domain; emit DNS update event."""
@@ -44,9 +44,7 @@ class DomainRegistryHandler:
         await db.table("domain_records").upsert(
             {"domain": domain, "org_name": org_name, "ns_records": ns_records}
         ).execute()
-        event = EventEnvelope.create(
-            event_type="domain.registered",
-            emitted_by="domain_registry_handler",
-            payload={"domain": domain, "org": org_name, "ns": ns_records},
+        event = event_factory.domain_registered(
+            domain=domain, org_name=org_name, ns_records=ns_records
         )
         await self.pgmq.send(Queue.DNS_UPDATES, event)
