@@ -223,3 +223,71 @@ def test_preflight_probe_accepts_doctor_context_without_spec(tmp_path: Path) -> 
     results = run_preflight(ctx, probes=[probe])
 
     assert results == [DoctorCheckResult("custom", DoctorStatus.OK, "ready")]
+
+
+def test_compose_inventory_includes_known_alpha_ports_and_resources() -> None:
+    ports, containers, volumes, _ = doctor_mod._preflight._compose_ports_and_resources()
+
+    assert (5432, "tcp") in ports
+    assert (53, "tcp") in ports
+    assert (53, "udp") in ports
+    assert (8180, "tcp") in ports
+    assert (8080, "tcp") in ports
+    assert "netengine_postgres" in containers
+    assert "netengine_api" in containers
+    assert "postgres_data" in volumes
+
+
+def test_dns_udp_bind_failure_has_local_resolver_hint(monkeypatch) -> None:
+    def fake_can_bind(port: int, proto: str) -> bool:
+        assert (port, proto) == (53, "udp")
+        raise OSError("address already in use")
+
+    monkeypatch.setattr(doctor_mod, "_can_bind", fake_can_bind)
+    doctor_mod._preflight._can_bind = fake_can_bind
+
+    result = doctor_mod._preflight._check_port(53, "udp")
+
+    assert result.status == DoctorStatus.FAIL
+    assert result.required is True
+    assert result.hint is not None
+    assert "systemd-resolved" in result.hint
+    assert "dnsmasq" in result.hint
+
+
+def test_docker_resource_conflicts_use_short_format_commands(monkeypatch, tmp_path: Path) -> None:
+    commands = []
+
+    def fake_run(command: list[str], *, timeout: float = 8.0):
+        commands.append((command, timeout))
+        joined = " ".join(command)
+        if joined.startswith("docker ps"):
+            return SimpleNamespace(returncode=0, stdout="netengine_postgres\n", stderr="")
+        if joined.startswith("docker volume ls"):
+            return SimpleNamespace(returncode=0, stdout="netengine_data\n", stderr="")
+        if joined.startswith("docker network ls"):
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        raise AssertionError(command)
+
+    monkeypatch.setattr(doctor_mod._preflight, "_run", fake_run)
+    ctx = DoctorContext(
+        db_url=None,
+        state_file=tmp_path / "state.json",
+        project_root=tmp_path,
+        required_ports=(),
+        required_commands=(),
+        optional_commands=(),
+        feature_flags={},
+    )
+
+    results = doctor_mod._preflight._check_docker_conflicts(ctx)
+
+    container_check = next(r for r in results if r.name == "Docker container names")
+    volume_check = next(r for r in results if r.name == "Docker volume names")
+    assert container_check.status == DoctorStatus.FAIL
+    assert container_check.required is True
+    assert volume_check.status == DoctorStatus.WARN
+    assert volume_check.required is False
+    assert (["docker", "ps", "--format", "{{.Names}}"], 2.0) in commands
+    assert (["docker", "volume", "ls", "--format", "{{.Name}}"], 2.0) in commands
+    assert (["docker", "network", "ls", "--format", "{{.Name}}"], 2.0) in commands
