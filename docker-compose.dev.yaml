@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   postgres:
-    image: postgres:15.14
+    image: postgres:18.4
     container_name: netengine_postgres
     environment:
       POSTGRES_USER: netengine
