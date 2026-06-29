@@ -1,5 +1,6 @@
 """Tests for configuration management."""
 
+from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -8,6 +9,7 @@ import yaml
 
 from netengine.config.loader import ConfigLoader, ConfigOverrideError, parse_dotted_overrides
 from netengine.config.spec_config import SpecConfig
+from netengine.cli.main import _load_spec_for_cli
 from netengine.spec.loader import (
     SpecLoadError,
     load_spec,
@@ -15,6 +17,18 @@ from netengine.spec.loader import (
     load_spec_with_environment,
 )
 from netengine.spec.models import NetEngineSpec
+
+
+@dataclass
+class _NestedConfig:
+    environment: str = "structured"
+    owner: str = "schema-owner"
+
+
+@dataclass
+class _PrecedenceConfig:
+    name: str = "schema"
+    metadata: _NestedConfig = field(default_factory=_NestedConfig)
 
 
 @pytest.fixture
@@ -252,6 +266,36 @@ class TestConfigLoader:
         assert merged["c"] == 5
         assert merged["d"] == 6
 
+    def test_load_config_precedence_contract(self, temp_spec_dir: Path) -> None:
+        """Explicit overrides should win over files, defaults, and structured defaults."""
+        config_file = temp_spec_dir / "config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump(
+                {"name": "file", "metadata": {"environment": "file", "owner": "file-owner"}},
+                f,
+            )
+
+        config = ConfigLoader.load_config(
+            _PrecedenceConfig,
+            defaults={"name": "defaults", "metadata": {"environment": "defaults"}},
+            config_file=config_file,
+            overrides={"metadata": {"environment": "override"}},
+        )
+
+        assert config.name == "file"
+        assert config.metadata.environment == "override"
+        assert config.metadata.owner == "file-owner"
+
+    def test_merge_configs_nested_precedence_contract(self) -> None:
+        """Later merge layers should win nested conflicts while preserving siblings."""
+        merged = ConfigLoader.merge_configs(
+            {"metadata": {"environment": "base", "name": "base-name"}},
+            {"metadata": {"environment": "env"}},
+            {"metadata": {"environment": "override"}},
+        )
+
+        assert merged["metadata"] == {"environment": "override", "name": "base-name"}
+
 
 class TestSpecConfig:
     """Tests for spec configuration loading."""
@@ -364,6 +408,20 @@ class TestSpecConfig:
 
         assert spec["metadata"]["environment"] == "prod"
 
+    def test_environment_precedence_with_nested_merge(
+        self, base_spec_file: Path, dev_spec_file: Path
+    ) -> None:
+        """Environment files should override base fields and explicit overrides should win last."""
+        overrides = {"metadata": {"environment": "cli"}}
+
+        spec = SpecConfig.load_environment_variants(
+            base_spec_file, environment="dev", overrides=overrides
+        )
+
+        assert spec["metadata"]["environment"] == "cli"
+        assert spec["metadata"]["name"] == "test-network"
+        assert spec["metadata"]["version"] == "1.0"
+
 
 class TestSpecLoaderIntegration:
     """Integration tests for spec loader with OmegaConf."""
@@ -438,6 +496,50 @@ class TestSpecLoaderIntegration:
 
         with pytest.raises(SpecLoadError, match="Unsupported spec metadata.schema_version"):
             load_spec_with_environment(base_file, environment="dev")
+
+    def test_load_spec_with_environment_precedence_nested_merge(
+        self, temp_spec_dir: Path
+    ) -> None:
+        """Validated environment loading should apply base < env file < overrides."""
+        base = _minimal_spec()
+        base["metadata"]["environment"] = "base"
+        base["gateway_portal"]["real_internet"] = {"mode": "isolated"}
+        base_file = self._write_spec(temp_spec_dir, "spec.base.yaml", base)
+        self._write_spec(
+            temp_spec_dir,
+            "spec.dev.yaml",
+            {
+                "metadata": {"environment": "dev"},
+                "gateway_portal": {"real_internet": {"mode": "exposed"}},
+            },
+        )
+
+        spec = load_spec_with_environment(
+            base_file,
+            environment="dev",
+            overrides={"metadata": {"environment": "cli"}},
+        )
+
+        assert spec.metadata.environment == "cli"
+        assert spec.metadata.name == "test-network"
+        assert spec.gateway_portal.real_internet.mode.value == "exposed"
+
+    def test_load_spec_for_cli_env_plus_set_precedence(self, temp_spec_dir: Path) -> None:
+        """CLI loading should apply --set values after --env composition."""
+        base = _minimal_spec()
+        base["metadata"]["environment"] = "base"
+        base_file = self._write_spec(temp_spec_dir, "spec.base.yaml", base)
+        self._write_spec(temp_spec_dir, "spec.dev.yaml", {"metadata": {"environment": "dev"}})
+
+        spec = _load_spec_for_cli(
+            str(base_file),
+            environment="dev",
+            set_values=("metadata.environment=cli", "gateway_portal.real_internet.mode=exposed"),
+        )
+
+        assert spec.metadata.environment == "cli"
+        assert spec.metadata.name == "test-network"
+        assert spec.gateway_portal.real_internet.mode.value == "exposed"
 
 
 class TestSpecCrossValidation:
