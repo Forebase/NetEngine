@@ -91,29 +91,6 @@ BEGIN
     END LOOP;
 END;
 $$;
-SELECT pgmq.create('dns_updates');
-SELECT pgmq.create('dns_updates_dlq');
-SELECT pgmq.create('oidc_provisioning');
-SELECT pgmq.create('oidc_provisioning_dlq');
-SELECT pgmq.create('and_provisioning');
-SELECT pgmq.create('and_provisioning_dlq');
-SELECT pgmq.create('inworld_admissions');
-SELECT pgmq.create('inworld_admissions_dlq');
-SELECT pgmq.create('services_admissions');
-SELECT pgmq.create('services_admissions_dlq');
-SELECT pgmq.create('and_admissions');
-SELECT pgmq.create('and_admissions_dlq');
-SELECT pgmq.create('pki_cert_rotation_events');
-SELECT pgmq.create('pki_cert_rotation_events_dlq');
-SELECT pgmq.create('drift_events');
-SELECT pgmq.create('drift_events_dlq');
-SELECT pgmq.create('world_health');
-SELECT pgmq.create('world_health_dlq');
-SELECT pgmq.create('gateway_portal_events');
-SELECT pgmq.create('gateway_portal_events_dlq');
-SELECT pgmq.create('phase_events');
-SELECT pgmq.create('phase_events_dlq');
-
 -- pgmq_send(queue_name, message)
 CREATE OR REPLACE FUNCTION pgmq_send(queue_name text, message text)
 RETURNS bigint

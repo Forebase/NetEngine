@@ -31,3 +31,15 @@ def test_all_primary_queues_have_registered_dlqs() -> None:
     for queue in PRIMARY_QUEUES:
         assert dlq_for(queue) in Queue
         assert dlq_for(queue).value in {registered.value for registered in Queue}
+
+COMPOSE_INTEGRATION = REPO_ROOT / "compose" / "compose.test-integration.yml"
+
+
+def test_integration_compose_applies_initial_migration_for_pgmq_setup() -> None:
+    """Keep integration pgmq setup on the same migration path as the app."""
+    compose = COMPOSE_INTEGRATION.read_text()
+
+    assert "-f /migrations/001_initial.sql" in compose
+    assert "../migrations/001_initial.sql:/migrations/001_initial.sql:ro" in compose
+    assert "pgmq.create_queue" not in compose
+    assert "pgmq.create(" not in compose
