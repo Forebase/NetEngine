@@ -161,7 +161,7 @@ def _cross_validate(spec: NetEngineSpec) -> None:
         )
 
 
-def load_spec(yaml_path: str | Path) -> NetEngineSpec:
+def load_spec(yaml_path: str | Path, *, validate_feature_states: bool = True) -> NetEngineSpec:
     """Load and validate a NetEngine YAML specification.
 
     Args:
@@ -207,7 +207,8 @@ def load_spec(yaml_path: str | Path) -> NetEngineSpec:
         raise SpecLoadError(f"Spec validation failed: {e}")
 
     _cross_validate(spec)
-    _validate_feature_states(spec)
+    if validate_feature_states:
+        _validate_feature_states(spec)
     return spec
 
 
@@ -215,6 +216,7 @@ def load_spec_with_composition(
     yaml_path: str | Path,
     base_path: Optional[str | Path] = None,
     overrides: Optional[dict[str, Any]] = None,
+    validate_feature_states: bool = True,
 ) -> NetEngineSpec:
     """Load spec with optional base spec composition and overrides.
 
@@ -279,7 +281,8 @@ def load_spec_with_composition(
         raise SpecLoadError(f"Spec validation failed: {e}")
 
     _cross_validate(spec)
-    _validate_feature_states(spec)
+    if validate_feature_states:
+        _validate_feature_states(spec)
     return spec
 
 
@@ -287,6 +290,7 @@ def load_spec_with_environment(
     base_spec: str | Path,
     environment: str = "dev",
     overrides: Optional[dict[str, Any]] = None,
+    validate_feature_states: bool = True,
 ) -> NetEngineSpec:
     """Load base spec and merge with environment-specific overrides.
 
@@ -349,5 +353,6 @@ def load_spec_with_environment(
         raise SpecLoadError(f"Spec validation failed: {e}")
 
     _cross_validate(spec)
-    _validate_feature_states(spec)
+    if validate_feature_states:
+        _validate_feature_states(spec)
     return spec

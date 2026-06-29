@@ -456,6 +456,43 @@ def test_validate_experimental_enabled_feature_exits_zero_with_explanation(tmp_p
     assert "pki.intermediate_ca_enabled: experimental" in result.output
 
 
+def test_validate_json_reports_active_feature_states(tmp_path: Path) -> None:
+    """JSON format should expose machine-readable support-matrix results."""
+    spec_file = _write_cli_validate_spec(tmp_path, pki__intermediate_ca_enabled=True)
+
+    result = CliRunner().invoke(cli_main.cli, ["validate", str(spec_file), "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["spec"] == "minimal-example"
+    assert payload["feature_states"] == [
+        {
+            "path": "pki.intermediate_ca_enabled",
+            "state": "experimental",
+            "stage": "alpha",
+            "reason": "intermediate CA handling is available but still stabilizing",
+            "current_value": True,
+            "default_value": False,
+        }
+    ]
+
+
+def test_validate_json_unsupported_active_feature_exits_nonzero(tmp_path: Path) -> None:
+    """Unsupported active fields should be machine-readable and fail CI."""
+    spec_file = _write_cli_validate_spec(tmp_path, pki__crl_enabled=True)
+
+    result = CliRunner().invoke(cli_main.cli, ["validate", str(spec_file), "--format", "json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["ok"] is False
+    assert payload["feature_states"][0]["path"] == "pki.crl_enabled"
+    assert payload["feature_states"][0]["state"] == "unsupported"
+    assert payload["feature_states"][0]["current_value"] is True
+    assert payload["feature_states"][0]["default_value"] is False
+
+
 def test_validate_explain_includes_dotted_field_paths_and_feature_states(tmp_path: Path) -> None:
     """--explain should show concrete dotted paths and their feature states."""
     spec_file = _write_cli_validate_spec(tmp_path, pki__intermediate_ca_enabled=True)

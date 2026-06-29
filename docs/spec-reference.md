@@ -50,8 +50,17 @@ Fields with alpha feature-state metadata are listed in `docs/support-matrix.md`.
 Run these before handing a spec to another operator:
 
 ```bash
+poetry run netengine validate <spec.yaml> --format text --explain
 poetry run netengine diagnose <spec.yaml>
 NETENGINE_MOCK=true poetry run netengine up <spec.yaml>
 ```
+
+For CI, archive machine-readable support-matrix results and fail on active unsupported fields:
+
+```bash
+poetry run netengine validate <spec.yaml> --format json > support-matrix-results.json
+```
+
+The JSON output contains `ok`, `spec`, and `feature_states`; each active feature-state field includes `path`, `state`, `stage`, `reason`, `current_value`, and `default_value`. The command exits non-zero when any active field is `unsupported`.
 
 Prefer explicit values in committed examples so changes are reviewable.

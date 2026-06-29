@@ -1,6 +1,7 @@
 """NetEngine CLI — operator surface for world management."""
 
 import asyncio
+import json
 import os
 import sys
 from pathlib import Path
@@ -81,16 +82,21 @@ def _load_spec_for_cli(
     *,
     environment: str | None = None,
     set_values: tuple[str, ...] = (),
+    validate_feature_states: bool = True,
 ):
     """Load a spec using the same composition semantics as ``up``."""
     overrides = _parse_set_overrides(set_values)
+    feature_state_kwargs = {} if validate_feature_states else {"validate_feature_states": False}
     if environment:
         return load_spec_with_environment(
-            spec_file, environment=environment, overrides=overrides or None
+            spec_file,
+            environment=environment,
+            overrides=overrides or None,
+            **feature_state_kwargs,
         )
     if overrides:
-        return load_spec_with_composition(spec_file, overrides=overrides)
-    return load_spec(spec_file)
+        return load_spec_with_composition(spec_file, overrides=overrides, **feature_state_kwargs)
+    return load_spec(spec_file, **feature_state_kwargs)
 
 
 def _feature_state_explanations(spec: Any) -> list[str]:
@@ -104,6 +110,34 @@ def _feature_state_explanations(spec: Any) -> list[str]:
             f"{path}: {entry.state} ({entry.stage}) - {entry.reason}; value={value_text!r}"
         )
     return lines
+
+
+def _jsonable_feature_value(value: Any) -> Any:
+    """Return a JSON-serializable representation for feature-state values."""
+    if hasattr(value, "value"):
+        return value.value
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    return value
+
+
+def _active_feature_state_results(spec: Any) -> list[dict[str, Any]]:
+    """Return machine-readable active feature-state validation results."""
+    results: list[dict[str, Any]] = []
+    for entry, path, value, default_value in _resolve_feature_state_paths(spec):
+        if not _is_active_feature_value(value, default_value):
+            continue
+        results.append(
+            {
+                "path": path,
+                "state": entry.state,
+                "stage": entry.stage,
+                "reason": entry.reason,
+                "current_value": _jsonable_feature_value(value),
+                "default_value": _jsonable_feature_value(default_value),
+            }
+        )
+    return results
 
 
 async def _run_migrations(db_url: str) -> MigrationRunResult:
@@ -479,6 +513,14 @@ async def _readiness(
     help="Print active experimental, reserved, unsupported, or otherwise noteworthy fields.",
 )
 @click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    show_default=True,
+    help="Emit human-readable text or machine-readable JSON support-matrix results.",
+)
+@click.option(
     "--env",
     "environment",
     help="Merge spec.{ENV}.yaml next to SPEC_FILE before validating.",
@@ -493,28 +535,61 @@ async def _readiness(
 def validate(
     spec_file: str,
     explain: bool,
+    output_format: str,
     environment: str | None,
     set_values: tuple[str, ...],
 ) -> None:
     """Validate SPEC_FILE without booting a world."""
     try:
         spec = _load_spec_for_cli(
-            spec_file, environment=environment, set_values=set_values
+            spec_file,
+            environment=environment,
+            set_values=set_values,
+            validate_feature_states=False,
         )
     except SpecLoadError as exc:
-        click.echo(f"Spec validation failed: {exc}", err=True)
+        if output_format == "json":
+            click.echo(json.dumps({"ok": False, "error": str(exc), "feature_states": []}, indent=2))
+        else:
+            click.echo(f"Spec validation failed: {exc}", err=True)
         sys.exit(1)
 
-    click.echo(f"Spec validation succeeded: {spec.metadata.name}")
-    if explain:
-        explanations = _feature_state_explanations(spec)
-        if explanations:
-            click.echo("Feature-state details:")
-            for line in explanations:
-                prefix = "WARNING: " if ": experimental " in line else ""
-                click.echo(f"  - {prefix}{line}")
+    feature_states = _active_feature_state_results(spec)
+    unsupported = [item for item in feature_states if item["state"] == "unsupported"]
+
+    if output_format == "json":
+        click.echo(
+            json.dumps(
+                {
+                    "ok": not unsupported,
+                    "spec": spec.metadata.name,
+                    "feature_states": feature_states,
+                },
+                indent=2,
+            )
+        )
+    else:
+        if unsupported:
+            click.echo("Spec validation failed: Unsupported spec features enabled:", err=True)
+            for item in unsupported:
+                click.echo(
+                    f"  - {item['path']} is {item['state']} in {item['stage']}: {item['reason']}",
+                    err=True,
+                )
         else:
-            click.echo("Feature-state details: no active noteworthy fields.")
+            click.echo(f"Spec validation succeeded: {spec.metadata.name}")
+        if explain:
+            explanations = _feature_state_explanations(spec)
+            if explanations:
+                click.echo("Feature-state details:")
+                for line in explanations:
+                    prefix = "WARNING: " if ": experimental " in line else ""
+                    click.echo(f"  - {prefix}{line}")
+            else:
+                click.echo("Feature-state details: no active noteworthy fields.")
+
+    if unsupported:
+        sys.exit(1)
 
 
 @cli.command()
