@@ -1,7 +1,7 @@
 import ipaddress
 import os
 import tempfile
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from netengine.errors import GatewayError
 from netengine.gateways.base import BaseGatewayHandler
@@ -14,6 +14,79 @@ class GatewayHandler(BaseGatewayHandler):
     def __init__(self, docker: Any) -> None:
         self.docker = docker
         self.gateway_container = "netengine_gateway"
+
+    async def gateway_reachable(self) -> bool:
+        """Return True when the gateway container accepts exec commands."""
+        try:
+            exit_code, _ = await self.docker.exec_command(
+                self.gateway_container, ["true"]
+            )
+            return exit_code == 0
+        except Exception:
+            return False
+
+    async def nft_table_exists(self, family: str, table_name: str) -> bool:
+        """Return True when an nftables table exists in the gateway container."""
+        exit_code, _ = await self.docker.exec_command(
+            self.gateway_container, ["nft", "list", "table", family, table_name]
+        )
+        return exit_code == 0
+
+    async def path_exists(self, path: str) -> bool:
+        """Return True when *path* exists in the gateway container."""
+        exit_code, _ = await self.docker.exec_command(
+            self.gateway_container, ["test", "-e", path]
+        )
+        return exit_code == 0
+
+    async def peer_endpoint_reachable(
+        self, endpoint: str, timeout_seconds: int = 2
+    ) -> bool | None:
+        """Best-effort TCP reachability probe for host:port endpoints.
+
+        Returns None when the endpoint has no explicit port or the container lacks
+        a probe utility; callers can treat that as unknown rather than unhealthy.
+        """
+        host, sep, port = endpoint.rpartition(":")
+        if not sep or not host or not port.isdigit():
+            return None
+        probes = (
+            ["nc", "-z", "-w", str(timeout_seconds), host, port],
+            [
+                "sh",
+                "-c",
+                f"timeout {timeout_seconds} bash -c '</dev/tcp/{host}/{port}'",
+            ],
+        )
+        unsupported = False
+        for cmd in probes:
+            exit_code, output = await self.docker.exec_command(
+                self.gateway_container, cmd
+            )
+            if exit_code == 0:
+                return True
+            unsupported = (
+                unsupported
+                or "not found" in output.lower()
+                or "no such file" in output.lower()
+            )
+        return None if unsupported else False
+
+    async def reapply_peer_routing(self, peers: list[dict[str, Any]]) -> None:
+        """Re-load persisted peer nftables rule files after a gateway restart."""
+        for peer in peers:
+            peer_name = peer.get("name")
+            rules_path = (
+                peer.get("routing_rules_path")
+                or f"/etc/nftables/rules/peer_{peer_name}.nft"
+            )
+            exit_code, output = await self.docker.exec_command(
+                self.gateway_container, ["nft", "-f", rules_path]
+            )
+            if exit_code != 0:
+                raise GatewayError(
+                    f"Failed to reapply peer routing for {peer_name}: {output}"
+                )
 
     async def generate_rules(self, and_name: str, profile: str, cidr: str) -> str:
         """Generate nftables ruleset for the given AND profile."""
@@ -95,14 +168,18 @@ table ip netengine_{and_name} {{
             f.write(rules)
             tmp_path = f.name
         try:
-            await self.docker.copy_to_container(self.gateway_container, tmp_path, dest_path)
+            await self.docker.copy_to_container(
+                self.gateway_container, tmp_path, dest_path
+            )
         finally:
             os.unlink(tmp_path)
 
         cmd = ["nft", "-f", dest_path]
         exit_code, output = await self.docker.exec_command(self.gateway_container, cmd)
         if exit_code != 0:
-            raise GatewayError(f"Failed to apply nftables rules for {and_name}: {output}")
+            raise GatewayError(
+                f"Failed to apply nftables rules for {and_name}: {output}"
+            )
 
     async def remove_rules(self, and_name: str) -> None:
         """Delete the nftables table for this AND."""
@@ -110,7 +187,9 @@ table ip netengine_{and_name} {{
         exit_code, output = await self.docker.exec_command(self.gateway_container, cmd)
         # Table-not-found is acceptable on teardown
         if exit_code != 0 and "No such table" not in output:
-            raise GatewayError(f"Failed to remove nftables table for {and_name}: {output}")
+            raise GatewayError(
+                f"Failed to remove nftables table for {and_name}: {output}"
+            )
         cmd = ["rm", "-f", f"/etc/nftables/rules/{and_name}.nft"]
         await self.docker.exec_command(self.gateway_container, cmd)
 
@@ -145,7 +224,9 @@ table ip netengine_{and_name} {{
             f.write(rules)
             tmp_path = f.name
         try:
-            await self.docker.copy_to_container(self.gateway_container, tmp_path, dest_path)
+            await self.docker.copy_to_container(
+                self.gateway_container, tmp_path, dest_path
+            )
         except Exception as exc:
             os.unlink(tmp_path)
             raise GatewayError(
@@ -157,7 +238,9 @@ table ip netengine_{and_name} {{
             self.gateway_container, ["nft", "-f", dest_path]
         )
         if exit_code != 0:
-            raise GatewayError(f"Failed to apply internet policy ({config.mode.value}): {output}")
+            raise GatewayError(
+                f"Failed to apply internet policy ({config.mode.value}): {output}"
+            )
 
     async def remove_internet_policy(self) -> None:
         """Remove internet policy rules (reverts to isolated state)."""
@@ -179,7 +262,9 @@ table ip netengine_{and_name} {{
         dispatch = {
             GatewayRealInternetMode.ISOLATED: self._isolated_internet_rules,
             GatewayRealInternetMode.SHADOWED: self._shadowed_internet_rules,
-            GatewayRealInternetMode.MIRRORED: lambda: self._mirrored_internet_rules(config),
+            GatewayRealInternetMode.MIRRORED: lambda: self._mirrored_internet_rules(
+                config
+            ),
             GatewayRealInternetMode.EXPOSED: self._exposed_internet_rules,
         }
         return dispatch[config.mode]()
@@ -300,7 +385,9 @@ table inet netengine_peer_{peer_name} {{
             f.write(rules)
             tmp_path = f.name
         try:
-            await self.docker.copy_to_container(self.gateway_container, tmp_path, dest_path)
+            await self.docker.copy_to_container(
+                self.gateway_container, tmp_path, dest_path
+            )
         except Exception as exc:
             os.unlink(tmp_path)
             raise GatewayError(
@@ -312,7 +399,9 @@ table inet netengine_peer_{peer_name} {{
             self.gateway_container, ["nft", "-f", dest_path]
         )
         if exit_code != 0:
-            raise GatewayError(f"Failed to apply peer routing for {peer_name}: {output}")
+            raise GatewayError(
+                f"Failed to apply peer routing for {peer_name}: {output}"
+            )
 
     async def remove_peer_routing(self, peer_name: str) -> None:
         """Remove routing rules for a cross-world peer."""
@@ -321,7 +410,9 @@ table inet netengine_peer_{peer_name} {{
             ["nft", "delete", "table", "inet", f"netengine_peer_{peer_name}"],
         )
         if exit_code != 0 and "No such table" not in output:
-            raise GatewayError(f"Failed to remove peer routing for {peer_name}: {output}")
+            raise GatewayError(
+                f"Failed to remove peer routing for {peer_name}: {output}"
+            )
         await self.docker.exec_command(
             self.gateway_container,
             ["rm", "-f", f"/etc/nftables/rules/peer_{peer_name}.nft"],
@@ -348,7 +439,9 @@ table inet netengine_peer_{peer_name} {{
             f.write(conf)
             tmp_path = f.name
         try:
-            await self.docker.copy_to_container(self.gateway_container, tmp_path, conf_path)
+            await self.docker.copy_to_container(
+                self.gateway_container, tmp_path, conf_path
+            )
         finally:
             os.unlink(tmp_path)
 
@@ -369,13 +462,17 @@ table inet netengine_peer_{peer_name} {{
         await self.docker.exec_command(
             self.gateway_container, ["rm", "-f", f"/etc/dnsmasq.d/{and_name}.conf"]
         )
-        await self.docker.exec_command(self.gateway_container, ["pkill", "-SIGHUP", "dnsmasq"])
+        await self.docker.exec_command(
+            self.gateway_container, ["pkill", "-SIGHUP", "dnsmasq"]
+        )
 
     # ─────────────────────────────────────────────
     # BGP speaker (bgp profile feature)
     # ─────────────────────────────────────────────
 
-    async def setup_bgp(self, and_name: str, cidr: str, gateway_ip: str, bgp_mode: str) -> None:
+    async def setup_bgp(
+        self, and_name: str, cidr: str, gateway_ip: str, bgp_mode: str
+    ) -> None:
         """Provision a Bird2 BGP speaker sidecar container for the AND."""
         bird_conf = self._bird_conf(and_name, cidr, gateway_ip)
         conf_path = f"/etc/bird/bird_{and_name}.conf"
