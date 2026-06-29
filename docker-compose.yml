@@ -1,5 +1,3 @@
-version: "3.8"
-
 # Full NetEngine local bootstrap stack.
 # Services here start BEFORE `netengine up` runs.
 # CoreDNS and step-ca are deployed by phase handlers at runtime.
