@@ -8,6 +8,10 @@ from netengine.spec.models import NetEngineSpec
 _PROBE_NAME = "OIDC"
 _TIMEOUT = aiohttp.ClientTimeout(total=8)
 _KEYCLOAK_PORT = 8080
+_PHASE = 4
+_RESOURCE = "Keycloak platform identity"
+_LOGS = ["docker logs netengines_keycloak"]
+_RETRY = "netengine heal --phase 4"
 
 
 async def probe(spec: NetEngineSpec) -> ProbeResult:

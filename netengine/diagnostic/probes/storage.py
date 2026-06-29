@@ -8,6 +8,10 @@ from netengine.spec.models import NetEngineSpec
 _PROBE_NAME = "Storage"
 _MINIO_API_PORT = 9000
 _TIMEOUT = aiohttp.ClientTimeout(total=5)
+_PHASE = 8
+_RESOURCE = "MinIO object storage"
+_LOGS = ["docker logs netengines_minio"]
+_RETRY = "netengine heal --phase 8"
 
 
 async def probe(spec: NetEngineSpec) -> ProbeResult:

@@ -128,5 +128,10 @@ class MonitoringService:
             "status": result.status.value,
             "detail": result.detail,
             "hint": result.hint,
+            "remediation": result.remediation,
+            "related_phase": result.related_phase,
+            "related_resource": result.related_resource,
+            "related_logs": result.related_logs,
+            "command_to_retry": result.command_to_retry,
             "elapsed_ms": result.elapsed_ms,
         }

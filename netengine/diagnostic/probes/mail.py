@@ -8,6 +8,10 @@ from netengine.spec.models import NetEngineSpec
 _PROBE_NAME = "Mail"
 _SMTP_PORT = 25
 _TIMEOUT = 5.0
+_PHASE = 8
+_RESOURCE = "Postfix SMTP"
+_LOGS = ["docker logs netengines_postfix"]
+_RETRY = "netengine heal --phase 8"
 
 
 async def probe(spec: NetEngineSpec) -> ProbeResult:
