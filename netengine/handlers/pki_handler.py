@@ -91,20 +91,17 @@ class PKIHandler:
                 self.volume_name: {"bind": "/home/step", "mode": "rw"},
                 tmpdir: {"bind": "/tmp/pass", "mode": "ro"},
             }
-            password_file_path = "/tmp/pass/password.txt"
+            password_file = "/tmp/pass/password.txt"
+            os.makedirs(os.path.dirname(password_file), exist_ok=True)
+            with open(password_file, "w") as f:
+                f.write("dev_password")  # or whatever password you want
             cmd = [
-                "step",
-                "ca",
-                "init",
-                "--name",
-                "NetEngines Root CA",
-                "--dns",
-                self.ca_dns,
-                "--provisioner",
-                "acme",
-                "--password-file", password_file_path,
-                "--provisioner-password-file", password_file_path,
-                # "--no-start",  # (optional, can be removed)
+                "step", "ca", "init",
+                f"--name={ca_name}",
+                f"--dns={dns_name}",
+                "--provisioner=acme",
+                f"--password-file={password_file}",
+                "--pki"  # <-- use --pki instead of --no-start
             ]
             logger.info(f"Running step ca init with command: {' '.join(cmd)}")
             result = await self.docker.run_container_one_off(
