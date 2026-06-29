@@ -75,7 +75,9 @@ class TestInternetRuleGeneration:
         config = RealInternetConfig(
             mode=GatewayRealInternetMode.MIRRORED,
             service_mirrors=[
-                ServiceMirror(real_hostname="example.com", in_world_service="10.0.1.50"),
+                ServiceMirror(
+                    real_hostname="example.com", in_world_service="10.0.1.50"
+                ),
             ],
         )
         rules = gateway._mirrored_internet_rules(config)
@@ -136,12 +138,13 @@ class TestApplyInternetPolicy:
     async def test_mirrored_passes_config_to_rule_generator(self, gateway, mock_docker):
         config = RealInternetConfig(
             mode=GatewayRealInternetMode.MIRRORED,
-            service_mirrors=[ServiceMirror(real_hostname="a.com", in_world_service="10.1.2.3")],
+            service_mirrors=[
+                ServiceMirror(real_hostname="a.com", in_world_service="10.1.2.3")
+            ],
         )
         written_content = []
 
         import builtins
-        import os
 
         real_open = builtins.open
 
@@ -199,7 +202,9 @@ class TestRemoveInternetPolicy:
 
 
 class TestPeerRouting:
-    async def test_apply_peer_routing_uses_peer_name_in_table(self, gateway, mock_docker):
+    async def test_apply_peer_routing_uses_peer_name_in_table(
+        self, gateway, mock_docker
+    ):
         await gateway.apply_peer_routing("worldb", "192.168.100.1")
         copy_args = mock_docker.copy_to_container.call_args[0]
         assert "peer_worldb" in copy_args[2]
@@ -223,7 +228,9 @@ class TestPeerRouting:
         mock_docker.exec_command.side_effect = [(1, "No such table"), (0, "")]
         await gateway.remove_peer_routing("worldb")
 
-    async def test_remove_peer_routing_raises_on_other_failure(self, gateway, mock_docker):
+    async def test_remove_peer_routing_raises_on_other_failure(
+        self, gateway, mock_docker
+    ):
         mock_docker.exec_command.return_value = (1, "permission denied")
         with pytest.raises(GatewayError, match="worldb"):
             await gateway.remove_peer_routing("worldb")
@@ -347,7 +354,6 @@ class TestRuntimeStateNewFields:
         assert state.intermediate_ca_cert is None
 
     def test_new_fields_survive_save_load_cycle(self, tmp_path, monkeypatch):
-        import os
 
         state_path = tmp_path / "state.json"
         monkeypatch.setenv("NETENGINE_STATE_FILE", str(state_path))
@@ -355,10 +361,100 @@ class TestRuntimeStateNewFields:
         state = RuntimeState()
         state.dnssec_output = {"zone": "internal", "ksk_name": "Kinternal.+013+00001"}
         state.gateway_portal_output = {"enabled": True, "internet_mode": "exposed"}
-        state.intermediate_ca_cert = "-----BEGIN CERTIFICATE-----\nABC\n-----END CERTIFICATE-----"
+        state.intermediate_ca_cert = (
+            "-----BEGIN CERTIFICATE-----\nABC\n-----END CERTIFICATE-----"
+        )
         state.save()
 
         loaded = RuntimeState.load()
-        assert loaded.dnssec_output == {"zone": "internal", "ksk_name": "Kinternal.+013+00001"}
+        assert loaded.dnssec_output == {
+            "zone": "internal",
+            "ksk_name": "Kinternal.+013+00001",
+        }
         assert loaded.gateway_portal_output["internet_mode"] == "exposed"
         assert "ABC" in loaded.intermediate_ca_cert
+
+
+class TestGatewayPortalLifecycleAndHealth:
+    def _ctx(self, tmp_path, docker):
+        state = RuntimeState()
+        ctx = MagicMock()
+        ctx.runtime_state = state
+        ctx.zone_dir = str(tmp_path)
+        ctx.docker_client = docker
+        ctx.logger = MagicMock()
+        (tmp_path / "Corefile").write_text(". {\n    errors\n}\n")
+        return ctx
+
+    async def test_add_peer_tracks_artifacts_and_healthchecks_dns_stub(
+        self, tmp_path, mock_docker
+    ):
+        mock_docker.signal_container = AsyncMock()
+        ctx = self._ctx(tmp_path, mock_docker)
+        ctx.runtime_state.gateway_portal_output = {
+            "enabled": True,
+            "internet_mode": "custom",
+        }
+        handler = GatewayPortalHandler()
+        peer = CrossWorldPeer(name="worldb", endpoint="192.168.200.1:9053")
+
+        result = await handler.add_peer(
+            ctx, GatewayHandler(mock_docker), mock_docker, peer
+        )
+
+        assert result["routing_configured"] is True
+        artifacts = ctx.runtime_state.gateway_portal_output["peer_artifacts"]
+        assert artifacts[0]["dns_zone"] == "worldb.internal"
+        assert "worldb.internal" in (tmp_path / "Corefile").read_text()
+
+        async def exec_side_effect(container, cmd):
+            if cmd == ["true"]:
+                return (0, "")
+            if cmd[:4] == ["nft", "list", "table", "inet"]:
+                return (0, "")
+            if cmd[:2] == ["test", "-e"]:
+                return (0, "")
+            if cmd and cmd[0] in {"nc", "sh"}:
+                return (0, "")
+            return (0, "")
+
+        mock_docker.exec_command.side_effect = exec_side_effect
+        assert await handler.healthcheck(ctx) is True
+
+    async def test_peer_setup_rolls_back_routing_when_dns_fails(
+        self, tmp_path, mock_docker
+    ):
+        ctx = self._ctx(tmp_path, mock_docker)
+        (tmp_path / "Corefile").unlink()
+        handler = GatewayPortalHandler()
+        peer = CrossWorldPeer(name="worldc", endpoint="192.168.200.2:8443")
+
+        result = await handler.add_peer(
+            ctx, GatewayHandler(mock_docker), mock_docker, peer
+        )
+
+        assert result["rolled_back"] is True
+        assert "error" in result
+        commands = [c.args[1] for c in mock_docker.exec_command.await_args_list]
+        assert ["nft", "delete", "table", "inet", "netengine_peer_worldc"] in commands
+
+    async def test_reapply_routing_after_gateway_restart_loads_tracked_rule_files(
+        self, tmp_path, mock_docker
+    ):
+        ctx = self._ctx(tmp_path, mock_docker)
+        ctx.runtime_state.gateway_portal_output = {
+            "peer_artifacts": [
+                {
+                    "name": "worldb",
+                    "routing_rules_path": "/etc/nftables/rules/peer_worldb.nft",
+                }
+            ]
+        }
+
+        await GatewayPortalHandler().reapply_routing_after_gateway_restart(
+            ctx, GatewayHandler(mock_docker)
+        )
+
+        mock_docker.exec_command.assert_any_await(
+            "netengine_gateway", ["nft", "-f", "/etc/nftables/rules/peer_worldb.nft"]
+        )
