@@ -251,7 +251,8 @@ async def migration_status(
             checksum = migration_checksum(sql)
             filename = migration_path.name
             existing = await conn.fetchrow(
-                "SELECT checksum, success, applied_at, error FROM schema_migrations WHERE filename = $1",
+                "SELECT checksum, success, applied_at, error"
+                " FROM schema_migrations WHERE filename = $1",
                 filename,
             )
             if not existing:

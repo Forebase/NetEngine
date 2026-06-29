@@ -107,7 +107,8 @@ def _check_python() -> DoctorCheckResult:
     return DoctorCheckResult(
         "Python runtime",
         DoctorStatus.OK if ok else DoctorStatus.FAIL,
-        f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}; pyproject requires ^3.13",
+        f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro};"
+        " pyproject requires ^3.13",
         None if ok else "Install Python 3.13 or newer and recreate the virtualenv.",
         "host",
     )
@@ -382,7 +383,8 @@ def _check_docker_subnet_conflicts(ctx: DoctorContext) -> DoctorCheckResult:
                 "Docker subnet conflicts",
                 DoctorStatus.WARN,
                 "; ".join(conflicts),
-                "Remove conflicting networks with `docker network rm <name>` or `docker network prune`.",
+                "Remove conflicting networks with"
+                " `docker network rm <name>` or `docker network prune`.",
                 "docker",
                 required=False,
             )
@@ -414,7 +416,8 @@ def _check_docker_conflicts(ctx: DoctorContext) -> list[DoctorCheckResult]:
                 DoctorStatus.WARN if conflicts else DoctorStatus.OK,
                 ", ".join(conflicts) if conflicts else "no known name conflicts",
                 (
-                    "Run `netengine down` or remove stale Docker resources if these belong to an old run."
+                    "Run `netengine down` or remove stale Docker resources"
+                    " if these belong to an old run."
                     if conflicts
                     else None
                 ),
