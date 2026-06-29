@@ -44,14 +44,16 @@ This brings up the real persistence and identity layers.
 ### 1. Start backing services
 
 ```bash
+poetry run netengine doctor --skip-db
 docker compose up -d
+poetry run netengine doctor
 ```
 
 This starts:
 - `netengine_postgres` on port 5432 (with pgmq extension)
 - Keycloak on port 8080 (platform identity, used in Phase 4)
 
-Wait for postgres to be healthy:
+The doctor command checks Python, Docker/Compose, required ports, writable runtime paths, database connectivity, pgmq, and stale Docker/state conflicts. Wait for postgres to be healthy:
 
 ```bash
 docker compose ps          # all services should show "healthy"
