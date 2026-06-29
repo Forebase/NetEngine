@@ -12,11 +12,23 @@ import yaml
 from netengine.core.migrations import MigrationService, MigrationStatus
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
-from netengine.db.migrations import MIGRATIONS_DIR, MigrationRunResult, migration_status, run_migrations
+from netengine.db.migrations import (
+    MIGRATIONS_DIR,
+    MigrationRunResult,
+    migration_status,
+    run_migrations,
+)
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
-from netengine.spec.loader import load_spec, load_spec_with_composition, load_spec_with_environment
+from netengine.spec.loader import (
+    SpecLoadError,
+    _is_active_feature_value,
+    _resolve_feature_state_paths,
+    load_spec,
+    load_spec_with_composition,
+    load_spec_with_environment,
+)
 
 logger = get_logger(__name__)
 
@@ -32,7 +44,9 @@ def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
 
         parts = key.split(".")
         if any(part == "" for part in parts):
-            raise click.BadParameter("keys must be non-empty dotted paths", param_hint="--set")
+            raise click.BadParameter(
+                "keys must be non-empty dotted paths", param_hint="--set"
+            )
 
         value = yaml.safe_load(raw_value)
         cursor = overrides
@@ -54,13 +68,44 @@ def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
     return overrides
 
 
+def _load_spec_for_cli(
+    spec_file: str,
+    *,
+    environment: str | None = None,
+    set_values: tuple[str, ...] = (),
+):
+    """Load a spec using the same composition semantics as ``up``."""
+    overrides = _parse_set_overrides(set_values)
+    if environment:
+        return load_spec_with_environment(
+            spec_file, environment=environment, overrides=overrides or None
+        )
+    if overrides:
+        return load_spec_with_composition(spec_file, overrides=overrides)
+    return load_spec(spec_file)
+
+
+def _feature_state_explanations(spec: Any) -> list[str]:
+    """Return noteworthy active feature-state lines for ``validate --explain``."""
+    lines: list[str] = []
+    for entry, path, value, default_value in _resolve_feature_state_paths(spec):
+        if not _is_active_feature_value(value, default_value):
+            continue
+        value_text = getattr(value, "value", value)
+        lines.append(
+            f"{path}: {entry.state} ({entry.stage}) - {entry.reason}; value={value_text!r}"
+        )
+    return lines
+
+
 async def _run_migrations(db_url: str) -> MigrationRunResult:
     """Run SQL migrations using the shared migration service."""
     result = await run_migrations(db_url)
     for migration in result.results:
         if migration.status == "applied":
             logger.info(
-                f"Applied migration: {migration.filename} " f"({migration.duration_seconds:.3f}s)"
+                f"Applied migration: {migration.filename} "
+                f"({migration.duration_seconds:.3f}s)"
             )
         elif migration.status == "skipped":
             logger.info(f"Skipped migration: {migration.filename} (already applied)")
@@ -69,23 +114,27 @@ async def _run_migrations(db_url: str) -> MigrationRunResult:
         f"{result.skipped_count} skipped, {result.failed_count} failed"
     )
     return result
+
+
 def _db_url_from_env() -> str | None:
     """Return the database URL used by CLI migration operations."""
     return os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
-
-
 
 
 def _print_migration_status(status: MigrationStatus) -> None:
     click.echo("Migration status")
     click.echo(f"  Applied: {len(status.applied)}")
     for record in status.applied:
-        applied_at = record.applied_at.isoformat() if record.applied_at else "unknown time"
+        applied_at = (
+            record.applied_at.isoformat() if record.applied_at else "unknown time"
+        )
         click.echo(f"    ✓ {record.version} {record.name} ({applied_at})")
 
     click.echo(f"  Pending: {len(status.pending)}")
     for migration in status.pending:
-        click.echo(f"    • {migration.version} {migration.name} ({migration.path.name})")
+        click.echo(
+            f"    • {migration.version} {migration.name} ({migration.path.name})"
+        )
 
     click.echo(f"  Failed: {len(status.failed)}")
     for record in status.failed:
@@ -106,8 +155,6 @@ def _print_migration_status(status: MigrationStatus) -> None:
         click.echo(f"    Missing queues: {', '.join(status.missing_queues)}")
     else:
         click.echo("    Missing queues: none")
-    service = MigrationService(db_url, MIGRATIONS_DIR, logger.info)
-    await service.apply()
 
 
 @click.group()
@@ -174,6 +221,53 @@ async def _migrate_status(*, exit_on_unhealthy: bool) -> None:
 
 @cli.command()
 @click.argument("spec_file", type=click.Path(exists=True))
+@click.option(
+    "--explain",
+    is_flag=True,
+    default=False,
+    help="Print active experimental, reserved, unsupported, or otherwise noteworthy fields.",
+)
+@click.option(
+    "--env",
+    "environment",
+    help="Merge spec.{ENV}.yaml next to SPEC_FILE before validating.",
+)
+@click.option(
+    "--set",
+    "set_values",
+    multiple=True,
+    metavar="KEY=VALUE",
+    help="Override a spec value; repeat for multiple dotted keys.",
+)
+def validate(
+    spec_file: str,
+    explain: bool,
+    environment: str | None,
+    set_values: tuple[str, ...],
+) -> None:
+    """Validate SPEC_FILE without booting a world."""
+    try:
+        spec = _load_spec_for_cli(
+            spec_file, environment=environment, set_values=set_values
+        )
+    except SpecLoadError as exc:
+        click.echo(f"Spec validation failed: {exc}", err=True)
+        sys.exit(1)
+
+    click.echo(f"Spec validation succeeded: {spec.metadata.name}")
+    if explain:
+        explanations = _feature_state_explanations(spec)
+        if explanations:
+            click.echo("Feature-state details:")
+            for line in explanations:
+                prefix = "WARNING: " if ": experimental " in line else ""
+                click.echo(f"  - {prefix}{line}")
+        else:
+            click.echo("Feature-state details: no active noteworthy fields.")
+
+
+@cli.command()
+@click.argument("spec_file", type=click.Path(exists=True))
 @click.option("--up-to", default=9, help="Stop after this phase number (0-9).")
 @click.option(
     "--mock",
@@ -195,7 +289,9 @@ async def _migrate_status(*, exit_on_unhealthy: bool) -> None:
     help="Continue booting if database migrations fail (development escape hatch).",
 )
 @click.option(
-    "--env", "environment", help="Merge spec.{ENV}.yaml next to SPEC_FILE before booting."
+    "--env",
+    "environment",
+    help="Merge spec.{ENV}.yaml next to SPEC_FILE before booting.",
 )
 @click.option(
     "--set",
@@ -236,18 +332,12 @@ async def _up(
     environment: str | None = None,
     set_values: tuple[str, ...] = (),
 ) -> None:
-    overrides = _parse_set_overrides(set_values)
-    if environment:
-        spec = load_spec_with_environment(
-            spec_file, environment=environment, overrides=overrides or None
-        )
-    elif overrides:
-        spec = load_spec_with_composition(spec_file, overrides=overrides)
-    else:
-        spec = load_spec(spec_file)
+    spec = _load_spec_for_cli(spec_file, environment=environment, set_values=set_values)
 
     if mock:
-        click.echo("WARNING: running in mock mode — no real infrastructure will be created.")
+        click.echo(
+            "WARNING: running in mock mode — no real infrastructure will be created."
+        )
 
     if not skip_migrations and not mock:
         db_url = _db_url_from_env()
@@ -369,7 +459,9 @@ def reload(spec_file: str) -> None:
 
     is_ephemeral = old_spec.metadata.lifecycle.value == "ephemeral"
     click.echo("Computing diff…")
-    result = asyncio.run(apply_reload(old_spec, new_spec, state, is_ephemeral=is_ephemeral))
+    result = asyncio.run(
+        apply_reload(old_spec, new_spec, state, is_ephemeral=is_ephemeral)
+    )
 
     if result.immutability_violations:
         click.echo("Reload REJECTED — immutable fields changed:", err=True)
@@ -408,7 +500,9 @@ _CONTAINER_PREFIXES = ("netengine_", "netengines_")
 
 @cli.command()
 @click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
-@click.option("--dry-run", is_flag=True, help="Show what would be removed without removing it.")
+@click.option(
+    "--dry-run", is_flag=True, help="Show what would be removed without removing it."
+)
 def down(yes: bool, dry_run: bool) -> None:
     """Tear down the running world (containers, networks, volumes)."""
     asyncio.run(_down(yes, dry_run))
@@ -417,7 +511,9 @@ def down(yes: bool, dry_run: bool) -> None:
 async def _down(yes: bool, dry_run: bool) -> None:
     state = RuntimeState.load()
     if state.world_spec and not dry_run:
-        raw_lifecycle = (state.world_spec.get("metadata") or {}).get("lifecycle", "ephemeral")
+        raw_lifecycle = (state.world_spec.get("metadata") or {}).get(
+            "lifecycle", "ephemeral"
+        )
         if raw_lifecycle == "persistent" and not yes:
             click.confirm(
                 "This is a PERSISTENT world — all durable state will be destroyed. Continue?",
@@ -469,7 +565,9 @@ async def _down(yes: bool, dry_run: bool) -> None:
                         errors.append(f"{label}: {exc}")
 
         for network in client.networks.list():
-            if network.name and any(network.name.startswith(p) for p in _CONTAINER_PREFIXES):
+            if network.name and any(
+                network.name.startswith(p) for p in _CONTAINER_PREFIXES
+            ):
                 label = f"network:{network.name}"
                 if dry_run:
                     click.echo(f"  would remove  {label}")
@@ -596,12 +694,16 @@ async def _diagnose(spec_file: str, as_json: bool) -> None:
                 "status": r.status.value,
                 "detail": r.detail,
                 "hint": r.hint,
-                "elapsed_ms": round(r.elapsed_ms, 1) if r.elapsed_ms is not None else None,
+                "elapsed_ms": round(r.elapsed_ms, 1)
+                if r.elapsed_ms is not None
+                else None,
             }
             for r in results
         ]
         click.echo(_json.dumps(payload, indent=2))
-        issues = sum(1 for r in results if r.status in (ProbeStatus.FAIL, ProbeStatus.WARN))
+        issues = sum(
+            1 for r in results if r.status in (ProbeStatus.FAIL, ProbeStatus.WARN)
+        )
         if issues:
             sys.exit(1)
         return
@@ -641,8 +743,12 @@ async def _diagnose(spec_file: str, as_json: bool) -> None:
 
 
 @cli.command()
-@click.option("--interval", default=30, type=int, help="Poll interval in seconds (default 30).")
-@click.option("--max-retries", default=3, type=int, help="Max self-heal retries per phase.")
+@click.option(
+    "--interval", default=30, type=int, help="Poll interval in seconds (default 30)."
+)
+@click.option(
+    "--max-retries", default=3, type=int, help="Max self-heal retries per phase."
+)
 @click.option("--no-auto-heal", is_flag=True, help="Detect drift but don't auto-heal.")
 def drift_watch(interval: int, max_retries: int, no_auto_heal: bool) -> None:
     """Watch running world for drift and optionally auto-heal (Ctrl+C to stop)."""
@@ -655,7 +761,9 @@ async def _drift_watch(interval: int, max_retries: int, no_auto_heal: bool) -> N
         click.echo("No running world found — use `netengine up` first.", err=True)
         sys.exit(1)
 
-    click.echo(f"Starting drift detection (interval={interval}s, auto-heal={not no_auto_heal})…")
+    click.echo(
+        f"Starting drift detection (interval={interval}s, auto-heal={not no_auto_heal})…"
+    )
     click.echo("Press Ctrl+C to stop.\n")
 
     orchestrator = Orchestrator(state.world_spec, mock_mode=False)
@@ -775,7 +883,9 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
                     )
                     if rows:
                         click.echo(
-                            click.style(f"  {dlq_name} ({len(rows)} message(s)):", bold=True)
+                            click.style(
+                                f"  {dlq_name} ({len(rows)} message(s)):", bold=True
+                            )
                         )
                         for row in rows:
                             import json as _json
@@ -785,14 +895,18 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
                                 event_type = payload.get("event_type", "?")
                                 emitted_by = payload.get("emitted_by", "?")
                                 retry_count = payload.get("retry_count", 0)
-                                dlq_reason = (payload.get("payload") or {}).get("dlq_reason", "")
+                                dlq_reason = (payload.get("payload") or {}).get(
+                                    "dlq_reason", ""
+                                )
                                 click.echo(
                                     f"    [{row['msg_id']}] {event_type} "
                                     f"from={emitted_by} retries={retry_count}"
                                     + (f" reason={dlq_reason}" if dlq_reason else "")
                                 )
                             except Exception:
-                                click.echo(f"    [{row['msg_id']}] (unparseable message)")
+                                click.echo(
+                                    f"    [{row['msg_id']}] (unparseable message)"
+                                )
                     else:
                         click.echo(f"  {dlq_name}: empty")
                 except Exception as exc:
@@ -802,7 +916,9 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
             for q in queues_to_check:
                 dlq_name = dlq_for(Queue(q)).value
                 try:
-                    depth_row = await conn.fetchrow("SELECT count(*) AS depth FROM pgmq.q_$1", q)
+                    depth_row = await conn.fetchrow(
+                        "SELECT count(*) AS depth FROM pgmq.q_$1", q
+                    )
                     dlq_row = await conn.fetchrow(
                         "SELECT count(*) AS depth FROM pgmq.q_$1", dlq_name
                     )
@@ -814,7 +930,9 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
                         else click.style("!", fg="yellow")
                     )
                     dlq_status = (
-                        "" if dlq_depth == 0 else click.style(f"  DLQ: {dlq_depth}", fg="red")
+                        ""
+                        if dlq_depth == 0
+                        else click.style(f"  DLQ: {dlq_depth}", fg="red")
                     )
                     click.echo(f"  {status}  {q:<30} depth={depth}{dlq_status}")
                 except Exception as exc:
@@ -866,7 +984,9 @@ def _print_status(state: RuntimeState) -> None:
         "dev-sandbox: two orgs, all services, dev apps."
     ),
 )
-@click.option("--output", "-o", default=None, help="Output file path (default: <name>.yaml).")
+@click.option(
+    "--output", "-o", default=None, help="Output file path (default: <name>.yaml)."
+)
 @click.option(
     "--yes",
     "-y",
@@ -913,7 +1033,9 @@ def init(
             click.confirm(f"{early_path} already exists — overwrite?", abort=True)
 
     try:
-        cfg: WorldConfig = run_wizard(preset=preset, yes=yes, name=name, lifecycle=lifecycle)
+        cfg: WorldConfig = run_wizard(
+            preset=preset, yes=yes, name=name, lifecycle=lifecycle
+        )
     except click.Abort:
         click.echo("\nAborted.", err=True)
         return
@@ -939,7 +1061,10 @@ def init(
         import os as _os
 
         _os.unlink(tmp_path)
-        click.echo(f"\nSpec validation failed — please report this as a bug:\n  {exc}", err=True)
+        click.echo(
+            f"\nSpec validation failed — please report this as a bug:\n  {exc}",
+            err=True,
+        )
         raise SystemExit(1) from exc
 
     import os as _os
@@ -971,7 +1096,9 @@ def _print_init_summary(cfg: "Any", out_path: Path) -> None:
         click.echo(f"\n  Organisations ({len(cfg.orgs)}):")
         for org in cfg.orgs:
             user_count = len(org.users)
-            click.echo(f"    • {org.name:<20} profile={org.and_profile}  users={user_count}")
+            click.echo(
+                f"    • {org.name:<20} profile={org.and_profile}  users={user_count}"
+            )
     else:
         click.echo("\n  Organisations: none (add later with `netengine reload`)")
 
