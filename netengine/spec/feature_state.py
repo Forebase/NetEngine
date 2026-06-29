@@ -27,6 +27,25 @@ FEATURE_STATE_REGISTRY: tuple[FeatureStateEntry, ...] = (
             "hardened in CI e2e"
         ),
     ),
+
+    FeatureStateEntry(
+        path="pki.dnssec_ksk_lifetime_days",
+        state="experimental",
+        stage="alpha",
+        reason=(
+            "DNSSEC KSK lifetime is recorded with generated key metadata and "
+            "used by the rotation worker; signed-zone cutover validation remains alpha"
+        ),
+    ),
+    FeatureStateEntry(
+        path="pki.dnssec_zsk_lifetime_days",
+        state="experimental",
+        stage="alpha",
+        reason=(
+            "DNSSEC ZSK lifetime is recorded with generated key metadata and "
+            "used by the rotation worker; signed-zone cutover validation remains alpha"
+        ),
+    ),
     FeatureStateEntry(
         path="pki.crl_enabled",
         state="experimental",
@@ -45,13 +64,23 @@ FEATURE_STATE_REGISTRY: tuple[FeatureStateEntry, ...] = (
             "responder lifecycle/verification is still being hardened in CI e2e"
         ),
     ),
+
+    FeatureStateEntry(
+        path="pki.rotation_policy",
+        state="experimental",
+        stage="alpha",
+        reason=(
+            "rotation policy is wired into the certificate rotation worker and "
+            "operator API; cert-type coverage and graceful cutover behavior remain alpha"
+        ),
+    ),
     FeatureStateEntry(
         path="gateway_portal.real_internet.mode",
         state="experimental",
         stage="alpha",
         reason=(
             "nftables policies for isolated/shadowed/mirrored/exposed modes are "
-            "implemented; requires gateway container with nft available"
+            "implemented; requires gateway container with nft available; "
             "gateway policies for isolated, shadowed, mirrored, and exposed modes "
             "are wired through nftables, but real-host integration remains alpha"
         ),

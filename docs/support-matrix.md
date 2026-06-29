@@ -19,33 +19,34 @@ Feature states:
 
 | Dotted field path | Feature state | Default value | Implementation owner/module | Alpha caveat |
 |---|---:|---|---|---|
-| `pki.intermediate_ca_enabled` | `reserved` / registry: `experimental` | `false` | `netengine.handlers.pki_handler`, `netengine.handlers.phase_pki`, `netengine.api.routes` | step-ca's generated intermediate certificate can be read, exposed in Phase 3 output, and fetched through `GET /pki/intermediate-ca-cert`; behavior remains alpha/stabilizing and the model metadata is still conservative. |
-| `pki.dnssec_enabled` | `unsupported` | `true` | `netengine.handlers.phase_pki`, `netengine.handlers.pki_handler`, spec loader validation | Active non-default enabling is unsupported in alpha validation. The handler can generate KSK/ZSK key material, but DNS zone signing and CoreDNS activation are not integrated, so this is not end-to-end DNSSEC support. |
-| `pki.dnssec_ksk_lifetime_days` | `unsupported` | `365` | `netengine.handlers.pki_handler` | Lifetime is recorded in DNSSEC output metadata only; no automatic KSK rotation or signed-zone publication is implemented. |
-| `pki.dnssec_zsk_lifetime_days` | `unsupported` | `30` | `netengine.handlers.pki_handler` | Lifetime is recorded in DNSSEC output metadata only; no automatic ZSK rotation or signed-zone publication is implemented. |
-| `pki.crl_enabled` | `unsupported` | `false` | `netengine.handlers.pki_handler`, `netengine.handlers.phase_pki` | Handler code can inject a step-ca CRL config and report a URL, but CRL publication/distribution-point plumbing is incomplete and active use is unsupported in alpha validation. |
-| `pki.ocsp_enabled` | `unsupported` | `false` | `netengine.handlers.pki_handler`, `netengine.handlers.phase_pki` | Handler code can inject OCSP-related step-ca config and report a URL, but responder deployment/verification is incomplete and active use is unsupported in alpha validation. |
+| `pki.intermediate_ca_enabled` | `experimental` | `false` | `netengine.handlers.pki_handler`, `netengine.handlers.phase_pki`, `netengine.api.routes` | step-ca's generated intermediate certificate can be read, exposed in Phase 3 output, and fetched through `GET /pki/intermediate-ca-cert`; trust-chain management remains stabilizing. |
+| `pki.dnssec_enabled` | `experimental` | `false` | `netengine.handlers.phase_pki`, `netengine.handlers.pki_handler`, `netengine.handlers.dns` | KSK/ZSK keys are generated and wired into CoreDNS online signing; promotion to stable is gated on signed-zone validation in CI e2e and operational hardening. |
+| `pki.dnssec_ksk_lifetime_days` | `experimental` | `365` | `netengine.handlers.pki_handler`, `netengine.workers.pki_cert_rotation_worker` | Lifetime is recorded in DNSSEC output metadata and used by the rotation worker; signed-zone cutover validation remains alpha. |
+| `pki.dnssec_zsk_lifetime_days` | `experimental` | `30` | `netengine.handlers.pki_handler`, `netengine.workers.pki_cert_rotation_worker` | Lifetime is recorded in DNSSEC output metadata and used by the rotation worker; signed-zone cutover validation remains alpha. |
+| `pki.crl_enabled` | `experimental` | `false` | `netengine.handlers.pki_handler`, `netengine.handlers.phase_pki` | step-ca CRL generation is enabled in `ca.json` and the distribution URL is published in Phase 3 output; client-validation coverage is still being hardened in CI e2e. |
+| `pki.ocsp_enabled` | `experimental` | `false` | `netengine.handlers.pki_handler`, `netengine.handlers.phase_pki` | step-ca OCSP config is injected and the responder URL is published in Phase 3 output; responder lifecycle/verification is still being hardened in CI e2e. |
 | `pki.rotation_policy` | `experimental` | `{enabled: true, default_interval_hours: 24, default_warning_days: 30, cert_type_overrides: {}}` | `netengine.handlers.phase_pki`, `netengine.workers.pki_cert_rotation_worker`, `netengine.api.routes` | Wired from the spec into worker registration and live-reloaded from runtime state; policy shape and cert-type semantics may change during alpha. |
 | `gateway_portal.real_internet.mode` | `experimental` | `isolated` | `netengine.handlers.gateway_handler`, `netengine.handlers.gateway_portal_handler`, `netengine.spec.loader` | Isolated, shadowed, mirrored, and exposed nftables policies are wired; real-host integration remains alpha. |
 | `gateway_portal.real_internet.service_mirrors` | `experimental` | `[]` | `netengine.handlers.gateway_handler`, `netengine.handlers.gateway_portal_handler`, `netengine.spec.loader` | Mirrored-mode allowlists and operator output are wired; `in_world_service` must be an IPv4 address until automatic DNS aliasing for real hostnames lands. |
 | `gateway_portal.real_internet.upstream_resolver_enabled` | `experimental` | `false` | `netengine.handlers.gateway_portal_handler`, `netengine.spec.loader` | CoreDNS upstream forwarding stubs are appended and reloaded; duplicate-stub reconciliation remains alpha. |
 | `gateway_portal.cross_world.mode` | `experimental` | `none` | `netengine.handlers.gateway_handler`, `netengine.handlers.gateway_portal_handler`, `netengine.spec.loader` | PEERED/FEDERATED lifecycle hooks install peer routing, DNS stubs, trust anchors, runtime artifacts, rollback, and healthchecks; interoperability remains alpha. |
 | `gateway_portal.cross_world.peers` | `experimental` | `[]` | `netengine.handlers.gateway_handler`, `netengine.handlers.gateway_portal_handler`, `netengine.spec.loader` | Peer add/update/remove, trust-anchor rotation, and routing reapply are implemented with mocked two-world DNS coverage; live multi-host federation is not yet guaranteed. |
-| `ands.profiles.*.dynamic_ip` | `unsupported` | profile default | `netengine.spec.loader` | Dynamic IP allocation in AND profiles is not implemented. |
-| `ands.profiles.*.reverse_dns` | `unsupported` | profile default | `netengine.spec.loader` | Reverse DNS delegation from AND profiles is not implemented. |
-| `ands.profiles.*.bgp` | `unsupported` | profile default | `netengine.spec.loader` | BGP profile configuration is not implemented. |
+| `ands.profiles.*.dynamic_ip` | `experimental` | profile default | `netengine.phases.phase_ands`, `netengine.handlers.gateway_handler` | DHCP setup is wired through dnsmasq in the gateway container; requires dnsmasq in the gateway image and remains alpha. |
+| `ands.profiles.*.reverse_dns` | `experimental` | profile default | `netengine.phases.phase_ands`, `netengine.handlers.dns` | in-addr.arpa zone provisioning is available for AND profiles; propagation to external resolvers is not provided. |
+| `ands.profiles.*.bgp` | `experimental` | profile default | `netengine.phases.phase_ands`, `netengine.handlers.gateway_handler` | Bird2 sidecar provisioning is wired; optional mode tolerates startup failure, required mode aborts provisioning, and the image must be available. |
 
 ## PKI alpha notes
 
 - **DNSSEC lifetimes**: `pki.dnssec_ksk_lifetime_days` and
   `pki.dnssec_zsk_lifetime_days` are persisted as generated-key metadata by
-  `PKIHandler.setup_dnssec`, but they do not schedule rotation and do not wire
-  generated keys into signed CoreDNS zones.
+  `PKIHandler.setup_dnssec` and used by the rotation worker; CoreDNS online
+  signing is wired, but signed-zone cutover validation remains alpha.
 - **CRL**: `pki.crl_enabled` reaches step-ca config injection code, but alpha
-  support does not provide complete CRL publication, distribution-point
-  integration, or client validation guarantees.
+  publishes the configured distribution URL in Phase 3 output; client validation
+  guarantees are still being hardened.
 - **OCSP**: `pki.ocsp_enabled` reaches step-ca config injection code, but alpha
-  support does not provide a fully managed OCSP responder lifecycle.
+  publishes the configured responder URL in Phase 3 output; responder lifecycle
+  verification is still being hardened.
 - **Intermediate CA**: `pki.intermediate_ca_enabled` stores and exposes the
   generated intermediate certificate when available, but remains stabilizing and
   should not be treated as a stable trust-chain management interface.
