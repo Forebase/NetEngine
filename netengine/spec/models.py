@@ -64,12 +64,12 @@ def feature_state_field(
 
 
 PKI_FEATURE_STATES: dict[str, FeatureState] = {
-    "pki.intermediate_ca_enabled": FeatureState.RESERVED,
-    "pki.dnssec_enabled": FeatureState.UNSUPPORTED,
-    "pki.dnssec_ksk_lifetime_days": FeatureState.UNSUPPORTED,
-    "pki.dnssec_zsk_lifetime_days": FeatureState.UNSUPPORTED,
-    "pki.crl_enabled": FeatureState.UNSUPPORTED,
-    "pki.ocsp_enabled": FeatureState.UNSUPPORTED,
+    "pki.intermediate_ca_enabled": FeatureState.EXPERIMENTAL,
+    "pki.dnssec_enabled": FeatureState.EXPERIMENTAL,
+    "pki.dnssec_ksk_lifetime_days": FeatureState.EXPERIMENTAL,
+    "pki.dnssec_zsk_lifetime_days": FeatureState.EXPERIMENTAL,
+    "pki.crl_enabled": FeatureState.EXPERIMENTAL,
+    "pki.ocsp_enabled": FeatureState.EXPERIMENTAL,
     "pki.rotation_policy": FeatureState.EXPERIMENTAL,
 }
 
