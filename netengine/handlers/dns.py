@@ -24,6 +24,11 @@ from netengine.handlers.context import PhaseContext
 
 COREDNS_IMAGE = "coredns/coredns:1.11.3"
 COREDNS_CONTAINER_NAME = "netengine_coredns"
+COREDNS_PORT_BINDINGS = {
+    "53/udp": ("127.0.0.1", 53),
+    "53/tcp": ("127.0.0.1", 53),
+}
+COREDNS_PORTS = tuple(COREDNS_PORT_BINDINGS)
 
 
 class DNSHandler(BasePhaseHandler):
@@ -473,11 +478,11 @@ class DNSHandler(BasePhaseHandler):
                 {"core": client.api.create_endpoint_config(ipv4_address=root_listen_ip)}
             )
 
-            # Expose port 53/udp to host for DNS queries from the orchestrator.
-            # This allows the host to verify DNS is working even when not on the core network.
-            port_bindings = {
-                "53/udp": ("127.0.0.1", 53),
-            }
+            # Expose DNS over both UDP and TCP to the host. UDP carries the common query
+            # path, while TCP is required by DNS for truncation fallback and zone-sized
+            # responses. This also keeps doctor's required DNS port checks aligned with
+            # the runtime CoreDNS bindings.
+            port_bindings = COREDNS_PORT_BINDINGS
 
             response = client.api.create_container(
                 image=COREDNS_IMAGE,
@@ -489,7 +494,7 @@ class DNSHandler(BasePhaseHandler):
                     port_bindings=port_bindings,
                 ),
                 networking_config=networking_config,
-                ports=["53/udp"],
+                ports=list(COREDNS_PORTS),
             )
             client.api.start(response["Id"])
 
