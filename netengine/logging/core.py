@@ -130,7 +130,8 @@ def format_record_json(record: "Record") -> str:
             "parent_span_id": record["extra"].get("parent_span_id"),
         }
 
-    return json.dumps(log_entry) + "\n"
+    # Escape braces so loguru's format_map pass doesn't treat JSON keys as placeholders.
+    return json.dumps(log_entry).replace("{", "{{").replace("}", "}}") + "\n"
 
 
 # ============================================================================
