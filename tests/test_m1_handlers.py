@@ -4,8 +4,11 @@ Tests the execute/healthcheck/should_skip interface for Phase 0 and Phases 1-2.
 """
 
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
 
-from netengine.errors import DNSError
+import pytest
+
+from netengine.errors import DNSError, SubstrateError
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.substrate import SubstrateHandler
@@ -94,6 +97,74 @@ class TestSubstrateHandler:
         skip = await handler.should_skip(phase_context_substrate)
 
         assert skip is False
+
+    async def test_ensure_docker_network_reuses_existing_matching_subnet(
+        self, phase_context_substrate: PhaseContext
+    ) -> None:
+        """Existing Docker network should be reused when its subnet matches the spec."""
+        handler = SubstrateHandler()
+        docker_adapter = MagicMock()
+        docker_client = MagicMock()
+        network = MagicMock()
+        network.id = "existing-core-id"
+        network.attrs = {"IPAM": {"Config": [{"Subnet": "10.0.0.42/24"}]}}
+        docker_client.networks.get.return_value = network
+        docker_adapter.client = docker_client
+        phase_context_substrate.docker_client = docker_adapter
+
+        net_id = await handler._ensure_docker_network(
+            phase_context_substrate, "core", "10.0.0.0/24", "bridge"
+        )
+
+        assert net_id == "existing-core-id"
+        docker_client.networks.create.assert_not_called()
+
+    async def test_ensure_docker_network_rejects_existing_mismatched_subnet(
+        self, phase_context_substrate: PhaseContext
+    ) -> None:
+        """Existing Docker network should fail fast when its subnet differs from the spec."""
+        handler = SubstrateHandler()
+        docker_adapter = MagicMock()
+        docker_client = MagicMock()
+        network = MagicMock()
+        network.id = "existing-core-id"
+        network.attrs = {"IPAM": {"Config": [{"Subnet": "10.1.0.0/24"}]}}
+        docker_client.networks.get.return_value = network
+        docker_adapter.client = docker_client
+        phase_context_substrate.docker_client = docker_adapter
+
+        with pytest.raises(SubstrateError, match="already exists but uses subnet") as exc_info:
+            await handler._ensure_docker_network(
+                phase_context_substrate, "core", "10.0.0.0/24", "bridge"
+            )
+
+        assert "10.1.0.0/24" in str(exc_info.value)
+        assert "expected 10.0.0.0/24" in str(exc_info.value)
+        assert "docker network rm core" in str(exc_info.value)
+        docker_client.networks.create.assert_not_called()
+
+    async def test_ensure_docker_network_rejects_existing_missing_ipam_config(
+        self, phase_context_substrate: PhaseContext
+    ) -> None:
+        """Existing Docker network should fail when Docker reports no configured subnets."""
+        handler = SubstrateHandler()
+        docker_adapter = MagicMock()
+        docker_client = MagicMock()
+        network = MagicMock()
+        network.id = "existing-core-id"
+        network.attrs = {"IPAM": {}}
+        docker_client.networks.get.return_value = network
+        docker_adapter.client = docker_client
+        phase_context_substrate.docker_client = docker_adapter
+
+        with pytest.raises(SubstrateError) as exc_info:
+            await handler._ensure_docker_network(
+                phase_context_substrate, "core", "10.0.0.0/24", "bridge"
+            )
+
+        assert "uses subnet(s) none" in str(exc_info.value)
+        assert "expected 10.0.0.0/24" in str(exc_info.value)
+        docker_client.networks.create.assert_not_called()
 
 
 class TestDNSHandler:

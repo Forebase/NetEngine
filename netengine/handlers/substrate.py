@@ -8,6 +8,7 @@ Responsibilities:
 - Emit substrate.initialized event on success
 """
 
+import ipaddress
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -294,6 +295,24 @@ class SubstrateHandler(BasePhaseHandler):
         def _sync() -> str:
             try:
                 net = client.networks.get(name)
+                ipam_config = net.attrs.get("IPAM", {}).get("Config") or []
+                configured_subnets = [
+                    config["Subnet"]
+                    for config in ipam_config
+                    if isinstance(config, dict) and config.get("Subnet")
+                ]
+                requested_network = ipaddress.ip_network(subnet, strict=False)
+                matching_subnet = any(
+                    ipaddress.ip_network(configured_subnet, strict=False) == requested_network
+                    for configured_subnet in configured_subnets
+                )
+                if not matching_subnet:
+                    actual = ", ".join(configured_subnets) if configured_subnets else "none"
+                    raise SubstrateError(
+                        f"Docker network '{name}' already exists but uses subnet(s) {actual}; "
+                        f"expected {subnet}. Run docker network rm {name} or choose a "
+                        f"different subnet in the spec."
+                    )
                 return net.id
             except docker_lib.errors.NotFound:
                 try:
