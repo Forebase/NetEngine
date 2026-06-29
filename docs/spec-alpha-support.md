@@ -26,11 +26,11 @@ Feature states:
 | `pki.crl_enabled` | `experimental` | `false` | `netengine.handlers.pki_handler`, `netengine.handlers.phase_pki` | step-ca CRL generation is enabled in `ca.json` and the distribution URL is published in Phase 3 output; client-validation coverage is hardened in CI e2e. |
 | `pki.ocsp_enabled` | `experimental` | `false` | `netengine.handlers.pki_handler`, `netengine.handlers.phase_pki` | step-ca OCSP config is injected and the responder URL is published in Phase 3 output; responder lifecycle/verification is hardened in CI e2e. |
 | `pki.rotation_policy` | `experimental` | `{enabled: true, default_interval_hours: 24, default_warning_days: 30, cert_type_overrides: {}}` | `netengine.handlers.phase_pki`, `netengine.workers.pki_cert_rotation_worker`, `netengine.api.routes` | Wired from the spec into worker registration and live-reloaded from runtime state; policy shape and cert-type semantics may change during alpha. |
-| `gateway_portal.real_internet.mode` | `unsupported` | `isolated` | `netengine.spec.loader` | Real-internet gateway policies are not implemented. |
-| `gateway_portal.real_internet.service_mirrors` | `unsupported` | `[]` | `netengine.spec.loader` | Service mirror provisioning is not implemented. |
-| `gateway_portal.real_internet.upstream_resolver_enabled` | `unsupported` | `false` | `netengine.spec.loader` | Upstream resolver forwarding is not implemented. |
-| `gateway_portal.cross_world.mode` | `unsupported` | `none` | `netengine.spec.loader` | Cross-world federation is not implemented. |
-| `gateway_portal.cross_world.peers` | `unsupported` | `[]` | `netengine.spec.loader` | Cross-world peer provisioning is not implemented. |
+| `gateway_portal.real_internet.mode` | `experimental` | `isolated` | `netengine.spec.loader` | nftables policies for isolated/shadowed/mirrored/exposed modes implemented; requires gateway container with nft available. |
+| `gateway_portal.real_internet.service_mirrors` | `experimental` | `[]` | `netengine.spec.loader` | Mirror accept rules generated in mirrored mode; live upstream reachability not validated in CI e2e. |
+| `gateway_portal.real_internet.upstream_resolver_enabled` | `experimental` | `false` | `netengine.spec.loader` | Upstream forwarder appended to CoreDNS Corefile and CoreDNS reloaded; requires a reachable resolver at upstream_resolver_ip. |
+| `gateway_portal.cross_world.mode` | `experimental` | `none` | `netengine.spec.loader` | PEERED mode wires nftables peer routing, trust-anchor install, and CoreDNS forwarding stubs; live cross-world DNS resolution not covered by CI e2e. |
+| `gateway_portal.cross_world.peers` | `experimental` | `[]` | `netengine.spec.loader` | Per-peer routing rules and DNS forwarder stubs provisioned; actual cross-world resolution requires a reachable peer endpoint. |
 | `ands.profiles.*.dynamic_ip` | `unsupported` | profile default | `netengine.spec.loader` | Dynamic IP allocation in AND profiles is not implemented. |
 | `ands.profiles.*.reverse_dns` | `unsupported` | profile default | `netengine.spec.loader` | Reverse DNS delegation from AND profiles is not implemented. |
 | `ands.profiles.*.bgp` | `unsupported` | profile default | `netengine.spec.loader` | BGP profile configuration is not implemented. |
