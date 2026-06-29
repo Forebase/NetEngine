@@ -119,6 +119,9 @@ class TestM7ProfileValidation:
         class MockProfile:
             def __init__(self, name: str):
                 self.name = name
+                self.dynamic_ip = False
+                self.reverse_dns = False
+                self.bgp = None
 
         profile_biz = MockProfile("business")
         and_instance = MagicMock()
@@ -178,6 +181,9 @@ class TestM7ANDProvisioning:
         class MockProfile:
             def __init__(self, name: str):
                 self.name = name
+                self.dynamic_ip = False
+                self.reverse_dns = False
+                self.bgp = None
 
         profile_biz = MockProfile("business")
         and_instance = MagicMock()
@@ -234,6 +240,9 @@ class TestM7ANDProvisioning:
         class MockProfile:
             def __init__(self, name: str):
                 self.name = name
+                self.dynamic_ip = False
+                self.reverse_dns = False
+                self.bgp = None
 
         profile_biz = MockProfile("business")
 
@@ -302,6 +311,9 @@ class TestM7AddressAllocation:
         class MockProfile:
             def __init__(self, name: str):
                 self.name = name
+                self.dynamic_ip = False
+                self.reverse_dns = False
+                self.bgp = None
 
         profile_biz = MockProfile("business")
         and_instance = MagicMock()
@@ -363,6 +375,9 @@ class TestM7RuleApplication:
         class MockProfile:
             def __init__(self, name: str):
                 self.name = name
+                self.dynamic_ip = False
+                self.reverse_dns = False
+                self.bgp = None
 
         profile_biz = MockProfile("business")
         and_instance = MagicMock()
@@ -418,6 +433,9 @@ class TestM7RuleApplication:
         class MockProfile:
             def __init__(self, name: str):
                 self.name = name
+                self.dynamic_ip = False
+                self.reverse_dns = False
+                self.bgp = None
 
         profile_biz = MockProfile("business")
         and_instance = MagicMock()
@@ -586,6 +604,9 @@ class TestM7EventHandling:
         class MockProfile:
             def __init__(self, name: str):
                 self.name = name
+                self.dynamic_ip = False
+                self.reverse_dns = False
+                self.bgp = None
 
         profile_biz = MockProfile("business")
         and_instance = MagicMock()
@@ -645,6 +666,9 @@ class TestM7OutputStructure:
         class MockProfile:
             def __init__(self, name: str):
                 self.name = name
+                self.dynamic_ip = False
+                self.reverse_dns = False
+                self.bgp = None
 
         profile_biz = MockProfile("business")
         and_instance = MagicMock()
@@ -733,6 +757,9 @@ class TestM7OrgAdmissionEvents:
         class MockProfile:
             def __init__(self, name: str):
                 self.name = name
+                self.dynamic_ip = False
+                self.reverse_dns = False
+                self.bgp = None
 
         profile_biz = MockProfile("business")
 

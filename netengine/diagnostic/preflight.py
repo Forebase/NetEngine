@@ -118,6 +118,8 @@ def _parse_compose_port(raw_port: object) -> tuple[int, str] | None:
         return raw_port, "tcp"
     if isinstance(raw_port, dict):
         published = raw_port.get("published") or raw_port.get("target")
+        if published is None:
+            return None
         proto = str(raw_port.get("protocol") or "tcp").lower()
         if published is None:
             return None

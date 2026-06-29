@@ -69,7 +69,7 @@ class MailHandler:
 
         # 4. Inject DNS records (SPF, DKIM, DMARC) for each org
         self.logger.info("Injecting DNS records for mail infrastructure")
-        orgs_configured = await self._inject_dns_records()
+        orgs_configured = await self._inject_dns_records(dkim_public_pem)
 
         # 5. Provision virtual mailbox maps
         self.logger.info("Provisioning virtual mailbox maps")
@@ -123,6 +123,27 @@ class MailHandler:
 
         self.logger.info("DKIM RSA keys generated (2048-bit)")
         return private_pem, public_pem
+
+    @staticmethod
+    def _dkim_txt_value(public_pem: str) -> str:
+        """Build the DKIM TXT record value from a public key PEM.
+
+        A DKIM ``p=`` tag carries the base64-encoded DER of the
+        SubjectPublicKeyInfo — i.e. the PEM body with the ``-----BEGIN/END
+        PUBLIC KEY-----`` armor and line breaks removed.
+
+        Args:
+            public_pem: RSA public key in SubjectPublicKeyInfo PEM format.
+
+        Returns:
+            DKIM TXT record value, e.g. ``v=DKIM1; k=rsa; p=MIIBIjANBg...``.
+        """
+        body = "".join(
+            line.strip()
+            for line in public_pem.splitlines()
+            if line and not line.startswith("-----")
+        )
+        return f"v=DKIM1; k=rsa; p={body}"
 
     def _create_postfix_config(self, dkim_public_pem: str) -> str:
         """Create Postfix main.cf configuration.
@@ -190,8 +211,13 @@ maillog_file = /var/log/postfix/postfix.log
 
         return container_id
 
-    async def _inject_dns_records(self) -> list[str]:
+    async def _inject_dns_records(self, dkim_public_pem: str) -> list[str]:
         """Inject SPF, DKIM, DMARC DNS records for each org.
+
+        Args:
+            dkim_public_pem: Generated DKIM public key in PEM format, published
+                in the ``_dkim._domainkey`` TXT record so verifiers can validate
+                signatures.
 
         Returns:
             List of org names configured
@@ -223,7 +249,7 @@ maillog_file = /var/log/postfix/postfix.log
             # DKIM record if enabled
             if self.mail_config.dkim.enabled:
                 dkim_name = f"_dkim._domainkey.{org_domain}"
-                dkim_value = "v=DKIM1; k=rsa; p=<public_key>"  # Simplified for MVP
+                dkim_value = self._dkim_txt_value(dkim_public_pem)
                 await self.dns.add_zone_record(
                     context=self.context,
                     zone="internal",

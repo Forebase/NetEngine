@@ -1,5 +1,8 @@
 """Feature-state metadata tests for spec fields."""
 
+from pathlib import Path
+
+from netengine.spec.feature_state import FEATURE_STATE_REGISTRY
 from netengine.spec.models import (
     FEATURE_STATE_JSON_SCHEMA_KEY,
     PKI_FEATURE_STATES,
@@ -7,6 +10,8 @@ from netengine.spec.models import (
     NetEngineSpec,
     PKIPhase,
 )
+
+_SUPPORT_MATRIX = Path(__file__).resolve().parents[1] / "docs" / "spec-alpha-support.md"
 
 PKI_FIELD_NAMES = {
     "pki.intermediate_ca_enabled": "intermediate_ca_enabled",
@@ -42,3 +47,19 @@ def test_required_pki_fields_expose_feature_state_in_json_schema() -> None:
             pki_schema[field_name][FEATURE_STATE_JSON_SCHEMA_KEY]
             == PKI_FEATURE_STATES[dotted_path].value
         )
+
+
+def test_every_registry_entry_is_documented_in_support_matrix() -> None:
+    """Each gated field must have a row in docs/spec-alpha-support.md.
+
+    Keeps the alpha support contract in lock-step with the validation registry,
+    so removing a gate (for v1) forces a deliberate matrix update — mirroring
+    the supply-chain CI check that licenses stay documented.
+    """
+    matrix_text = _SUPPORT_MATRIX.read_text(encoding="utf-8")
+    undocumented = [
+        entry.path for entry in FEATURE_STATE_REGISTRY if f"`{entry.path}`" not in matrix_text
+    ]
+    assert not undocumented, (
+        "feature_state registry entries missing from docs/spec-alpha-support.md: " f"{undocumented}"
+    )

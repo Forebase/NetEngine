@@ -26,6 +26,16 @@ poetry run netengine status
 
 Use `NETENGINE_MOCK=true` when you want to exercise orchestration and spec validation without creating Docker, DNS, PKI, or identity resources.
 
+## Pre-release mock smoke test
+
+Before cutting an alpha build, run the documented mock bootstrap path with an isolated runtime-state file:
+
+```bash
+NETENGINE_MOCK=true NETENGINE_STATE_FILE="$(mktemp -d)/netengine_state.json" poetry run netengine up examples/minimal.yaml
+```
+
+The command should print `World bootstrapped.` and report all phases through Phase 9 as complete without creating Docker, DNS, PKI, or identity resources.
+
 ## Alpha golden paths
 
 ### Path A: minimal smoke world

@@ -164,17 +164,21 @@ class TestFeatureStateValidation:
         spec_file.write_text(yaml.safe_dump(base))
         return spec_file
 
-    def test_unsupported_enabled_field_raises_spec_load_error(self, tmp_path) -> None:
+    def test_experimental_pki_field_logs_warning_not_error(self, tmp_path, caplog) -> None:
+        import logging
+
+        # DNSSEC/CRL/OCSP were promoted from unsupported to experimental once the
+        # CoreDNS online-signing + step-ca config paths were wired (WS-A). They
+        # now load with a warning instead of being rejected.
         spec_file = self._write_spec(tmp_path, {"pki": {"dnssec_enabled": True}})
 
-        with pytest.raises(
-            SpecLoadError,
-            match=(
-                "pki\\.dnssec_enabled is unsupported in alpha: "
-                "DNSSEC key generation is not integrated with zone signing"
-            ),
-        ):
-            load_spec(spec_file)
+        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
+            spec = load_spec(spec_file)
+
+        assert spec.pki.dnssec_enabled is True
+        assert any(
+            "pki.dnssec_enabled is experimental in alpha" in r.message for r in caplog.records
+        )
 
     def test_unsupported_non_default_active_field_raises_spec_load_error(self, tmp_path) -> None:
         spec_file = self._write_spec(
@@ -187,7 +191,9 @@ class TestFeatureStateValidation:
         ):
             load_spec(spec_file)
 
-    def test_unsupported_profile_field_includes_dotted_path(self, tmp_path) -> None:
+    def test_experimental_profile_field_logs_warning_not_raises(self, tmp_path, caplog) -> None:
+        import logging
+
         spec_file = self._write_spec(
             tmp_path,
             {
@@ -205,11 +211,14 @@ class TestFeatureStateValidation:
             },
         )
 
-        with pytest.raises(
-            SpecLoadError,
-            match="ands\\.profiles\\.branch\\.reverse_dns is unsupported in alpha",
-        ):
-            load_spec(spec_file)
+        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
+            spec = load_spec(spec_file)
+
+        assert spec.ands is not None
+        assert any(
+            "ands.profiles.branch.reverse_dns is experimental in alpha" in r.message
+            for r in caplog.records
+        )
 
     def test_experimental_enabled_field_logs_warning(self, tmp_path, caplog) -> None:
         import logging

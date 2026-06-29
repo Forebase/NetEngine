@@ -93,17 +93,36 @@ class PKIPhaseHandler(BasePhaseHandler):
             logger.info("Intermediate CA enabled and tracked in state")
 
         if spec.pki.dnssec_enabled:
+            # Generate keys into <zone_dir>/keys so the running CoreDNS (which
+            # binds <zone_dir> at /etc/coredns) can sign with them at
+            # /etc/coredns/keys without a restart.
+            from pathlib import Path
+
+            keys_host_dir = str(Path(context.zone_dir) / "keys")
             dnssec_info = await pki.setup_dnssec(
                 zone="internal",
                 ksk_lifetime_days=spec.pki.dnssec_ksk_lifetime_days,
                 zsk_lifetime_days=spec.pki.dnssec_zsk_lifetime_days,
+                keys_host_dir=keys_host_dir,
             )
             context.runtime_state.dnssec_output = dnssec_info
+
+            # Activate online signing: rewrite the Corefile + reload CoreDNS.
+            dnssec_active = await dns_handler.enable_dnssec(
+                context,
+                zone=dnssec_info["zone"],
+                key_basenames=[dnssec_info["ksk_name"], dnssec_info["zsk_name"]],
+            )
+
             pki_output["dnssec_enabled"] = True
             pki_output["dnssec_zone"] = dnssec_info["zone"]
             pki_output["dnssec_ksk"] = dnssec_info["ksk_name"]
             pki_output["dnssec_zsk"] = dnssec_info["zsk_name"]
-            logger.info(f"DNSSEC keys generated for zone: {dnssec_info['zone']}")
+            pki_output["dnssec_signing_active"] = dnssec_active
+            logger.info(
+                f"DNSSEC keys generated for zone {dnssec_info['zone']}; "
+                f"online signing active={dnssec_active}"
+            )
 
         # 4. Persist outputs
         context.runtime_state.pki_output = pki_output

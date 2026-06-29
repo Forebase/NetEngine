@@ -112,6 +112,10 @@ class PKICertRotationWorker:
                         await self._check_and_rotate_cert_type(state, cert_type, config)
                         self._update_last_check_time(state, cert_type)
 
+                # DNSSEC KSK/ZSK rotation runs independently of cert types,
+                # driven by the per-key lifetimes recorded in dnssec_output.
+                await self._check_and_rotate_dnssec(state)
+
                 state.save()
 
                 # Sleep for a reasonable interval (1 hour cap to refresh state)
@@ -216,6 +220,71 @@ class PKICertRotationWorker:
                         extra={"cn": cn, "cert_type": cert_type, "error": str(e)},
                     )
                     await self._emit_rotation_event(cn, cert_type, "failed", error=str(e))
+
+    @staticmethod
+    def _dnssec_key_is_expired(generated_at: Any, lifetime_days: int, now: datetime) -> bool:
+        """Return True when a DNSSEC key has reached the end of its lifetime.
+
+        Missing/unparseable ``generated_at`` is treated as expired so a key with
+        no recorded age is rotated onto a known schedule.
+        """
+        if isinstance(generated_at, str):
+            try:
+                generated = datetime.fromisoformat(generated_at)
+            except ValueError:
+                return True
+        elif isinstance(generated_at, datetime):
+            generated = generated_at
+        else:
+            return True
+        return now >= generated + timedelta(days=lifetime_days)
+
+    async def _check_and_rotate_dnssec(self, state: RuntimeState) -> None:
+        """Rotate DNSSEC KSK/ZSK keys when either is past its configured lifetime.
+
+        Regenerates the keyset into the same location recorded in
+        ``dnssec_output`` and refreshes the stored metadata. CoreDNS picks up the
+        regenerated keys on its next reload; full reload-on-rotation is exercised
+        in CI e2e.
+        """
+        dnssec = state.dnssec_output
+        if not dnssec:
+            return
+
+        now = datetime.now(UTC)
+        ksk_lifetime = dnssec.get("ksk_lifetime_days", 365)
+        zsk_lifetime = dnssec.get("zsk_lifetime_days", 30)
+        generated_at = dnssec.get("generated_at")
+
+        ksk_due = self._dnssec_key_is_expired(generated_at, ksk_lifetime, now)
+        zsk_due = self._dnssec_key_is_expired(generated_at, zsk_lifetime, now)
+        if not (ksk_due or zsk_due):
+            return
+
+        zone = dnssec.get("zone", "internal")
+        keys_location = dnssec.get("keys_location")
+        keys_host_dir = keys_location if keys_location and "/" in str(keys_location) else None
+
+        self.logger.info(
+            "dnssec_key_rotation_needed",
+            extra={"zone": zone, "ksk_due": ksk_due, "zsk_due": zsk_due},
+        )
+        try:
+            new_info = await self.pki_handler.setup_dnssec(
+                zone=zone,
+                ksk_lifetime_days=ksk_lifetime,
+                zsk_lifetime_days=zsk_lifetime,
+                keys_host_dir=keys_host_dir,
+            )
+            state.dnssec_output = new_info
+            await self._emit_rotation_event(zone, "dnssec", "success")
+            self.logger.info(
+                "dnssec_keys_rotated",
+                extra={"zone": zone, "ksk": new_info["ksk_name"], "zsk": new_info["zsk_name"]},
+            )
+        except Exception as e:
+            self.logger.error("dnssec_rotation_failed", extra={"zone": zone, "error": str(e)})
+            await self._emit_rotation_event(zone, "dnssec", "failed", error=str(e))
 
     async def _emit_rotation_event(
         self,

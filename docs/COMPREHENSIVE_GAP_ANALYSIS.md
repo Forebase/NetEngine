@@ -3,6 +3,23 @@
 
 ---
 
+> **⚠️ Status correction (2026-06-29).** A code re-audit found several items in
+> this report are **stale / already resolved**: all four "missing" operator API
+> endpoints now exist (`PUT /services/{name}`, `PUT /ands/{and_name}/profile`,
+> `PUT /gateway`, `PUT /pki/rotation-policy`); mail SPF/DMARC are wired and the
+> DKIM record now publishes the real key (no more `<public_key>` placeholder);
+> `/api/v1/reload` persists the updated spec; `PHASE_PREREQUISITES[9]` already
+> requires `world_services_output` (Phase 2 is an intentional combined handler);
+> and pgmq-disabled admission consumers now log at **WARNING** with an `events`
+> block surfaced in `/health`. **Genuinely still open** (gated in
+> `netengine/spec/feature_state.py`): PKI DNSSEC signing/rotation, CRL, OCSP,
+> intermediate-CA stabilization; AND `dynamic_ip`/`reverse_dns`/`bgp`; and
+> gateway real-internet + cross-world federation routing/resolution. The live
+> contract is `docs/spec-alpha-support.md` + `feature_state.py`; the inventory
+> below is preserved as the original audit.
+
+---
+
 ## Executive Summary
 
 NetEngine exhibits **15+ categories of gaps** across the codebase, ranging from unused spec fields and incomplete event infrastructure to missing API endpoints and test coverage. These fall into three severity tiers:

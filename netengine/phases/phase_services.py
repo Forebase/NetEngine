@@ -295,7 +295,11 @@ class ServicesPhaseHandler(BasePhaseHandler):
         logger = context.logger
 
         if context.pgmq_client is None:
-            logger.info("pgmq_client not available; org service provisioning disabled")
+            logger.warning(
+                "pgmq_client not available; org service provisioning events are DISABLED — "
+                "per-org services will not be auto-provisioned from org.admitted events. "
+                "Provision pgmq (see docker-compose.yml) for event-driven operation."
+            )
             return
 
         logger.info("Starting org admission event consumer (services)")

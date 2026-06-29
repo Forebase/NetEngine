@@ -3,6 +3,40 @@
 ╚═══════════════════════════════════════════════════════════════════════════╝
 
 ┌─────────────────────────────────────────────────────────────────────────┐
+│ ⚠️  STATUS CORRECTION (2026-06-29) — read before acting on this report   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+A code re-audit on 2026-06-29 found several items below are STALE / already
+resolved. The live alpha contract is docs/spec-alpha-support.md +
+netengine/spec/feature_state.py, not this historical forensic snapshot.
+
+RESOLVED since this report was written:
+  • #6 Missing API endpoints — all present now:
+       PUT /services/{name}          netengine/api/routes.py
+       PUT /ands/{and_name}/profile  netengine/api/routes.py
+       PUT /gateway                  netengine/api/routes.py
+       PUT /pki/rotation-policy      netengine/api/routes.py
+  • Mail SPF/DMARC — wired from spec (mail_handler.py:_inject_dns_records).
+  • Mail DKIM record — previously a "<public_key>" placeholder; now publishes
+       the real generated key (mail_handler._dkim_txt_value).
+  • #8 /api/v1/reload stale world_spec — fixed; reload persists the new spec
+       (core/reload.py).
+  • #7 Phase 9 prerequisite — present: PHASE_PREREQUISITES[9] = ["world_services_output"]
+       (core/phase_graph.py). Phase 2 is intentionally combined into Phase 1
+       (DNSHandler) — documented design, not a gap.
+  • #10 Silent pgmq degradation — admission-event consumers now log at WARNING
+       and /health surfaces an "events" block (enabled/detail).
+
+STILL OPEN (genuine v1 work — gated by feature_state.py):
+  • PKI DNSSEC zone signing/rotation, CRL publication, OCSP responder lifecycle,
+    intermediate-CA trust-chain stabilization.
+  • AND profile dynamic_ip / reverse_dns / bgp (only wizard defaults today).
+  • Gateway real-internet + cross-world federation routing/resolution (handler
+    wired but unproven; e2e covers DNS-stub peering only).
+
+Everything below is preserved as the original 2026-06-27 audit for history.
+
+┌─────────────────────────────────────────────────────────────────────────┐
 │ 🔴 CRITICAL GAPS (Spec Gated, Partial, Or Not Implemented)              │
 └─────────────────────────────────────────────────────────────────────────┘
 

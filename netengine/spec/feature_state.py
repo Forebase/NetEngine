@@ -19,21 +19,31 @@ class FeatureStateEntry:
 FEATURE_STATE_REGISTRY: tuple[FeatureStateEntry, ...] = (
     FeatureStateEntry(
         path="pki.dnssec_enabled",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="DNSSEC key generation is not integrated with zone signing",
+        reason=(
+            "DNSSEC key generation is wired into CoreDNS online signing with "
+            "KSK/ZSK rotation; end-to-end signed-zone validation is still being "
+            "hardened in CI e2e"
+        ),
     ),
     FeatureStateEntry(
         path="pki.crl_enabled",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="CRL publication and distribution points are not implemented",
+        reason=(
+            "step-ca CRL generation is enabled and the distribution URL is "
+            "published; client-validation coverage is still being hardened in CI e2e"
+        ),
     ),
     FeatureStateEntry(
         path="pki.ocsp_enabled",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="OCSP responder deployment is not implemented",
+        reason=(
+            "step-ca OCSP config is injected and the responder URL is published; "
+            "responder lifecycle/verification is still being hardened in CI e2e"
+        ),
     ),
     FeatureStateEntry(
         path="gateway_portal.real_internet.mode",
@@ -67,21 +77,21 @@ FEATURE_STATE_REGISTRY: tuple[FeatureStateEntry, ...] = (
     ),
     FeatureStateEntry(
         path="ands.profiles.*.dynamic_ip",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="dynamic IP allocation is not implemented",
+        reason="DHCP via dnsmasq in gateway container; requires dnsmasq installed in gateway image",
     ),
     FeatureStateEntry(
         path="ands.profiles.*.reverse_dns",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="reverse DNS delegation is not implemented",
+        reason="in-addr.arpa zone provisioning available; not yet propagated to external resolvers",
     ),
     FeatureStateEntry(
         path="ands.profiles.*.bgp",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="BGP profile configuration is not implemented",
+        reason="Bird2 BGP speaker sidecar; requires pierrecdn/bird:2.0.9 image available",
     ),
     FeatureStateEntry(
         path="pki.intermediate_ca_enabled",

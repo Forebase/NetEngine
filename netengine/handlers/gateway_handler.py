@@ -1,3 +1,4 @@
+import ipaddress
 import os
 import tempfile
 from typing import TYPE_CHECKING, Any, Optional
@@ -325,3 +326,116 @@ table inet netengine_peer_{peer_name} {{
             self.gateway_container,
             ["rm", "-f", f"/etc/nftables/rules/peer_{peer_name}.nft"],
         )
+
+    # ─────────────────────────────────────────────
+    # DHCP (dynamic_ip profile feature)
+    # ─────────────────────────────────────────────
+
+    async def setup_dhcp(self, and_name: str, cidr: str, gateway_ip: str) -> None:
+        """Write a dnsmasq config for the AND subnet and reload dnsmasq."""
+        network = ipaddress.ip_network(cidr, strict=False)
+        # Reserve .1 (gateway) and broadcast; hand out .2 through penultimate
+        start = str(network.network_address + 2)
+        end = str(network.broadcast_address - 1)
+        conf = (
+            f"interface=eth_{and_name}\n"
+            f"dhcp-range={start},{end},12h\n"
+            f"dhcp-option=3,{gateway_ip}\n"
+            f"dhcp-option=6,{gateway_ip}\n"
+        )
+        conf_path = f"/etc/dnsmasq.d/{and_name}.conf"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".conf", delete=False) as f:
+            f.write(conf)
+            tmp_path = f.name
+        try:
+            await self.docker.copy_to_container(self.gateway_container, tmp_path, conf_path)
+        finally:
+            os.unlink(tmp_path)
+
+        # Signal running dnsmasq to reload; start it if not yet running.
+        exit_code, _ = await self.docker.exec_command(
+            self.gateway_container, ["pkill", "-SIGHUP", "dnsmasq"]
+        )
+        if exit_code != 0:
+            _, err = await self.docker.exec_command(
+                self.gateway_container,
+                ["dnsmasq", "--conf-dir=/etc/dnsmasq.d", "--keep-in-foreground"],
+            )
+            if err and "already" not in err.lower():
+                raise GatewayError(f"Failed to start dnsmasq for {and_name}: {err}")
+
+    async def remove_dhcp(self, and_name: str) -> None:
+        """Remove dnsmasq config for the AND and reload."""
+        await self.docker.exec_command(
+            self.gateway_container, ["rm", "-f", f"/etc/dnsmasq.d/{and_name}.conf"]
+        )
+        await self.docker.exec_command(self.gateway_container, ["pkill", "-SIGHUP", "dnsmasq"])
+
+    # ─────────────────────────────────────────────
+    # BGP speaker (bgp profile feature)
+    # ─────────────────────────────────────────────
+
+    async def setup_bgp(self, and_name: str, cidr: str, gateway_ip: str, bgp_mode: str) -> None:
+        """Provision a Bird2 BGP speaker sidecar container for the AND."""
+        bird_conf = self._bird_conf(and_name, cidr, gateway_ip)
+        conf_path = f"/etc/bird/bird_{and_name}.conf"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".conf", delete=False) as f:
+            f.write(bird_conf)
+            tmp_path = f.name
+
+        container_name = f"netengine_bgp_{and_name}"
+        bridge_name = f"netengines_and_{and_name}"
+        try:
+            await self.docker.start_container(
+                name=container_name,
+                image="pierrecdn/bird:2.0.9",
+                command=["bird", "-c", "/etc/bird/bird.conf", "-f"],
+                volumes={},
+                network=bridge_name,
+                ip=str(ipaddress.ip_network(cidr, strict=False).network_address + 2),
+                environment={},
+            )
+        except Exception as exc:
+            os.unlink(tmp_path)
+            if bgp_mode == "required":
+                raise GatewayError(
+                    f"BGP speaker required but failed to start for {and_name}: {exc}"
+                ) from exc
+            return
+
+        try:
+            await self.docker.copy_to_container(container_name, tmp_path, conf_path)
+        finally:
+            os.unlink(tmp_path)
+
+        await self.docker.exec_command(container_name, ["birdc", "configure"])
+
+    async def remove_bgp(self, and_name: str) -> None:
+        """Stop and remove the BGP speaker sidecar for the AND."""
+        container_name = f"netengine_bgp_{and_name}"
+        try:
+            await self.docker.stop_container(container_name)
+        except Exception:
+            pass
+
+    def _bird_conf(self, and_name: str, cidr: str, gateway_ip: str) -> str:
+        return f"""\
+router id {gateway_ip};
+
+protocol device {{}}
+
+protocol direct {{
+    ipv4;
+}}
+
+protocol kernel {{
+    ipv4 {{
+        export all;
+    }};
+}}
+
+protocol static netengine_{and_name} {{
+    ipv4;
+    route {cidr} blackhole;
+}}
+"""

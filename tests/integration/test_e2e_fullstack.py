@@ -111,6 +111,35 @@ def _send_dns_soa(server_ip: str, zone: str, timeout: float = 5.0) -> bool:
         return False
 
 
+def _dns_query_ancount(server_ip: str, zone: str, qtype: int, timeout: float = 5.0) -> int:
+    """Send a raw DNS query of *qtype* over UDP and return the answer count.
+
+    Returns -1 on transport error. Used to confirm a signed zone serves DNSKEY
+    (type 48) records once DNSSEC online signing is active. No third-party DNS
+    library so the e2e test stays self-contained.
+    """
+    header = struct.pack(">HHHHHH", 0x1234, 0x0100, 1, 0, 0, 0)
+    qname = b""
+    for label in zone.rstrip(".").split("."):
+        enc = label.encode()
+        qname += bytes([len(enc)]) + enc
+    qname += b"\x00"
+    question = qname + struct.pack(">HH", qtype, 1)  # qtype + IN
+    query = header + question
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(timeout)
+            s.sendto(query, (server_ip, 53))
+            data, _ = s.recvfrom(4096)
+        resp_id, _flags, _qd, ancount = struct.unpack(">HHHH", data[:8])
+        if resp_id != 0x1234:
+            return -1
+        return ancount
+    except Exception:
+        return -1
+
+
 def _build_context(spec, zone_dir: str, state: RuntimeState | None = None) -> PhaseContext:
     docker_handler = DockerHandler()
     return PhaseContext(
@@ -185,6 +214,68 @@ async def test_e2e_substrate_and_dns(tmp_path, monkeypatch):
         assert ok, (
             f"Live DNS SOA query to root.internal at {container_ip}:53 failed. "
             "CoreDNS may not have started correctly."
+        )
+
+    finally:
+        _cleanup_docker(client)
+
+
+# ─────────────────────────────────────────────
+# DNSSEC online signing (WS-A)
+# ─────────────────────────────────────────────
+
+
+@pytest.mark.e2e
+@pytest.mark.slow
+@pytest.mark.asyncio
+async def test_e2e_dnssec_online_signing(tmp_path, monkeypatch):
+    """DNSSEC: generate KSK/ZSK, activate CoreDNS signing, serve DNSKEY records.
+
+    Marked @slow: pulls the bind9 image (~150 MB) for dnssec-keygen.
+
+    Validates:
+      - PKIHandler.setup_dnssec writes keys into <zone_dir>/keys (the CoreDNS mount)
+      - DNSHandler.enable_dnssec injects a dnssec block and reloads CoreDNS
+      - CoreDNS stays up and answers a DNSKEY (type 48) query for the signed zone
+    """
+    from netengine.handlers.pki_handler import PKIHandler
+
+    zone_dir = str(tmp_path / "coredns")
+    monkeypatch.setenv("NETENGINE_ZONE_DIR", zone_dir)
+
+    client = _docker_client()
+    if client is None:
+        pytest.skip("Docker daemon not available")
+
+    spec = load_spec(FIXTURES_DIR / "e2e-spec.yaml")
+    ctx = _build_context(spec, zone_dir)
+
+    try:
+        await SubstrateHandler().execute(ctx)
+        await DNSHandler().execute(ctx)
+
+        coredns = client.containers.get("netengine_coredns")
+        container_ip = _get_container_ip(coredns, "core")
+
+        # Generate keys into the CoreDNS-visible keys dir, then activate signing.
+        pki = PKIHandler(ctx.docker_client, ctx.runtime_state, spec)
+        dnssec_info = await pki.setup_dnssec("internal", keys_host_dir=str(Path(zone_dir) / "keys"))
+        activated = await DNSHandler().enable_dnssec(
+            ctx, "internal", [dnssec_info["ksk_name"], dnssec_info["zsk_name"]]
+        )
+        assert activated is True
+
+        corefile = (Path(zone_dir) / "Corefile").read_text()
+        assert "dnssec {" in corefile
+
+        await asyncio.sleep(3)
+        coredns.reload()
+        assert coredns.status == "running", "CoreDNS crashed after DNSSEC reconfigure"
+
+        ancount = _dns_query_ancount(container_ip, "internal", 48)  # DNSKEY
+        assert ancount >= 1, (
+            f"Signed zone served no DNSKEY records (ancount={ancount}); "
+            "DNSSEC online signing did not activate."
         )
 
     finally:

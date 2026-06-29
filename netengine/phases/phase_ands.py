@@ -20,6 +20,7 @@ from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
+from netengine.handlers.dns import DNSHandler
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.gateway_handler import GatewayHandler
 
@@ -287,7 +288,48 @@ class ANDsPhaseHandler(BasePhaseHandler):
         except Exception as e:
             logger.warning(f"Failed to register DNS for {dns_suffix}: {e}")
 
-        # 7. Store state
+        # 8. DHCP (dynamic_ip)
+        if profile_obj.dynamic_ip:
+            try:
+                await gateway.setup_dhcp(
+                    and_name=and_instance.name, cidr=cidr, gateway_ip=gateway_ip
+                )
+                logger.info(f"DHCP configured for {and_instance.name}")
+            except Exception as e:
+                logger.warning(f"DHCP setup failed for {and_instance.name} (non-fatal): {e}")
+
+        # 9. Reverse DNS (reverse_dns)
+        if profile_obj.reverse_dns:
+            try:
+                dns_handler = DNSHandler()
+                await dns_handler.add_reverse_zone(
+                    context=context, cidr=cidr, gateway_ip=gateway_ip
+                )
+            except Exception as e:
+                logger.warning(f"Reverse DNS setup failed for {and_instance.name} (non-fatal): {e}")
+
+        # 10. BGP speaker (bgp)
+        if profile_obj.bgp is not None:
+            try:
+                await gateway.setup_bgp(
+                    and_name=and_instance.name,
+                    cidr=cidr,
+                    gateway_ip=gateway_ip,
+                    bgp_mode=profile_obj.bgp,
+                )
+                logger.info(
+                    f"BGP speaker provisioned for {and_instance.name} (mode={profile_obj.bgp})"
+                )
+            except Exception as e:
+                if profile_obj.bgp == "required":
+                    raise RuntimeError(
+                        f"Required BGP setup failed for {and_instance.name}: {e}"
+                    ) from e
+                logger.warning(
+                    f"BGP setup failed for {and_instance.name} (optional, non-fatal): {e}"
+                )
+
+        # 11. Store state
         and_data = {
             "name": and_instance.name,
             "org": and_instance.org,
@@ -341,7 +383,11 @@ class ANDsPhaseHandler(BasePhaseHandler):
         logger = context.logger
 
         if context.pgmq_client is None:
-            logger.info("pgmq_client not available; org admission events disabled")
+            logger.warning(
+                "pgmq_client not available; AND admission events are DISABLED — "
+                "ANDs will not be auto-provisioned from org.admitted events. "
+                "Provision pgmq (see docker-compose.yml) for event-driven operation."
+            )
             return
 
         logger.info("Starting org admission event consumer")
