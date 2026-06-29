@@ -5,7 +5,6 @@ import re
 
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INITIAL_MIGRATION = REPO_ROOT / "migrations" / "001_initial.sql"
 PGMQ_QUEUE_ARRAY_RE = re.compile(
@@ -31,6 +30,7 @@ def test_all_primary_queues_have_registered_dlqs() -> None:
     for queue in PRIMARY_QUEUES:
         assert dlq_for(queue) in Queue
         assert dlq_for(queue).value in {registered.value for registered in Queue}
+
 
 COMPOSE_INTEGRATION = REPO_ROOT / "compose" / "compose.test-integration.yml"
 

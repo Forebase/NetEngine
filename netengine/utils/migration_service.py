@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 if TYPE_CHECKING:
-    import asyncpg  # type: ignore[import]
+    import asyncpg  # type: ignore[import-untyped]
 
 MIGRATION_TABLE = "netengine_schema_migrations"
 
@@ -146,7 +146,9 @@ def split_sql_statements(sql: str) -> list[str]:
 
 
 class MigrationService:
-    def __init__(self, db_url: str, migrations_dir: Path, logger: Callable[[str], None] | None = None):
+    def __init__(
+        self, db_url: str, migrations_dir: Path, logger: Callable[[str], None] | None = None
+    ):
         self.db_url = db_url
         self.migrations_dir = migrations_dir
         self.logger = logger or (lambda message: None)
@@ -214,7 +216,9 @@ class MigrationService:
                         context = _statement_context(statement)
                         await conn.execute(statement)
             else:
-                self.logger(f"Migration {path.name}: pending (non-transactional operations detected)")
+                self.logger(
+                    f"Migration {path.name}: pending (non-transactional operations detected)"
+                )
                 for statement in statements:
                     context = _statement_context(statement)
                     await conn.execute(statement)
@@ -245,8 +249,7 @@ class MigrationService:
             raise MigrationApplyError(path.name, context, exc) from exc
 
     async def _ensure_table(self, conn: "asyncpg.Connection") -> None:
-        await conn.execute(
-            f"""
+        await conn.execute(f"""
             CREATE TABLE IF NOT EXISTS {MIGRATION_TABLE} (
                 filename TEXT PRIMARY KEY,
                 checksum TEXT NOT NULL,
@@ -254,8 +257,7 @@ class MigrationService:
                 error TEXT,
                 applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
             )
-            """
-        )
+            """)
 
     def _migration_files(self) -> Iterable[Path]:
         return sorted(self.migrations_dir.glob("*.sql"))
@@ -268,7 +270,7 @@ def _statement_context(statement: str, max_length: int = 240) -> str:
 
 def _asyncpg() -> Any:
     try:
-        import asyncpg  # type: ignore[import]
+        import asyncpg  # type: ignore[import-untyped]
     except ModuleNotFoundError as exc:
         raise RuntimeError("asyncpg is required to run database migrations") from exc
     return asyncpg

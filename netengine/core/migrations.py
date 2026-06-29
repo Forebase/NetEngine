@@ -70,12 +70,14 @@ class MigrationService:
             version, _, rest = path.stem.partition("_")
             name = rest or path.stem
             checksum = hashlib.sha256(path.read_bytes()).hexdigest()
-            migrations.append(MigrationFile(version=version, name=name, path=path, checksum=checksum))
+            migrations.append(
+                MigrationFile(version=version, name=name, path=path, checksum=checksum)
+            )
         return migrations
 
     async def apply_pending(self) -> list[MigrationRecord]:
         """Apply pending migrations and return records applied in this invocation."""
-        import asyncpg  # type: ignore[import]
+        import asyncpg  # type: ignore[import-untyped]
 
         conn = await asyncpg.connect(self.db_url)
         try:
@@ -111,7 +113,7 @@ class MigrationService:
             await conn.close()
 
     async def status(self) -> MigrationStatus:
-        import asyncpg  # type: ignore[import]
+        import asyncpg  # type: ignore[import-untyped]
 
         conn = await asyncpg.connect(self.db_url)
         try:
@@ -132,7 +134,9 @@ class MigrationService:
 
             pgmq_available = await self._pgmq_available(conn)
             pgmq_installed = await self._pgmq_installed(conn)
-            missing_queues = await self._missing_queues(conn) if pgmq_installed else [q.value for q in Queue]
+            missing_queues = (
+                await self._missing_queues(conn) if pgmq_installed else [q.value for q in Queue]
+            )
 
             return MigrationStatus(
                 applied=[record for record in records if record.status == "applied"],
@@ -147,8 +151,7 @@ class MigrationService:
             await conn.close()
 
     async def _ensure_table(self, conn: Any) -> None:
-        await conn.execute(
-            """
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS netengine_schema_migrations (
                 version text PRIMARY KEY,
                 name text NOT NULL,
@@ -157,17 +160,14 @@ class MigrationService:
                 applied_at timestamptz,
                 error text
             )
-            """
-        )
+            """)
 
     async def _records(self, conn: Any) -> list[MigrationRecord]:
-        rows = await conn.fetch(
-            """
+        rows = await conn.fetch("""
             SELECT version, name, checksum, status, applied_at, error
             FROM netengine_schema_migrations
             ORDER BY version
-            """
-        )
+            """)
         return [
             MigrationRecord(
                 version=row["version"],
@@ -203,10 +203,16 @@ class MigrationService:
         )
 
     async def _pgmq_available(self, conn: Any) -> bool:
-        return bool(await conn.fetchval("SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pgmq')"))
+        return bool(
+            await conn.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pgmq')"
+            )
+        )
 
     async def _pgmq_installed(self, conn: Any) -> bool:
-        return bool(await conn.fetchval("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pgmq')"))
+        return bool(
+            await conn.fetchval("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pgmq')")
+        )
 
     async def _missing_queues(self, conn: Any) -> list[str]:
         rows = await conn.fetch(

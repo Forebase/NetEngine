@@ -42,10 +42,8 @@ async def test_phase_3_pki_inserts_ca_dns_record(context_with_zone_files):
         ),
     )
 
-    with (
-        patch("netengine.handlers.phase_pki.PKIHandler", return_value=pki),
-        patch("netengine.handlers.phase_pki.DockerHandler"),
-    ):
+    context_with_zone_files.docker_client = MagicMock()
+    with patch("netengine.handlers.phase_pki.PKIHandler", return_value=pki):
         await PKIPhaseHandler().execute(context_with_zone_files)
 
     platform_zone = context_with_zone_files.runtime_state.dns_output["zone_files"][

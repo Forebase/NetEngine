@@ -414,7 +414,7 @@ _AND_PROFILE_DEFS: dict[str, dict[str, object]] = {
         "nat": False,
         "dynamic_ip": False,
         "inbound": "allowed",
-        "reverse_dns": True,
+        "reverse_dns": False,
     },
     "residential": {
         "dhcp": True,
@@ -428,7 +428,7 @@ _AND_PROFILE_DEFS: dict[str, dict[str, object]] = {
         "nat": False,
         "dynamic_ip": False,
         "inbound": "allowed",
-        "reverse_dns": True,
+        "reverse_dns": False,
     },
     "airgapped": {
         "dhcp": True,

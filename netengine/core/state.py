@@ -312,7 +312,9 @@ class RuntimeState:
             "9": (self.org_apps_output,),
         }
         for phase, outputs in phase_outputs.items():
-            if self.phase_completed.get(phase) is True and any(output is None for output in outputs):
+            if self.phase_completed.get(phase) is True and any(
+                output is None for output in outputs
+            ):
                 self.phase_completed.pop(phase, None)
 
         if self.pki_output is None and self.phase_completed.get("3") is True:

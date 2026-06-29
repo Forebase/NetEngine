@@ -72,7 +72,7 @@ def _run(command: list[str], *, timeout: float = 8.0) -> subprocess.CompletedPro
     return subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
 
 
-def _compose_config(project_root: Path | None = None) -> dict:
+def _compose_config(project_root: Path | None = None) -> dict[str, object]:
     compose_file = (project_root or _repo_root()) / "docker-compose.yml"
     try:
         return yaml.safe_load(compose_file.read_text()) or {}

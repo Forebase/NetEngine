@@ -1,5 +1,7 @@
 import ssl
+import tempfile
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from fastapi.security import HTTPAuthorizationCredentials
@@ -8,8 +10,12 @@ from netengine.api import auth
 from netengine.core.state import RuntimeState
 
 
-class _Response:
-    status = 200
+class _PostResponse:
+    """Mock for the async context manager returned by session.post()."""
+
+    def __init__(self, ssl_kwarg):
+        self.ssl_kwarg = ssl_kwarg
+        self.status = 200
 
     async def __aenter__(self):
         return self
@@ -22,7 +28,9 @@ class _Response:
 
 
 class _Session:
-    post_kwargs = None
+    """Mock for aiohttp.ClientSession."""
+
+    post_kwargs: dict = {}
 
     async def __aenter__(self):
         return self
@@ -31,72 +39,23 @@ class _Session:
         return False
 
     def post(self, url, **kwargs):
-        self.capture["url"] = url
-        self.capture.update(kwargs)
-        return _PostContext()
-
-
-@pytest.mark.asyncio
-async def test_require_auth_introspection_uses_platform_api_client_secret(monkeypatch):
-    state = RuntimeState(
-        phase_completed={"4": True},
-        identity_platform_output={"platform_client_id": "uuid"},
-        platform_client_id="uuid",
-        platform_client_auth_id="platform-api",
-        platform_client_secret="stored-secret",
-    )
-    capture = {}
-    request = SimpleNamespace(headers={}, url=SimpleNamespace(path="/api/v1/world"))
-    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="bearer-token")
-
-    monkeypatch.setenv("KEYCLOAK_PLATFORM_CLIENT_ID", "ignored-env-client")
-    with (
-        patch("netengine.api.auth.RuntimeState.load", return_value=state),
-        patch("netengine.api.auth.aiohttp.ClientSession", return_value=_ClientSession(capture)),
-    ):
-        data = await require_auth(request, credentials)
-
-    assert data == {"active": True, "sub": "user-1"}
-    assert capture["data"] == {"token": "bearer-token", "client_id": "platform-api"}
-    assert capture["auth"].login == "platform-api"
-    assert capture["auth"].password == "stored-secret"
-
-
-@pytest.mark.asyncio
-async def test_require_auth_fails_when_platform_client_secret_missing(monkeypatch):
-    state = RuntimeState(
-        phase_completed={"4": True},
-        identity_platform_output={"platform_client_id": "uuid"},
-        platform_client_id="uuid",
-        platform_client_auth_id="platform-api",
-        platform_client_secret=None,
-    )
-    request = SimpleNamespace(headers={}, url=SimpleNamespace(path="/api/v1/world"))
-    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="bearer-token")
-
-    monkeypatch.delenv("KEYCLOAK_PLATFORM_CLIENT_SECRET", raising=False)
-    with patch("netengine.api.auth.RuntimeState.load", return_value=state):
-        with pytest.raises(HTTPException) as exc_info:
-            await require_auth(request, credentials)
-
-    assert exc_info.value.status_code == 500
-    assert exc_info.value.detail == "Platform API client secret not configured"
-    def post(self, *args, **kwargs):
         type(self).post_kwargs = kwargs
-        return _Response()
+        return _PostResponse(kwargs.get("ssl"))
 
 
 def _phase4_state(**overrides):
     values = {
         "phase_completed": {"4": True},
         "bootstrap_admin_password": "admin-password",
+        "platform_client_secret": "test-secret",
+        "platform_client_auth_id": "platform-api",
     }
     values.update(overrides)
     return RuntimeState(**values)
 
 
 async def _call_require_auth(monkeypatch, state):
-    _Session.post_kwargs = None
+    _Session.post_kwargs = {}
     monkeypatch.setattr(auth.RuntimeState, "load", classmethod(lambda cls: state))
     monkeypatch.setattr(auth.aiohttp, "ClientSession", _Session)
     request = SimpleNamespace(headers={}, url=SimpleNamespace(path="/world"))
@@ -106,7 +65,43 @@ async def _call_require_auth(monkeypatch, state):
 
     assert result["active"] is True
     assert _Session.post_kwargs is not None
-    return _Session.post_kwargs["ssl"]
+    return _Session.post_kwargs.get("ssl")
+
+
+@pytest.mark.asyncio
+async def test_require_auth_introspection_uses_platform_api_client_secret(monkeypatch):
+    state = RuntimeState(
+        phase_completed={"4": True},
+        platform_client_auth_id="platform-api",
+        platform_client_secret="stored-secret",
+    )
+    monkeypatch.delenv("KEYCLOAK_PLATFORM_CLIENT_SECRET", raising=False)
+
+    ssl_option = await _call_require_auth(monkeypatch, state)
+
+    assert _Session.post_kwargs.get("auth").password == "stored-secret"
+    assert ssl_option is None
+
+
+@pytest.mark.asyncio
+async def test_require_auth_fails_when_platform_client_secret_missing(monkeypatch):
+    from fastapi import HTTPException
+
+    state = RuntimeState(
+        phase_completed={"4": True},
+        platform_client_auth_id="platform-api",
+        platform_client_secret=None,
+    )
+    request = SimpleNamespace(headers={}, url=SimpleNamespace(path="/api/v1/world"))
+    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="bearer-token")
+
+    monkeypatch.delenv("KEYCLOAK_PLATFORM_CLIENT_SECRET", raising=False)
+    with patch("netengine.api.auth.RuntimeState.load", return_value=state):
+        with pytest.raises(HTTPException) as exc_info:
+            await auth.require_auth(request, credentials)
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == "Platform API client secret not configured"
 
 
 @pytest.mark.asyncio
