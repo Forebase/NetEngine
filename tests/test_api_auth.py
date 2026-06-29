@@ -168,3 +168,41 @@ async def test_require_auth_uses_persisted_runtime_ca_bundle(monkeypatch):
     assert isinstance(ssl_option, ssl.SSLContext)
     assert captured_cafile is not None
     assert captured_cafile.endswith(".pem")
+
+
+@pytest.mark.asyncio
+async def test_require_auth_rejects_bootstrap_secret_after_phase4_without_opt_in(monkeypatch):
+    from fastapi import HTTPException
+
+    state = _phase4_state()
+    request = SimpleNamespace(
+        method="POST",
+        headers={"X-Bootstrap-Secret": "bootstrap-secret"},
+        url=SimpleNamespace(path="/api/v1/reload"),
+    )
+
+    monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "bootstrap-secret")
+    monkeypatch.delenv(auth.POST_PHASE4_BOOTSTRAP_ENV, raising=False)
+    with patch("netengine.api.auth.RuntimeState.load", return_value=state):
+        with pytest.raises(HTTPException) as exc_info:
+            await auth.require_auth(request, None)
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Bearer token required"
+
+
+@pytest.mark.asyncio
+async def test_require_auth_allows_bootstrap_secret_after_phase4_with_opt_in(monkeypatch):
+    state = _phase4_state()
+    request = SimpleNamespace(
+        method="POST",
+        headers={"X-Bootstrap-Secret": "bootstrap-secret"},
+        url=SimpleNamespace(path="/api/v1/reload"),
+    )
+
+    monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "bootstrap-secret")
+    monkeypatch.setenv(auth.POST_PHASE4_BOOTSTRAP_ENV, "true")
+    with patch("netengine.api.auth.RuntimeState.load", return_value=state):
+        result = await auth.require_auth(request, None)
+
+    assert result == {"sub": "bootstrap", "roles": ["admin"]}
