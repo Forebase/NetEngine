@@ -7,6 +7,7 @@ All routes are registered via the router prefix /api/v1.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import os
 from dataclasses import asdict
@@ -88,7 +89,7 @@ def _validate_import_phase_state(state: RuntimeState) -> None:
 
 @router.get("/health")
 async def health() -> dict[str, Any]:
-    """Per-phase healthcheck status."""
+    """Per-phase healthcheck status without unauthenticated secret-bearing detail."""
     state = RuntimeState.load()
     phases = {}
     for phase_id, label in PHASE_LABELS.items():
@@ -113,6 +114,7 @@ async def health() -> dict[str, Any]:
         "phases": phases,
         "events": events,
         "last_error": state.last_error,
+        "last_error_present": bool(state.last_error),
     }
 
 
@@ -943,9 +945,27 @@ async def get_event_chain(
 
 
 def _sanitize_export_value(value: Any) -> Any:
-    """Sanitize values for support bundles using redactable when available."""
+    try:
+        redactable = importlib.import_module("redactable")
+        redact = getattr(redactable, "redact", None)
+        if callable(redact):
+            return redact(value)
+    except ModuleNotFoundError:
+        logger.warning(
+            "redactable is not installed; using NetEngine compatibility redaction fallback"
+        )
 
-    return redact_for_support_bundle(value)
+    if isinstance(value, dict):
+        return {
+            key: _sanitize_export_value(child)
+            for key, child in value.items()
+            if not _is_secret_field(str(key))
+        }
+    if isinstance(value, list):
+        return [_sanitize_export_value(child) for child in value]
+    if isinstance(value, str) and _contains_private_pem(value):
+        return None
+    return value
 
 
 # ─────────────────────────────────────────────

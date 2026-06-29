@@ -87,59 +87,7 @@ Worlds are defined in YAML. See `examples/` for reference:
 | `examples/single-org.yaml` | One organisation with residential AND |
 | `examples/dev-sandbox.yaml` | Full dev setup with orgs, ANDs, mail, storage |
 
-### Alpha golden paths
-
-These are the official alpha operator paths. Run them after the Quickstart setup to validate the supported lifecycle.
-
-#### Path A — Minimal smoke world
-
-```bash
-poetry run netengine up examples/minimal.yaml
-poetry run netengine up examples/minimal.yaml
-poetry run netengine status
-poetry run netengine diagnose examples/minimal.yaml
-poetry run netengine down --dry-run
-poetry run netengine down --yes
-```
-
-The second `up` proves idempotency.
-
-#### Path B — Single-org world
-
-Uses `examples/single-org.yaml` to prove org identity, DNS delegation, AND profile basics, and registry records.
-
-```bash
-poetry run netengine up examples/single-org.yaml
-poetry run netengine up examples/single-org.yaml
-poetry run netengine status
-poetry run netengine diagnose examples/single-org.yaml
-poetry run netengine down --dry-run
-poetry run netengine down --yes
-```
-
-#### Path C — Dev sandbox
-
-Uses `examples/dev-sandbox.yaml` as the feature-rich alpha demo. It is more experimental than Paths A/B if some integrations are still stabilizing.
-
-```bash
-poetry run netengine up examples/dev-sandbox.yaml
-poetry run netengine up examples/dev-sandbox.yaml
-poetry run netengine status
-poetry run netengine diagnose examples/dev-sandbox.yaml
-poetry run netengine down --dry-run
-poetry run netengine down --yes
-```
-
-#### Acceptance checklist
-
-- Fresh install works
-- Boot completes
-- Re-running `up` is idempotent
-- `status` is accurate
-- `diagnose` explains failures
-- `reload` rejects immutable changes
-- `down --dry-run` lists resources
-- `down --yes` leaves no project-owned Docker resources behind
+See [`docs/alpha-quickstart.md`](docs/alpha-quickstart.md) for alpha golden paths, acceptance checks, and troubleshooting-oriented setup details.
 
 ### Spec composition
 
@@ -165,42 +113,35 @@ poetry run netengine up spec.yaml --set metadata.name=my-world
 
 ---
 
-## Alpha secrets handling
+## Alpha docs
 
-Runtime state is central to resuming worlds, so the alpha stance is conservative: the local runtime state file is the authoritative resumable snapshot and may contain secrets. Treat it as sensitive operational state, not as a shareable artifact.
+Operational alpha details live in focused docs so this README stays readable:
 
-- **Where admin passwords are generated:** Bootstrap/operator credentials are generated during identity bootstrap phases and by the deployment environment for pre-Phase-4 bootstrap access. The world spec only names admin users; it does not commit their passwords.
-- **Where they are stored:** Generated credentials and OIDC client secrets can be stored in the runtime state file selected by `NETENGINE_STATE_FILE` (default `netengines_state.json`) and, when configured, mirrored to the runtime-state database for audit/convenience. The local JSON state remains authoritative.
-- **How to rotate them:** During alpha, rotate credentials at the backing service (for example Keycloak admin users/clients or the bootstrap-secret environment value), update the corresponding runtime state/env value, and restart affected API/worker processes. A dedicated `netengine secrets rotate` command is planned.
-- **How to export/import them:** `netengine export` and `GET /api/v1/export` create support/import bundles with secrets redacted by default. They are intended for support and compatible restores, not for secret escrow. If a restore needs live credentials, re-enter or rotate them after import.
-- **How to redact them:** Redaction is centralized through `netengine.security.redaction`, which uses Sober-Co `redactable` when installed and falls back to local alpha rules. API world responses redact secret fields unless `include_secrets=true` is explicitly requested by an admin; support bundles always redact by default.
-- **What is safe to commit:** Specs, examples, migrations, tests, and docs are safe when they contain only placeholders or public material such as CA certificates. Never commit generated runtime state, `.env` files, database dumps, support bundles containing sensitive topology, private keys, tokens, passwords, or real operator/customer data.
-- **What should be in `.gitignore`:** Keep `netengines_state.json`, `data/`, local `.env*` files, support bundles, private keys, generated certificates with private material, database dumps, and tool-specific secret stores ignored. The repository already ignores the default runtime state file and local data directory.
-
-Alpha defaults are: runtime state is written atomically with file mode `0600`; generated credentials are displayed once by the component that creates them and then stored in protected runtime state or the backing service; support bundle redaction is on by default; and secret fields in API responses remain redacted unless an authenticated admin explicitly requests them.
+| Document | Purpose |
+|---|---|
+| [`docs/alpha-quickstart.md`](docs/alpha-quickstart.md) | Clean install, golden paths, and acceptance checklist |
+| [`docs/support-matrix.md`](docs/support-matrix.md) | Supported, experimental, reserved, and unsupported spec fields |
+| [`docs/spec-reference.md`](docs/spec-reference.md) | YAML spec sections, composition, and validation guidance |
+| [`docs/operator-guide.md`](docs/operator-guide.md) | Lifecycle commands, phase operations, API examples, migrations |
+| [`docs/troubleshooting.md`](docs/troubleshooting.md) | Failure diagnosis and recovery procedures |
+| [`docs/security-model.md`](docs/security-model.md) | Trust boundaries, secrets, redaction, destructive-action safety |
+| [`docs/networking.md`](docs/networking.md) | Platform/core networks, DNS layout, ANDs, gateway portal |
+| [`docs/state-and-backups.md`](docs/state-and-backups.md) | Runtime state, database state, bundles, backup/restore |
+| [`docs/release-notes/0.1.0-alpha.1.md`](docs/release-notes/0.1.0-alpha.1.md) | Initial alpha release notes |
+| [`docs/known-limitations.md`](docs/known-limitations.md) | Current alpha limitations and caveats |
 
 ---
 
+## Alpha operations and security
 
-## Operator migration guidance
+Deeper operational guidance has moved into the alpha docs:
 
-Alpha migrations are forward-only unless a migration file includes explicit manual rollback notes. Inspect applied migrations with:
+- [`docs/operator-guide.md`](docs/operator-guide.md) for lifecycle commands, operator API examples, imports/exports, and migrations.
+- [`docs/security-model.md`](docs/security-model.md) for secrets handling, redaction, and destructive-action safeguards.
+- [`docs/state-and-backups.md`](docs/state-and-backups.md) for runtime state, support bundles, and backup/restore guidance.
+- [`docs/troubleshooting.md`](docs/troubleshooting.md) for common failures and recovery procedures.
 
-```bash
-psql "$NETENGINE_DB_URL" -c "SELECT version, dirty FROM schema_migrations;"
-psql "$NETENGINE_DB_URL" -c "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1;"
-```
-
-The second command identifies the last applied migration. If a migration fails, stop writers, capture the error and current `schema_migrations` state, inspect partially-created objects, and follow that migration's manual recovery notes before retrying. Without explicit rollback notes, restore from backup or rebuild only if the database is disposable. Wiping and reapplying migrations is acceptable for local/dev/CI alpha databases with no durable data; it is unsafe for shared, persistent, staging, production, or customer-like environments without an approved backup/restore plan.
-
-pgmq queue additions should be treated as forward schema changes and should create both the queue and matching `*_dlq` queue. Prefer migrations over manual changes. If a queue must be created manually during alpha recovery, first inspect existing queues and then create both queues explicitly; remove queues only in disposable environments or after confirming no pending/audit messages are needed:
-
-```bash
-psql "$NETENGINE_DB_URL" -c "SELECT queue_name FROM pgmq.list_queues() ORDER BY queue_name;"
-psql "$NETENGINE_DB_URL" -c "SELECT pgmq.create('new_queue'); SELECT pgmq.create('new_queue_dlq');"
-```
-
-See `docs/runbook.md` for the full rollback and recovery procedure.
+---
 
 ## Architecture
 
@@ -235,7 +176,7 @@ See `docs/runbook.md` for the full rollback and recovery procedure.
 
 **Spec compatibility** is tracked in `metadata.schema_version` (default `netengine.spec.v1`). The loader accepts missing schema versions for existing alpha specs, rejects unsupported versions before boot/import, and includes the spec schema in support bundles so alpha.2+ can decide whether an alpha.1 world is safe to restore.
 
-**Support bundles** are produced with `netengine export --out netengine-support-bundle.json` or `GET /api/v1/export`. Bundles include schema metadata, the world spec, phase completion, public CA material, and sanitized phase outputs with secret-looking fields/private PEMs removed. NetEngine uses the Sober-Co [`redactable`](https://github.com/Sober-Co/redactable) package for redaction when it is installed (with a local alpha fallback until it is available on PyPI). Restore with `netengine import <bundle-file>` or `POST /api/v1/import`; import validates the bundle schema, spec schema compatibility, spec parseability, known phases, phase prerequisites, and required outputs before replacing local runtime state.
+**Support bundles** are produced with `netengine export --out netengine-support-bundle.json` or `GET /api/v1/export`. Bundles include schema metadata, the world spec, phase completion, public CA material, and sanitized phase outputs with secret-looking fields/private PEMs removed. Redaction is performed through the `redactable` package when it is installed, with NetEngine's built-in fallback used only for alpha compatibility. Restore with `netengine import <bundle-file>` or `POST /api/v1/import`; import validates the bundle schema, spec schema compatibility, spec parseability, known phases, phase prerequisites, and required outputs before replacing local runtime state.
 
 **Persistent teardown safety** requires typed confirmation. CLI teardown of a persistent world must pass `netengine down --confirm <world-name>`; the operator API requires both `confirm=true` and `confirmation` equal to the world name. `--yes` is intentionally not enough for persistent destructive operations.
 
@@ -283,92 +224,13 @@ docs/           Architecture decisions, audit findings
 
 ## Operator API
 
-When a world is running, the FastAPI operator API is available at `https://api.platform.internal:8080`. The supported alpha surface is versioned under `/api/v1`; unversioned `/health`, `/world`, and `/phases/{n}` examples are historical and should not be used by new clients. Interactive OpenAPI documentation is served by FastAPI at `/docs`, and the raw OpenAPI document is available at `/openapi.json`.
+When a world is running, the operator API is available at `https://api.platform.internal:8080`. Authentication uses the platform OIDC realm — include a bearer token from Keycloak. Mutating routes (`POST`, `PUT`, `PATCH`, and `DELETE`) require an administrative role (`admin`, `netengine-admin`, or `operator-admin`) after the platform realm is available. Token validation errors distinguish missing tokens, inactive/expired tokens, Keycloak introspection failures, and OIDC issuer transport/TLS failures.
 
-### OpenAPI docs example
+During alpha bootstrap (before Phase 4 brings up Keycloak), the operator API is not unauthenticated: callers must send the host-local `X-Bootstrap-Secret` matching `NETENGINES_BOOTSTRAP_SECRET`. The secret is generated/read locally by the CLI, cannot be set over the API, is retired for operator API calls once Phase 4 completes, and must not be committed or included in support artifacts.
 
-Open the docs UI in a browser after boot:
+TLS verification for OIDC issuer calls defaults to secure certificate validation. For self-signed world CAs, configure `NETENGINE_CA_BUNDLE` or place the runtime CA bundle at `runtime/ca-bundle.pem`. Disabling verification requires explicit opt-in with `NETENGINE_INSECURE_TLS=true` and emits a warning; use it only in isolated development environments.
 
-```text
-https://api.platform.internal:8080/docs
-```
-
-Or inspect the generated schema directly:
-
-```bash
-curl -sk https://api.platform.internal:8080/openapi.json \
-  | jq '.info, (.paths | keys)'
-```
-
-Example excerpt from the generated schema:
-
-```json
-{
-  "info": {
-    "title": "NetEngine Operator API",
-    "version": "0.1"
-  },
-  "paths": {
-    "/api/v1/health": {},
-    "/api/v1/world": {},
-    "/api/v1/reload": {},
-    "/api/v1/queues/{queue_name}/dlq/replay": {},
-    "/api/v1/identity/realms": {}
-  }
-}
-```
-
-### Auth model and admin requirements
-
-Authentication uses the platform OIDC realm. Clients send an access token in the `Authorization: Bearer <token>` header. Read-only inspection routes require any authenticated platform operator. State-changing routes that mutate world infrastructure, runtime state, registries, queues, PKI policy, gateway policy, imports, or teardown require an admin role. Accepted admin role names are `admin`, `netengine-admin`, and `operator-admin`; roles may appear in top-level `roles`, `realm_access.roles`, or client `resource_access.*.roles` token claims.
-
-### `/api/v1` route surface
-
-| Method | Path | Purpose | Role |
-|---|---|---|---|
-| `GET` | `/api/v1/health` | Per-phase health status | unauthenticated liveness |
-| `GET` | `/api/v1/world` | Current spec and runtime state summary | authenticated |
-| `POST` | `/api/v1/reload` | Diff and apply a new world spec | admin |
-| `DELETE` | `/api/v1/world` | Tear down the running world | admin |
-| `GET` | `/api/v1/services` | Running containers and phase state | authenticated |
-| `PUT` | `/api/v1/services/{name}` | Enable/disable a service in runtime spec | admin |
-| `GET` | `/api/v1/orgs`, `/api/v1/orgs/{org}` | List or inspect world registry orgs | authenticated |
-| `POST`/`PUT`/`DELETE` | `/api/v1/orgs`, `/api/v1/orgs/{org}` | Admit, update, or remove orgs | admin |
-| `POST` | `/api/v1/orgs/{org}/apps` | Deploy an org app | admin |
-| `GET` | `/api/v1/ands` | List Administrative Network Domains | authenticated |
-| `POST`/`PUT`/`DELETE` | `/api/v1/ands`, `/api/v1/ands/{and_name}/profile`, `/api/v1/ands/{and_name}` | Provision, change, or remove ANDs | admin |
-| `GET` | `/api/v1/registry/domains`, `/api/v1/registry/addresses` | Registry state | authenticated |
-| `POST`/`DELETE` | `/api/v1/registry/domains`, `/api/v1/registry/domains/{domain}` | Register or remove domains | admin |
-| `GET` | `/api/v1/dns/{domain}` | DNS query proxy | authenticated |
-| `PUT` | `/api/v1/gateway` | Update gateway portal policy | admin |
-| `GET` | `/api/v1/pki/certs`, `/api/v1/pki/intermediate-ca-cert` | Certificate inventory and CA material | authenticated |
-| `PUT` | `/api/v1/pki/rotation-policy` | Update certificate rotation policy | admin |
-| `GET` | `/api/v1/identity/realms` | Platform and in-world realm summary | authenticated |
-| `GET` | `/api/v1/queues` | Queue depths and DLQ state | authenticated |
-| `POST` | `/api/v1/queues/{queue_name}/dlq/replay` | Replay a dead-letter queue | admin |
-| `GET` | `/api/v1/events/{correlation_id}` | Event causal chain | authenticated |
-| `GET` | `/api/v1/export` | Support bundle export | admin |
-| `POST` | `/api/v1/import` | Support bundle import/restore | admin |
-
-### Example curl commands
-
-Set a token once:
-
-```bash
-export NETENGINE_TOKEN='<platform-oidc-access-token>'
-export NETENGINE_API='https://api.platform.internal:8080'
-```
-
-Read-only calls:
-
-```bash
-curl -sk -H "Authorization: Bearer $NETENGINE_TOKEN" "$NETENGINE_API/api/v1/world"
-curl -sk -H "Authorization: Bearer $NETENGINE_TOKEN" "$NETENGINE_API/api/v1/queues"
-curl -sk -H "Authorization: Bearer $NETENGINE_TOKEN" "$NETENGINE_API/api/v1/identity/realms"
-curl -sk -H "Authorization: Bearer $NETENGINE_TOKEN" "$NETENGINE_API/api/v1/dns/acme.internal?record_type=A"
-```
-
-Admin calls:
+Unauthenticated health checks intentionally return only phase completion, overall status, and whether an error exists. Detailed runtime errors and state remain behind authenticated operator endpoints.
 
 ```bash
 curl -sk -X POST -H "Authorization: Bearer $NETENGINE_TOKEN" \
@@ -417,7 +279,7 @@ FastAPI errors use a JSON `detail` field. Examples:
 
 `/api/v1` is the alpha compatibility boundary. For alpha releases, existing `/api/v1` paths, request fields, response fields, and documented status semantics should remain backward compatible. Additive fields and additive endpoints may appear without a version bump. Breaking changes require a new prefix such as `/api/v2` or a documented alpha migration note before removal. Bug fixes may make validation stricter when the previous behavior could mutate infrastructure unsafely or return corrupt state.
 
-Compatibility guarantee for `/api/v1`: clients that use documented routes, send documented request fields, tolerate unknown response fields, and branch on HTTP status codes plus `detail` will continue to work throughout the alpha line.
+See [`docs/operator-guide.md`](docs/operator-guide.md) for authentication, route coverage, curl examples, import/export, queue operations, and teardown confirmation details.
 
 ---
 

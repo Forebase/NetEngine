@@ -219,6 +219,22 @@ class TestHealthRoute:
         resp = client.get("/api/v1/health")
         assert resp.json()["status"] == "degraded"
 
+    def test_health_does_not_leak_last_error_detail(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
+        state = RuntimeState(last_error="client_secret=super-secret-token")
+        state.save()
+        from netengine.api.app import app
+
+        client = TestClient(app)
+        resp = client.get("/api/v1/health")
+        data = resp.json()
+
+        assert resp.status_code == 200
+        assert data["last_error_present"] is True
+        assert "last_error" not in data
+        assert "super-secret-token" not in json.dumps(data)
+
     def test_health_stays_degraded_when_phase_9_incomplete(self, tmp_path, monkeypatch):
         monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")
@@ -344,6 +360,35 @@ class TestReloadRoute:
         )
         assert resp.status_code == 200
         assert resp.json()["success"] is True
+
+    def test_reload_requires_admin_role_after_oidc_bootstrap(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
+
+        spec = _load_example("minimal.yaml")
+        state = RuntimeState()
+        state.phase_completed = {"4": True}
+        state.world_spec = spec.model_dump()
+        state.platform_client_secret = "client-secret"
+        state.save()
+
+        from netengine.api.app import app
+        from netengine.api.auth import require_auth
+
+        async def operator_user():
+            return {"sub": "operator", "realm_access": {"roles": ["operator"]}}
+
+        app.dependency_overrides[require_auth] = operator_user
+        try:
+            client = TestClient(app)
+            resp = client.post(
+                "/api/v1/reload",
+                json={"spec_yaml": yaml.dump(spec.model_dump(mode="json"))},
+                headers={"Authorization": "Bearer user-token"},
+            )
+        finally:
+            app.dependency_overrides.clear()
+
+        assert resp.status_code == 403
 
 
 class TestServicesRoute:
