@@ -621,3 +621,49 @@ class TestSpecCrossValidation:
         path = self._write_spec(temp_spec_dir, data)
         with pytest.raises(SpecLoadError, match="unknown profile"):
             load_spec(path)
+
+
+def test_runtime_config_file_applies_logging_defaults(tmp_path):
+    from netengine.config.runtime import load_runtime_config
+    from netengine.logs import LoggerFactory
+
+    config_file = tmp_path / "app.yaml"
+    log_dir = tmp_path / "configured-logs"
+    config_file.write_text(
+        "logging:\n"
+        "  environment: test\n"
+        "  debug: false\n"
+        f"  log_dir: {log_dir}\n"
+        "  log_level: WARNING\n"
+        "  serialize_json: true\n"
+    )
+
+    app_config = load_runtime_config(config_file)
+
+    assert app_config.logging.environment == "test"
+    assert app_config.logging.log_level == "WARNING"
+    assert app_config.logging.serialize_json is True
+    assert log_dir.exists()
+    assert LoggerFactory._initialized is True
+    LoggerFactory.shutdown()
+
+
+def test_cli_config_option_passes_runtime_config_to_logging(tmp_path):
+    from unittest.mock import patch
+
+    from click.testing import CliRunner
+
+    from netengine.cli import main as cli_main
+
+    config_file = tmp_path / "app.yaml"
+    config_file.write_text("logging:\n  log_level: ERROR\n  environment: ci\n")
+
+    with patch("netengine.config.runtime.LoggerFactory.initialize") as initialize, patch(
+        "netengine.config.runtime.LoggerFactory.shutdown"
+    ):
+        result = CliRunner().invoke(cli_main.cli, ["--config", str(config_file), "status"])
+
+    assert result.exit_code == 0
+    runtime_log_config = initialize.call_args.args[0]
+    assert runtime_log_config.LOG_LEVEL == "ERROR"
+    assert runtime_log_config.ENV == "ci"
