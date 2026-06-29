@@ -41,42 +41,20 @@ That's it — all 10 phases run end-to-end and runtime state is written to
 
 This brings up the real persistence and identity layers.
 
-### 1. Start backing services
-
-```bash
-poetry run netengine doctor --skip-db
-docker compose up -d
-poetry run netengine doctor
-```
-
-This starts:
-- `netengine_postgres` on port 5432 (with pgmq extension)
-- Keycloak on port 8080 (platform identity, used in Phase 4)
-
-The doctor command checks Python, Docker/Compose, required ports, writable runtime paths, database connectivity, pgmq, and stale Docker/state conflicts. Wait for postgres to be healthy:
-
-```bash
-docker compose ps          # all services should show "healthy"
-```
-
-### 2. Apply migrations
-
-```bash
-psql postgresql://netengine:dev_password@localhost:5432/netengine \
-  -f migrations/001_initial.sql
-```
-
-Set the database URL for subsequent commands:
+### 1. Guided setup and bootstrap
 
 ```bash
 export NETENGINE_DB_URL="postgresql://netengine:dev_password@localhost:5432/netengine"
+poetry run netengine setup local examples/minimal.yaml
 ```
 
-### 3. Bootstrap the world
+The guided setup replaces the former manual sequence of `doctor`, `docker compose up`, database waiting, migrations, another doctor run, and `netengine up`. It runs pre-Postgres host checks first, starts the required compose services, waits for `netengine_postgres` to become healthy, applies migrations, runs spec-aware doctor/database checks, and stops before bootstrapping if required checks fail.
 
-```bash
-poetry run netengine up examples/minimal.yaml
-```
+The setup workflow provides remediation hints for common blockers:
+- **Subnet conflicts:** remove conflicting Docker networks with `docker network rm <name>` or choose non-overlapping subnets in the world spec.
+- **Port conflicts:** stop the process/container using the published port or change the compose/spec port.
+- **Docker name conflicts:** run `netengine down`, `docker compose down`, or remove stale containers before retrying.
+- **Database failures:** inspect `docker compose ps postgres` and `docker logs netengine_postgres`, verify `NETENGINE_DB_URL`, then rerun `netengine setup local examples/minimal.yaml`.
 
 This runs all phases sequentially. Each phase reports `completed successfully`
 when done. Runtime state is saved after each phase; the run is resumable if
