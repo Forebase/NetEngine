@@ -9,6 +9,10 @@ from netengine.diagnostic.runner import ProbeResult, ProbeStatus
 from netengine.spec.models import NetEngineSpec
 
 _PROBE_NAME = "DNS"
+_PHASE = 1
+_RESOURCE = "CoreDNS root/platform zones"
+_LOGS = ["docker logs netengines_coredns", "docker logs netengine_coredns"]
+_RETRY = "netengine heal --phase 1"
 
 
 async def probe(spec: NetEngineSpec) -> ProbeResult:

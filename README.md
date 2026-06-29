@@ -165,6 +165,22 @@ poetry run netengine up spec.yaml --set metadata.name=my-world
 
 ---
 
+## Alpha secrets handling
+
+Runtime state is central to resuming worlds, so the alpha stance is conservative: the local runtime state file is the authoritative resumable snapshot and may contain secrets. Treat it as sensitive operational state, not as a shareable artifact.
+
+- **Where admin passwords are generated:** Bootstrap/operator credentials are generated during identity bootstrap phases and by the deployment environment for pre-Phase-4 bootstrap access. The world spec only names admin users; it does not commit their passwords.
+- **Where they are stored:** Generated credentials and OIDC client secrets can be stored in the runtime state file selected by `NETENGINE_STATE_FILE` (default `netengines_state.json`) and, when configured, mirrored to the runtime-state database for audit/convenience. The local JSON state remains authoritative.
+- **How to rotate them:** During alpha, rotate credentials at the backing service (for example Keycloak admin users/clients or the bootstrap-secret environment value), update the corresponding runtime state/env value, and restart affected API/worker processes. A dedicated `netengine secrets rotate` command is planned.
+- **How to export/import them:** `netengine export` and `GET /api/v1/export` create support/import bundles with secrets redacted by default. They are intended for support and compatible restores, not for secret escrow. If a restore needs live credentials, re-enter or rotate them after import.
+- **How to redact them:** Redaction is centralized through `netengine.security.redaction`, which uses Sober-Co `redactable` when installed and falls back to local alpha rules. API world responses redact secret fields unless `include_secrets=true` is explicitly requested by an admin; support bundles always redact by default.
+- **What is safe to commit:** Specs, examples, migrations, tests, and docs are safe when they contain only placeholders or public material such as CA certificates. Never commit generated runtime state, `.env` files, database dumps, support bundles containing sensitive topology, private keys, tokens, passwords, or real operator/customer data.
+- **What should be in `.gitignore`:** Keep `netengines_state.json`, `data/`, local `.env*` files, support bundles, private keys, generated certificates with private material, database dumps, and tool-specific secret stores ignored. The repository already ignores the default runtime state file and local data directory.
+
+Alpha defaults are: runtime state is written atomically with file mode `0600`; generated credentials are displayed once by the component that creates them and then stored in protected runtime state or the backing service; support bundle redaction is on by default; and secret fields in API responses remain redacted unless an authenticated admin explicitly requests them.
+
+---
+
 
 ## Operator migration guidance
 
@@ -275,11 +291,54 @@ TLS verification for OIDC issuer calls defaults to secure certificate validation
 
 Unauthenticated health checks intentionally return only phase completion, overall status, and whether an error exists. Detailed runtime errors and state remain behind authenticated operator endpoints.
 
+```bash
+curl -sk -X POST -H "Authorization: Bearer $NETENGINE_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d @<(jq -n --rawfile spec examples/dev-sandbox.yaml '{spec_yaml: $spec}') \
+  "$NETENGINE_API/api/v1/reload"
+
+curl -sk -X POST -H "Authorization: Bearer $NETENGINE_TOKEN" \
+  "$NETENGINE_API/api/v1/queues/dns_updates/dlq/replay"
+
+curl -sk -X DELETE -H "Authorization: Bearer $NETENGINE_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"confirm": true, "confirmation": "dev-sandbox"}' \
+  "$NETENGINE_API/api/v1/world"
 ```
-GET  /health          Liveness check
-GET  /world           Current world spec + phase status
-GET  /phases/{n}      Individual phase status and output
+
+### Error responses
+
+FastAPI errors use a JSON `detail` field. Examples:
+
+```json
+{ "detail": "Bearer token required" }
 ```
+
+```json
+{ "detail": "Admin role required" }
+```
+
+```json
+{ "detail": "No world is currently running — use netengines up first" }
+```
+
+```json
+{
+  "detail": {
+    "success": false,
+    "applied": [],
+    "rejected": [],
+    "errors": ["persistent worlds cannot remove orgs during reload"],
+    "immutability_violations": ["metadata.name is immutable"]
+  }
+}
+```
+
+### API versioning and compatibility
+
+`/api/v1` is the alpha compatibility boundary. For alpha releases, existing `/api/v1` paths, request fields, response fields, and documented status semantics should remain backward compatible. Additive fields and additive endpoints may appear without a version bump. Breaking changes require a new prefix such as `/api/v2` or a documented alpha migration note before removal. Bug fixes may make validation stricter when the previous behavior could mutate infrastructure unsafely or return corrupt state.
+
+Compatibility guarantee for `/api/v1`: clients that use documented routes, send documented request fields, tolerate unknown response fields, and branch on HTTP status codes plus `detail` will continue to work throughout the alpha line.
 
 ---
 

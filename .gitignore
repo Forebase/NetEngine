@@ -225,3 +225,15 @@ __marimo__/
 # NetEngine local runtime state
 netengines_state.json
 data/
+# NetEngine generated secrets and support artifacts
+.env
+.env.*
+!.env.example
+netengine-support-bundle*.json
+*support-bundle*.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.dump
+*.sql.gz

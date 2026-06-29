@@ -491,9 +491,7 @@ def _check_docker_conflicts(ctx: DoctorContext) -> list[DoctorCheckResult]:
                         "Run `netengine down` or remove stale Docker resources if these "
                         "belong to an old run."
                     )
-                    "Run `netengine down` or remove stale Docker resources"
-                    " if these belong to an old run."
-                    if conflicts  # TODO
+                    if conflicts
                     else None
                 ),
                 "docker",

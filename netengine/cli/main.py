@@ -720,6 +720,11 @@ async def _diagnose(spec_file: str, as_json: bool) -> None:
                 "status": r.status.value,
                 "detail": r.detail,
                 "hint": r.hint,
+                "remediation": r.remediation,
+                "related_phase": r.related_phase,
+                "related_resource": r.related_resource,
+                "related_logs": r.related_logs,
+                "command_to_retry": r.command_to_retry,
                 "elapsed_ms": round(r.elapsed_ms, 1) if r.elapsed_ms is not None else None,
             }
             for r in results
@@ -744,9 +749,18 @@ async def _diagnose(spec_file: str, as_json: bool) -> None:
     for r in results:
         symbol = _STATUS_SYMBOL[r.status]
         timing = f"  ({r.elapsed_ms:.0f}ms)" if r.elapsed_ms is not None else ""
-        click.echo(f"{symbol}  {r.name:<10} {r.detail}{timing}")
-        if r.hint and r.status != ProbeStatus.OK:
-            click.echo(f"{'':14}  {click.style('→', fg='cyan')} {r.hint}")
+        phase = f"Phase {r.related_phase} " if r.related_phase is not None else ""
+        resource = f": {r.related_resource}" if r.related_resource else ""
+        click.echo(f"{symbol}  {phase}{r.name}{resource} — {r.status.value}{timing}")
+        click.echo(f"{'':14}  Cause: {r.detail}")
+        actionable = r.status in (ProbeStatus.FAIL, ProbeStatus.WARN)
+        if r.remediation and actionable:
+            click.echo(f"{'':14}  Remediation: {r.remediation}")
+        if r.related_logs and actionable:
+            for log_command in r.related_logs:
+                click.echo(f"{'':14}  Try: {log_command}")
+        if r.command_to_retry and actionable:
+            click.echo(f"{'':14}  Try: {r.command_to_retry}")
 
     issues = [r for r in results if r.status in (ProbeStatus.FAIL, ProbeStatus.WARN)]
     skipped = [r for r in results if r.status == ProbeStatus.SKIP]

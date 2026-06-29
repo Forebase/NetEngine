@@ -7,6 +7,10 @@ from netengine.spec.models import NetEngineSpec
 
 _PROBE_NAME = "ACME"
 _TIMEOUT = aiohttp.ClientTimeout(total=5)
+_PHASE = 3
+_RESOURCE = "step-ca ACME directory"
+_LOGS = ["docker logs netengines_step_ca"]
+_RETRY = "netengine heal --phase 3"
 
 
 async def probe(spec: NetEngineSpec) -> ProbeResult:
