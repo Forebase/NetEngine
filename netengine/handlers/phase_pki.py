@@ -203,9 +203,13 @@ class PKIPhaseHandler(BasePhaseHandler):
 
         if context.pgmq_client:
             rotation_worker = PKICertRotationWorker(pki, context.pgmq_client, rotation_configs)
-            context.consumer_supervisor.register("pki_cert_rotation", rotation_worker.run)
+            context.consumer_supervisor.register("pki.cert_rotation", rotation_worker.run)
             context.logger.info(
                 f"PKI certificate rotation worker registered ({len(rotation_configs)} cert types)"
+            )
+        else:
+            context.consumer_supervisor.register_disabled(
+                "pki.cert_rotation", "pgmq unavailable; certificate rotation events disabled"
             )
 
     async def _prepare_app_cert_rotation(self, cn: str, cert_metadata: dict) -> None:

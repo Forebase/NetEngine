@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from netengine.events.emitter import emit_event
-from netengine.events.queues import Queue
+from netengine.events.queues import Queue, dlq_for
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
@@ -107,21 +107,51 @@ class ServicesPhaseHandler(BasePhaseHandler):
                 payload={"services": list(services_output.keys())},
             )
 
-            # Register background consumers
+            # Register background consumers with stable, operator-visible names.
             if context.consumer_supervisor is not None:
-                context.consumer_supervisor.register(
-                    "org_admission_events",
-                    lambda: self._consume_org_admission_events(context, docker, dns),
-                )
+                if context.pgmq_client is not None:
+                    context.consumer_supervisor.register(
+                        "services.org_admission",
+                        lambda: self._consume_org_admission_events(context, docker, dns),
+                    )
 
-                # Register monitoring service (always-running health checks)
+                    from netengine.workers.dlq_worker import DLQReplayWorker
+
+                    services_dlq = DLQReplayWorker(
+                        context.pgmq_client,
+                        Queue.SERVICES_ADMISSIONS,
+                        dlq_for(Queue.SERVICES_ADMISSIONS),
+                    )
+                    context.consumer_supervisor.register(
+                        "dlq.services_admissions", services_dlq.run
+                    )
+                else:
+                    context.consumer_supervisor.register_disabled(
+                        "services.org_admission",
+                        "pgmq unavailable; per-org service provisioning disabled",
+                    )
+                    context.consumer_supervisor.register_disabled(
+                        "dlq.services_admissions",
+                        "pgmq unavailable; DLQ replay disabled",
+                    )
+
+                # Register monitoring service (always-running health checks). Event
+                # publication is disabled visibly when pgmq is unavailable.
                 from netengine.monitoring import MonitoringService
 
-                monitoring_service = MonitoringService(spec, interval_seconds=60.0)
-                context.consumer_supervisor.register(
-                    "monitoring_service",
-                    monitoring_service.start,
-                )
+                if context.pgmq_client is not None:
+                    monitoring_service = MonitoringService(
+                        spec, interval_seconds=60.0, pgmq=context.pgmq_client
+                    )
+                    context.consumer_supervisor.register(
+                        "monitoring.world_health",
+                        monitoring_service.start,
+                    )
+                else:
+                    context.consumer_supervisor.register_disabled(
+                        "monitoring.world_health",
+                        "pgmq unavailable; world health events disabled",
+                    )
 
         except Exception as e:
             runtime_state.last_error = str(e)

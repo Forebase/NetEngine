@@ -22,7 +22,7 @@ class MonitoringService:
     monitoring.
     """
 
-    def __init__(self, spec: NetEngineSpec, interval_seconds: float = 60.0) -> None:
+    def __init__(self, spec: NetEngineSpec, interval_seconds: float = 60.0, pgmq: PGMQClient | None = None) -> None:
         """Initialize monitoring service.
 
         Args:
@@ -32,7 +32,7 @@ class MonitoringService:
         self._spec = spec
         self._interval_seconds = interval_seconds
         self._runner = build_runner(spec)
-        self._pgmq = PGMQClient()
+        self._pgmq = pgmq or PGMQClient()
         self._running = False
 
     async def start(self) -> None:

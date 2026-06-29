@@ -7,6 +7,7 @@ live in :mod:`netengine.diagnostic.runner` and require ``NetEngineSpec``.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import asdict
 from pathlib import Path
@@ -15,7 +16,8 @@ from typing import Iterable
 import click
 
 from netengine.cli.env import db_url_from_env
-from netengine.core.state import get_state_file
+from netengine.core.db_client import pgmq_available
+from netengine.core.state import RuntimeState, get_state_file
 from netengine.diagnostic import preflight as _preflight
 from netengine.diagnostic.preflight import (
     DoctorCheckResult,
@@ -26,6 +28,7 @@ from netengine.diagnostic.preflight import (
     run_preflight,
 )
 from netengine.spec.loader import SpecLoadError, load_spec
+from netengine.workers.registry import expected_worker_statuses
 
 __all__ = [
     "DoctorCheckResult",
@@ -140,10 +143,25 @@ def doctor(
         results = run_checks(
             db_url, state_file, skip_db=skip_db, spec_subnets=spec_subnets
         )
+    state = RuntimeState.load()
+    try:
+        pgmq_ok = False if skip_db else asyncio.run(pgmq_available())[0]
+    except Exception:
+        pgmq_ok = False
+    workers = expected_worker_statuses(state, pgmq_enabled=pgmq_ok)
+
     if as_json:
-        click.echo(json.dumps([asdict(r) for r in results], indent=2))
+        click.echo(
+            json.dumps({"checks": [asdict(r) for r in results], "workers": workers}, indent=2)
+        )
     else:
         click.echo("NetEngine doctor preflight report")
         _print_report(results)
+        if workers:
+            click.echo("\nBackground workers")
+            for worker in workers.values():
+                detail = worker.get("disabled_reason") or worker.get("last_error") or ""
+                suffix = f" — {detail}" if detail else ""
+                click.echo(f"  {worker['state']}: {worker['name']}{suffix}")
     if any(r.status == DoctorStatus.FAIL and r.required for r in results):
         raise click.ClickException("required doctor checks failed")
