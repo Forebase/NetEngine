@@ -25,6 +25,7 @@ fastapi = ">=0.115"
 omegaconf = "^2.3"
 prometheus-client = "^0.25.0"
 cryptography = ">=44,<49"
+redactable = "^0.1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4"
