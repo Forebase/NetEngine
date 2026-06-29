@@ -235,4 +235,4 @@ services:
 - [ ] Should we provide `compose.override.yml` as a git-ignored template?
 - [ ] Do we want dedicated profiles for: `debug`, `load-test`, `chaos`, `security`?
 - [ ] Should multi-world compose use separate networks or shared?
-- [ ] Should we version compose file format or stick to 3.8+?
+- [x] Omit the obsolete top-level Compose file `version` field and rely on the Compose Specification.

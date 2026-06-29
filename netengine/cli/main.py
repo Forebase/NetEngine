@@ -86,7 +86,9 @@ def _load_spec_for_cli(
 ):
     """Load a spec using the same composition semantics as ``up``."""
     overrides = _parse_set_overrides(set_values)
-    feature_state_kwargs = {} if validate_feature_states else {"validate_feature_states": False}
+    feature_state_kwargs = (
+        {} if validate_feature_states else {"validate_feature_states": False}
+    )
     if environment:
         return load_spec_with_environment(
             spec_file,
@@ -95,7 +97,9 @@ def _load_spec_for_cli(
             **feature_state_kwargs,
         )
     if overrides:
-        return load_spec_with_composition(spec_file, overrides=overrides, **feature_state_kwargs)
+        return load_spec_with_composition(
+            spec_file, overrides=overrides, **feature_state_kwargs
+        )
     return load_spec(spec_file, **feature_state_kwargs)
 
 
@@ -478,7 +482,16 @@ async def _readiness(
             group="spec",
         )
     )
-    ctx = build_context(db_url, state_file, skip_db=skip_db)
+    ctx = build_context(
+        db_url,
+        state_file,
+        skip_db=skip_db,
+        spec_subnets=tuple(
+            str(network.subnet)
+            for network in spec.substrate.networks.values()
+            if getattr(network, "subnet", None)
+        ),
+    )
     results.extend(run_preflight(ctx))
     results.extend(await _check_migration_readiness(db_url))
     results.extend(_feature_state_readiness_results(spec))
@@ -549,7 +562,11 @@ def validate(
         )
     except SpecLoadError as exc:
         if output_format == "json":
-            click.echo(json.dumps({"ok": False, "error": str(exc), "feature_states": []}, indent=2))
+            click.echo(
+                json.dumps(
+                    {"ok": False, "error": str(exc), "feature_states": []}, indent=2
+                )
+            )
         else:
             click.echo(f"Spec validation failed: {exc}", err=True)
         sys.exit(1)
@@ -570,7 +587,9 @@ def validate(
         )
     else:
         if unsupported:
-            click.echo("Spec validation failed: Unsupported spec features enabled:", err=True)
+            click.echo(
+                "Spec validation failed: Unsupported spec features enabled:", err=True
+            )
             for item in unsupported:
                 click.echo(
                     f"  - {item['path']} is {item['state']} in {item['stage']}: {item['reason']}",

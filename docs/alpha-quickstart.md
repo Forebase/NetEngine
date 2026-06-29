@@ -16,15 +16,15 @@ This guide is the focused alpha operator path. The root `README.md` keeps the hi
 git clone https://github.com/Forebase/NetEngine.git
 cd NetEngine
 poetry install
-poetry run netengine doctor --skip-db
+poetry run netengine doctor --skip-db --spec examples/minimal.yaml
 docker compose up -d postgres
 poetry run python -m netengine.utils.run_migrations
-poetry run netengine doctor
+poetry run netengine doctor --spec examples/minimal.yaml
 poetry run netengine up examples/minimal.yaml
 poetry run netengine status
 ```
 
-Use `NETENGINE_MOCK=true` when you want to exercise orchestration and spec validation without creating Docker, DNS, PKI, or identity resources.
+Use `poetry run netengine doctor --spec examples/minimal.yaml` before bootstrapping a world to check host prerequisites plus Docker subnet conflicts against `spec.substrate.networks[*].subnet`. Use `NETENGINE_MOCK=true` when you want to exercise orchestration and spec validation without creating Docker, DNS, PKI, or identity resources.
 
 ## Pre-release mock smoke test
 
