@@ -67,21 +67,21 @@ FEATURE_STATE_REGISTRY: tuple[FeatureStateEntry, ...] = (
     ),
     FeatureStateEntry(
         path="ands.profiles.*.dynamic_ip",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="dynamic IP allocation is not implemented",
+        reason="DHCP via dnsmasq in gateway container; requires dnsmasq installed in gateway image",
     ),
     FeatureStateEntry(
         path="ands.profiles.*.reverse_dns",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="reverse DNS delegation is not implemented",
+        reason="in-addr.arpa zone provisioning available; not yet propagated to external resolvers",
     ),
     FeatureStateEntry(
         path="ands.profiles.*.bgp",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="BGP profile configuration is not implemented",
+        reason="Bird2 BGP speaker sidecar; requires pierrecdn/bird:2.0.9 image available",
     ),
     FeatureStateEntry(
         path="pki.intermediate_ca_enabled",

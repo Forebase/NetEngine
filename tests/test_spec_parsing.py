@@ -187,7 +187,9 @@ class TestFeatureStateValidation:
         ):
             load_spec(spec_file)
 
-    def test_unsupported_profile_field_includes_dotted_path(self, tmp_path) -> None:
+    def test_experimental_profile_field_logs_warning_not_raises(self, tmp_path, caplog) -> None:
+        import logging
+
         spec_file = self._write_spec(
             tmp_path,
             {
@@ -205,11 +207,14 @@ class TestFeatureStateValidation:
             },
         )
 
-        with pytest.raises(
-            SpecLoadError,
-            match="ands\\.profiles\\.branch\\.reverse_dns is unsupported in alpha",
-        ):
-            load_spec(spec_file)
+        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
+            spec = load_spec(spec_file)
+
+        assert spec.ands is not None
+        assert any(
+            "ands.profiles.branch.reverse_dns is experimental in alpha" in r.message
+            for r in caplog.records
+        )
 
     def test_experimental_enabled_field_logs_warning(self, tmp_path, caplog) -> None:
         import logging

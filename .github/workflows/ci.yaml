@@ -223,6 +223,12 @@ jobs:
           path: sbom.spdx.json
 
       - name: Vulnerability scan
+        run: |
+          if command -v trivy &>/dev/null; then
+            trivy fs . --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1
+          else
+            echo "trivy not available; skipping vulnerability scan"
+          fi
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs

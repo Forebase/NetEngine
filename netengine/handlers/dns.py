@@ -791,6 +791,73 @@ class DNSHandler(BasePhaseHandler):
             return False
 
     # ─────────────────────────────────────────────
+    # Reverse DNS (reverse_dns profile feature)
+    # ─────────────────────────────────────────────
+
+    async def add_reverse_zone(self, context: "PhaseContext", cidr: str, gateway_ip: str) -> None:
+        """Create an in-addr.arpa zone for the AND subnet and register a PTR for the gateway."""
+        import ipaddress as _ip
+
+        network = _ip.ip_network(cidr, strict=False)
+        octets = str(network.network_address).split(".")
+        # For a /24 the reverse zone is <third>.<second>.<first>.in-addr.arpa
+        rev_zone = f"{octets[2]}.{octets[1]}.{octets[0]}.in-addr.arpa"
+
+        dns_output = context.runtime_state.dns_output
+        if dns_output is None:
+            context.logger.warning("DNS phase output missing; skipping reverse zone setup")
+            return
+
+        zone_files: dict[str, str] = dns_output.get("zone_files", {})
+        if rev_zone not in zone_files:
+            zone_files[rev_zone] = self._empty_zone(rev_zone)
+            dns_output["zone_files"] = zone_files
+
+        # Add a PTR record for the gateway IP
+        gw_last_octet = gateway_ip.split(".")[-1]
+        await self.add_zone_record(
+            context=context,
+            zone=rev_zone,
+            record_type="PTR",
+            name=gw_last_octet,
+            value=f"gateway.{rev_zone}",
+            ttl=300,
+        )
+        context.logger.info(f"Reverse DNS zone registered: {rev_zone}")
+
+    async def remove_reverse_zone(self, context: "PhaseContext", cidr: str) -> None:
+        """Remove the in-addr.arpa zone for the AND subnet."""
+        import ipaddress as _ip
+
+        network = _ip.ip_network(cidr, strict=False)
+        octets = str(network.network_address).split(".")
+        rev_zone = f"{octets[2]}.{octets[1]}.{octets[0]}.in-addr.arpa"
+
+        dns_output = context.runtime_state.dns_output
+        if dns_output is None:
+            return
+
+        zone_files = dns_output.get("zone_files", {})
+        zone_files.pop(rev_zone, None)
+        dns_output["zone_files"] = zone_files
+
+        zone_file_path = context.zone_dir and (
+            __import__("pathlib").Path(context.zone_dir) / "zones" / rev_zone
+        )
+        if zone_file_path and zone_file_path.exists():
+            zone_file_path.unlink()
+        context.logger.info(f"Reverse DNS zone removed: {rev_zone}")
+
+    @staticmethod
+    def _empty_zone(zone_name: str) -> str:
+        return (
+            f"$ORIGIN {zone_name}.\n"
+            f"@ 300 IN SOA ns1.{zone_name}. hostmaster.{zone_name}. "
+            f"1 3600 900 604800 300\n"
+            f"@ 300 IN NS ns1.{zone_name}.\n"
+        )
+
+    # ─────────────────────────────────────────────
     # Event Emission
     # ─────────────────────────────────────────────
 

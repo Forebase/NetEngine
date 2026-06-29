@@ -58,7 +58,7 @@ async def _call_require_auth(monkeypatch, state):
     _Session.post_kwargs = {}
     monkeypatch.setattr(auth.RuntimeState, "load", classmethod(lambda cls: state))
     monkeypatch.setattr(auth.aiohttp, "ClientSession", _Session)
-    request = SimpleNamespace(headers={}, url=SimpleNamespace(path="/world"))
+    request = SimpleNamespace(method="GET", headers={}, url=SimpleNamespace(path="/world"))
     credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token-1")
 
     result = await auth.require_auth(request, credentials)
