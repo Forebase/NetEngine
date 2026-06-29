@@ -878,11 +878,12 @@ async def replay_dlq(queue_name: str, user: dict = Depends(require_auth)) -> dic
     """Move all messages from a DLQ back to the main queue for retry."""
     from netengine.core.pgmq_client import PGMQClient
 
-    try:
-        queue = Queue(queue_name)
-        dlq = dlq_for(queue)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=f"Unknown queue: {queue_name}") from exc
+    primary_queue_names = {q.value for q in PRIMARY_QUEUES}
+    if queue_name not in primary_queue_names:
+        raise HTTPException(status_code=404, detail=f"Unknown queue: {queue_name}")
+
+    queue = Queue(queue_name)
+    dlq = dlq_for(queue)
 
     client = PGMQClient()
     replayed = 0
