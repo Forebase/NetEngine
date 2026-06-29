@@ -203,6 +203,12 @@ class TestHealthRoute:
             "9",
         }
         assert data["phases"]["9"] == {"label": "Org applications", "completed": False}
+        # Event backend status is always surfaced so operators can see when
+        # event-driven provisioning is disabled (pgmq unavailable).
+        assert "events" in data
+        assert isinstance(data["events"]["enabled"], bool)
+        assert data["events"]["backend"] == "pgmq"
+        assert data["events"]["detail"]
 
     def test_health_reports_degraded_when_phases_incomplete(self, tmp_path, monkeypatch):
         monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))

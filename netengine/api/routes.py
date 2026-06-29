@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from netengine.api.auth import _extract_roles, require_admin, require_auth
+from netengine.core.db_client import pgmq_available
 from netengine.core.reload import ReloadResult, apply_reload, check_immutability, compute_diff
 from netengine.core.state import RUNTIME_STATE_SCHEMA_VERSION, RuntimeState
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
@@ -94,9 +95,23 @@ async def health() -> dict[str, Any]:
         completed = state.phase_completed.get(phase_id, False)
         phases[phase_id] = {"label": label, "completed": completed}
     overall = "ok" if all(p["completed"] for p in phases.values()) else "degraded"
+
+    events_ok, events_reason = await pgmq_available()
+    events = {
+        "enabled": events_ok,
+        "backend": "pgmq",
+        "detail": (
+            "event-driven provisioning active"
+            if events_ok
+            else f"events DISABLED — {events_reason}; "
+            "ANDs and per-org realms are not auto-provisioned"
+        ),
+    }
+
     return {
         "status": overall,
         "phases": phases,
+        "events": events,
         "last_error": state.last_error,
     }
 

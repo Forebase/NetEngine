@@ -341,7 +341,11 @@ class ANDsPhaseHandler(BasePhaseHandler):
         logger = context.logger
 
         if context.pgmq_client is None:
-            logger.info("pgmq_client not available; org admission events disabled")
+            logger.warning(
+                "pgmq_client not available; AND admission events are DISABLED — "
+                "ANDs will not be auto-provisioned from org.admitted events. "
+                "Provision pgmq (see docker-compose.yml) for event-driven operation."
+            )
             return
 
         logger.info("Starting org admission event consumer")
