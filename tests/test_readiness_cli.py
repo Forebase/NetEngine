@@ -27,15 +27,11 @@ def test_readiness_loads_spec_runs_host_and_migration_checks() -> None:
     """Readiness should validate the spec, run preflight probes, and inspect migrations."""
     spec_file = Path(__file__).parent.parent / "examples" / "minimal.yaml"
     host_results = [
-        DoctorCheckResult(
-            "Docker daemon", DoctorStatus.OK, "docker info succeeded", group="docker"
-        )
+        DoctorCheckResult("Docker daemon", DoctorStatus.OK, "docker info succeeded", group="docker")
     ]
 
     with (
-        patch(
-            "netengine.cli.main.run_preflight", return_value=host_results
-        ) as mock_preflight,
+        patch("netengine.cli.main.run_preflight", return_value=host_results) as mock_preflight,
         patch("netengine.cli.main.MigrationService") as mock_service_class,
     ):
         mock_service = mock_service_class.return_value
@@ -52,9 +48,7 @@ def test_readiness_loads_spec_runs_host_and_migration_checks() -> None:
     assert "[PASS] Docker daemon: docker info succeeded" in result.output
     assert "[PASS] migrations:pending: 0 pending migration(s)" in result.output
     mock_preflight.assert_called_once()
-    mock_service_class.assert_called_once_with(
-        "postgresql://example/db", cli_main.MIGRATIONS_DIR
-    )
+    mock_service_class.assert_called_once_with("postgresql://example/db", cli_main.MIGRATIONS_DIR)
     mock_service.status.assert_awaited_once()
 
 
@@ -98,9 +92,7 @@ def test_readiness_warns_for_experimental_feature_state(tmp_path: Path) -> None:
         patch("netengine.cli.main.run_preflight", return_value=[]),
         patch("netengine.cli.main.MigrationService") as mock_service_class,
     ):
-        mock_service_class.return_value.status = AsyncMock(
-            return_value=_healthy_migration_status()
-        )
+        mock_service_class.return_value.status = AsyncMock(return_value=_healthy_migration_status())
 
         result = CliRunner().invoke(
             cli_main.cli,
@@ -109,10 +101,7 @@ def test_readiness_warns_for_experimental_feature_state(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "warn" in result.output
-    assert (
-        "[WARN] feature-state: pki.intermediate_ca_enabled: experimental"
-        in result.output
-    )
+    assert "[WARN] feature-state: pki.intermediate_ca_enabled: experimental" in result.output
     assert "Review alpha/experimental behavior" in result.output
 
 
@@ -128,7 +117,6 @@ def test_readiness_fails_when_database_url_missing() -> None:
 
     assert result.exit_code == 1
     assert (
-        "[FAIL] migrations:database-url: NETENGINE_DB_URL/DATABASE_URL is not set"
-        in result.output
+        "[FAIL] migrations:database-url: NETENGINE_DB_URL/DATABASE_URL is not set" in result.output
     )
     assert "Set NETENGINE_DB_URL or DATABASE_URL" in result.output

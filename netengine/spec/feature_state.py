@@ -50,6 +50,8 @@ FEATURE_STATE_REGISTRY: tuple[FeatureStateEntry, ...] = (
         state="experimental",
         stage="alpha",
         reason=(
+            "nftables policies for isolated/shadowed/mirrored/exposed modes are "
+            "implemented; requires gateway container with nft available"
             "gateway policies for isolated, shadowed, mirrored, and exposed modes "
             "are wired through nftables, but real-host integration remains alpha"
         ),
@@ -65,21 +67,31 @@ FEATURE_STATE_REGISTRY: tuple[FeatureStateEntry, ...] = (
     ),
     FeatureStateEntry(
         path="gateway_portal.real_internet.upstream_resolver_enabled",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="upstream resolver forwarding is not implemented",
+        reason=(
+            "upstream forwarder is appended to the CoreDNS Corefile and CoreDNS "
+            "is reloaded; requires a reachable resolver at upstream_resolver_ip"
+        ),
     ),
     FeatureStateEntry(
         path="gateway_portal.cross_world.mode",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="cross-world federation is not implemented",
+        reason=(
+            "PEERED mode wires nftables peer routing, trust-anchor install, and "
+            "CoreDNS forwarding stubs; live cross-world DNS resolution needs two "
+            "running worlds and is not covered by CI e2e"
+        ),
     ),
     FeatureStateEntry(
         path="gateway_portal.cross_world.peers",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="cross-world peer provisioning is not implemented",
+        reason=(
+            "per-peer routing rules and DNS forwarder stubs are provisioned; "
+            "actual cross-world resolution requires a reachable peer endpoint"
+        ),
     ),
     FeatureStateEntry(
         path="ands.profiles.*.dynamic_ip",

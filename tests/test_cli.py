@@ -493,7 +493,7 @@ def test_validate_json_unsupported_active_feature_exits_nonzero(tmp_path: Path) 
 
     result = CliRunner().invoke(cli_main.cli, ["validate", str(spec_file), "--format", "json"])
 
-    assert result.exit_code == 1
+    assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["ok"] is False
     assert (

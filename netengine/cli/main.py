@@ -11,12 +11,6 @@ from typing import Any
 
 import click
 from netengine.cli.doctor import doctor
-from netengine.diagnostic.preflight import (
-    DoctorCheckResult,
-    DoctorStatus,
-    build_context,
-    run_preflight,
-)
 from netengine.cli.env import db_url_from_env
 from netengine.config.loader import ConfigOverrideError, parse_dotted_overrides
 from netengine.config.runtime import load_runtime_config
@@ -28,6 +22,12 @@ from netengine.db.migrations import (
     MigrationRunResult,
     migration_status,
     run_migrations,
+)
+from netengine.diagnostic.preflight import (
+    DoctorCheckResult,
+    DoctorStatus,
+    build_context,
+    run_preflight,
 )
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logs import get_logger
@@ -1457,10 +1457,7 @@ def import_support_bundle(bundle_file: str) -> None:
     """Validate and restore a compatible support bundle."""
     import json as _json
 
-    from netengine.api.routes import (
-        SUPPORTED_IMPORT_SCHEMA_VERSIONS,
-        _validate_import_phase_state,
-    )
+    from netengine.api.routes import SUPPORTED_IMPORT_SCHEMA_VERSIONS, _validate_import_phase_state
     from netengine.core.state import RuntimeState
     from netengine.spec.models import SUPPORTED_SPEC_SCHEMA_VERSIONS, NetEngineSpec
 
