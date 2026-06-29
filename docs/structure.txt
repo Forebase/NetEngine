@@ -1,0 +1,38 @@
+netengines/
+├── pyproject.toml
+├── netengines/
+│   ├── core/              # spec.py, orchestrator.py, dependency_graph.py, state.py
+│   ├── phases/            # phase_*.py handlers
+│   ├── handlers/          # docker_handler, dns_handler, pki_handler, etc.
+│   ├── api/               # FastAPI app + routes
+│   ├── cli/               # Click/Typer commands
+│   ├── utils/
+│   ├── templates/         # Jinja templates for DNS, Postfix, etc.
+│   └── __init__.py
+│
+├── tests/
+│   ├── conftest.py
+│   ├── test_spec_parsing.py
+│   ├── test_phases/
+│   ├── test_handlers/
+│   ├── test_api/
+│   └── integration/       # end-to-end bootstrap tests
+│
+├── docs/
+│   ├── architecture.md
+│   ├── phase_walkthrough.md
+│   ├── api.md
+│   ├── handler_interface.md
+│   └── deployment.md
+│
+├── examples/
+│   ├── minimal.yaml
+│   ├── single-org.yaml
+│   ├── dev-sandbox.yaml
+│   ├── multi-org.yaml
+│   └── cross-world.yaml
+│
+├── docker-compose.dev.yaml
+├── Makefile
+├── .pre-commit-config.yaml
+└── README.md

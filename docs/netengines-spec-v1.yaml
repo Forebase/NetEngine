@@ -1,0 +1,544 @@
+# NetEngines Declarative Specification v0.2
+# Structure mirrors bootstrap dependency graph (Phases 0-8)
+# Runtime should topologically sort this into a valid execution order
+
+metadata:
+  name: example-internetwork
+  lifecycle: ephemeral  # ephemeral | persistent
+  version: "1.0"
+  # lifecycle determines: volume strategy, PKI ceremony posture, HA topology
+  # ephemeral: CA keys generated at spinup, discarded on teardown, no HA needed
+  # persistent: CA keys durable, rotation calendar, backup strategy, HA considered
+
+
+# ─────────────────────────────────────────────
+# PHASE 0: Pre-naming, pre-PKI substrate
+# Must exist before anything crypto or naming-dependent
+# ─────────────────────────────────────────────
+substrate:
+  orchestrator: swarm  # swarm | k3s (k3s recommended for persistent mode)
+
+  # Time sync — bootstrap blocker, often forgotten
+  ntp:
+    enabled: true
+    servers:
+      - pool.ntp.org
+    # ephemeral: NTP issues tolerable
+    # persistent: this is a critical SLO — clock skew breaks TLS and DNSSEC
+
+  # L0 network segments — Docker bridge networks, substrate-level facts
+  # These are not ANDs. ANDs are L2 policy+ownership boundaries that sit on top of these.
+  networks:
+    platform:
+      type: bridge
+      subnet: 172.20.0.0/16
+      description: "Platform/L1 management network — NetEngines internal use only"
+
+    core:
+      type: bridge
+      subnet: 10.0.0.0/8
+      description: "In-world core routing fabric"
+
+  # Gateway stub (Phase 0) — route presence only, policy applied in Phase 7+
+  gateway:
+    platform_ip: 172.20.0.1
+    core_ip: 10.0.0.1
+    description: "Gateway stub; inter-segment routing only until gateway_portal policy applies"
+
+
+# ─────────────────────────────────────────────
+# PHASE 1: DNS Root — naming by IP only
+# ─────────────────────────────────────────────
+dns:
+  root:
+    enabled: true
+    type: authoritative
+    server: coreDNS
+    listen_ip: 10.0.0.2
+    # Hardcoded IP is the one circularity break — everything else resolves from here
+    zone_data:
+      soa:
+        primary_ns: root.internal
+        email: admin.internal
+        serial_policy: timestamp  # fixed = reproducible in ephemeral CI runs
+
+  # Platform zone — holds canonical names for L1 services (ca.platform.internal, etc.)
+  # Populated progressively by runtime from Phase 3 onward
+  platform_zone:
+    name: platform.internal
+    type: authoritative
+    server: coreDNS
+    listen_ip: 10.0.0.3
+    delegated_from: root
+
+  # In-world TLDs — delegated from root, authoritative for in-world names
+  tlds:
+    - name: internal
+      description: "Default in-world TLD"
+      type: authoritative
+      listen_ip: 10.0.0.4
+
+    - name: localnet
+      description: "User-defined custom TLD"
+      type: authoritative
+      listen_ip: 10.0.0.5
+    # Future: dn42-style operator-defined TLDs declared here, registered in domain_registry
+
+
+# ─────────────────────────────────────────────
+# PHASE 2: DNS hierarchy (implicit)
+# Runtime walks root → TLD → authoritative delegation chain
+# ─────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────
+# PHASE 3: PKI — Certificate Authority
+# ─────────────────────────────────────────────
+pki:
+  root_ca:
+    cn: "NetEngines Root CA"
+    o: "Example Internetwork"
+    c: "GB"
+
+    key_storage:
+      mode: ephemeral  # inherited from metadata.lifecycle
+      # ephemeral: generated at spinup, discarded on teardown
+      # persistent: durable volume, backed up, rotated on schedule
+
+    cert_lifetime_days: 3650  # 10 years for in-world root
+
+    acme:
+      enabled: true
+      listen_ip: 10.0.0.6
+      canonical_name: ca.platform.internal
+      # CA bootstraps itself: ACME starts on hardcoded IP, issues own cert,
+      # then downstream services can use DNS-based ACME normally
+
+  intermediate_ca:
+    enabled: false
+    # Recommended in persistent mode: root offline, intermediate online
+
+  dnssec:
+    enabled: true
+    ksk_lifetime_days: 365
+    zsk_lifetime_days: 30
+    # Runtime manages key rotation calendar
+
+  crl:
+    enabled: false
+  ocsp:
+    enabled: false
+
+
+# ─────────────────────────────────────────────
+# PHASE 4: Platform identity (L1)
+# Who may operate NetEngines — separate trust root from in-world identity
+# ─────────────────────────────────────────────
+identity_platform:
+  oidc_provider: keycloak
+  listen_ip: 10.0.0.7
+  canonical_name: auth.platform.internal
+
+  realm_name: platform
+  issuer: "https://auth.platform.internal/realms/platform"
+
+  admin_user:
+    username: admin
+    email: admin@platform.internal
+    # ephemeral: password generated and logged at spinup
+    # persistent: password management requires explicit ceremony
+
+  scopes:
+    - "netengines:read"
+    - "netengines:write"
+    - "netengines:admin"
+
+
+# ─────────────────────────────────────────────
+# PHASE 5: Two registries — two separate questions
+# ─────────────────────────────────────────────
+
+# World Registry — governance layer
+# Question: who may exist in this world?
+# L1-adjacent. Deleting an entry here removes an entire organisation — governance operation.
+world_registry:
+  enabled: true
+  listen_ip: 10.0.0.8
+  canonical_name: registry.platform.internal
+
+  # Organisations that may inhabit this world
+  # Canonical source of truth for org existence — identity_inworld and domain_registry reference these
+  organizations:
+    - name: acme-corp
+      description: "Example in-world organisation"
+      # Capability grants: what this org is permitted to do in the world
+      capabilities:
+        - host_services    # may run in-world services
+        - send_mail        # may operate mail infrastructure
+        - register_domains # may register domains via domain_registry
+      # AND profile assignment — which network experience this org gets
+      and_profile: business
+
+    - name: bob-home
+      description: "Residential user"
+      capabilities:
+        - send_mail
+      and_profile: residential
+
+  # World-level operators (may use the operator API)
+  operators:
+    - username: admin
+      role: superadmin  # superadmin | readonly
+
+  whois:
+    enabled: true
+    listen_ip: 10.0.0.9
+    port: 43
+    canonical_name: whois.platform.internal
+
+
+# Domain Registry — resource layer
+# Question: who owns what resources within this world?
+# L2. Deleting an entry here removes a name or address block — resource operation.
+domain_registry:
+  enabled: true
+  listen_ip: 10.0.0.10
+  canonical_name: domainreg.platform.internal
+
+  # TLD delegations — which TLDs exist and who governs them
+  tld_delegations:
+    - tld: internal
+      governed_by: platform  # platform-managed
+    - tld: localnet
+      governed_by: platform
+
+  # Address space — canonical allocations consumed by ANDs
+  # ANDs do not declare their own addresses; they consume what is allocated here
+  # Mirrors ARIN/RIPE model: registry allocates, network operator consumes
+  address_space:
+    - cidr: 192.168.0.0/16
+      label: residential-pool
+      allocated_to: residential-ands  # consumed by ANDs with profile: residential
+    - cidr: 10.100.0.0/16
+      label: business-pool
+      allocated_to: business-ands     # consumed by ANDs with profile: business
+    - cidr: 10.200.0.0/16
+      label: datacenter-pool
+      allocated_to: datacenter-ands
+
+  # Domain registrar — in-world actors register domains through this
+  registrar:
+    enabled: true
+    listen_ip: 10.0.0.11
+    canonical_name: registrar.platform.internal
+
+  # Seeded domain registrations (runtime populates at Phase 5)
+  initial_domains: []
+  # Runtime auto-registers platform service names (ca.platform.internal, etc.)
+  # Orgs register their own domains post-bootstrap via registrar or operator API
+
+
+# ─────────────────────────────────────────────
+# PHASE 6: In-world identity (L2)
+# Who inhabits the world — separate realm and trust root from platform identity
+# ─────────────────────────────────────────────
+identity_inworld:
+  oidc_provider: keycloak
+  listen_ip: 10.0.0.12
+  canonical_name: auth.internal
+
+  realm_name: inworld
+  issuer: "https://auth.internal/realms/inworld"
+
+  # Orgs seeded from world_registry — identity_inworld provisions OIDC realms/clients for each
+  # Users are defined per-org here; org existence is governed by world_registry
+  org_users:
+    - org: acme-corp
+      users:
+        - username: alice
+          email: alice@acme.internal
+        - username: bob
+          email: bob@acme.internal
+
+    - org: bob-home
+      users:
+        - username: bob
+          email: bob@bob-home.localnet
+
+  scopes:
+    - "profile"
+    - "email"
+    - "openid"
+
+
+# ─────────────────────────────────────────────
+# PHASE 7: ANDs — Administrative Network Domains
+# Not ISPs. Not VLANs. Ownership and policy boundaries.
+# Each org is assigned a connectivity profile. Addresses come from domain_registry.
+# ─────────────────────────────────────────────
+ands:
+  # Profile definitions — what each profile means operationally
+  # These are the canonical profile shapes; runtime expands them
+  profiles:
+    residential:
+      dhcp: true
+      nat: true
+      dynamic_ip: true
+      inbound: blocked
+      reverse_dns: false
+      # Demonstrates why you can't self-host from home
+
+    business:
+      dhcp: true
+      nat: false
+      dynamic_ip: false   # static allocation from domain_registry address_space
+      inbound: allowed
+      reverse_dns: true
+
+    datacenter:
+      dhcp: false
+      nat: false
+      dynamic_ip: false
+      inbound: allowed
+      reverse_dns: true
+      bgp: optional       # BGP peering available but not required
+
+    airgapped:
+      dhcp: false
+      nat: false
+      dynamic_ip: false
+      inbound: blocked
+      gateway: none       # no gateway attachment — fully isolated segment
+      # Cyber range / hard isolation use case
+
+  # AND instances — one per org (or multiple if an org has multiple network segments)
+  # address_cidr is NOT declared here — it is consumed from domain_registry.address_space
+  instances:
+    - name: acme-corp-net
+      org: acme-corp
+      profile: business
+      # Runtime pulls address allocation from domain_registry for profile: business
+      dns_suffix: acme.internal
+
+    - name: bob-home-net
+      org: bob-home
+      profile: residential
+      dns_suffix: bob-home.localnet
+
+  # BGP fabric — future scope, optional module
+  # When enabled: runtime provisions AS instances, IXP fabric, BGP speakers
+  # Detailed schema TBD — treat as extension point, not core
+  bgp_fabric:
+    enabled: false
+    # asns: []
+    # ixps: []
+
+
+# ─────────────────────────────────────────────
+# PHASE 8: Services
+# Split into world-level infrastructure and org-level deployable apps
+# ─────────────────────────────────────────────
+
+# World services — infrastructure the world provides to all inhabitants
+# These are part of what makes a world a world, not optional per-org add-ons
+world_services:
+
+  # Mail infrastructure — world-level SMTP backbone
+  # Orgs get mailboxes here; can also run their own MX within their AND
+  mail:
+    enabled: true
+    server: postfix
+    listen_ip: 10.0.0.13
+    canonical_name: mail.internal
+
+    dkim:
+      enabled: true
+      key_signing_policy: ephemeral  # inherited from metadata.lifecycle
+
+    dmarc:
+      enabled: true
+      policy: "reject"
+
+    # Mailboxes seeded from world_registry orgs + identity_inworld users
+    # Runtime auto-provisions: alice@acme.internal, bob@acme.internal, bob@bob-home.localnet
+    mailbox_policy:
+      auto_provision_from_orgs: true
+      quota_mb: 1000
+      spf_default: "v=spf1 mx -all"
+      dmarc_default: "v=DMARC1; p=reject; rua=mailto:postmaster@{domain}"
+
+    postmaster_mailbox:
+      address: postmaster@platform.internal
+
+  # Object storage — world-level S3-compatible store
+  # Platform bucket for NetEngines itself; orgs can be allocated buckets
+  storage:
+    enabled: true
+    server: minio
+    listen_ip: 10.0.0.14
+    canonical_name: storage.platform.internal
+    access_key_id: generated  # runtime generates in ephemeral
+
+    buckets:
+      - name: platform
+        description: "NetEngines platform internal storage"
+        scope: platform  # platform | org
+
+      # Org buckets provisioned on demand via operator API or org_apps deployments
+
+
+# Org apps — applications orgs deploy inside their own AND
+# World facilitates (DNS registration, cert issuance, identity integration)
+# but does not own these; they live inside the org's network allocation
+org_apps:
+  enabled: true
+
+  # Catalog of available applications
+  # These are starting points / well-known shapes, not the only option
+  # Runtime: provisions container inside org AND, registers DNS, issues ACME cert,
+  #          wires OIDC client to identity_inworld org realm
+  catalog:
+    - name: gitea
+      description: "Self-hosted git service"
+      image: "gitea/gitea:latest"
+      port: 3000
+      oidc_integration: true   # auto-wired to org's identity_inworld realm
+
+    - name: nextcloud
+      description: "File sync and share"
+      image: "nextcloud:latest"
+      port: 80
+      oidc_integration: true
+
+    - name: wordpress
+      description: "Web publishing"
+      image: "wordpress:latest"
+      port: 80
+      oidc_integration: false  # WordPress OIDC is a plugin, not native
+
+    - name: mailpit
+      description: "Dev mail sink — captures outbound mail, no real delivery"
+      image: "axllent/mailpit:latest"
+      port: 8025
+      scope: dev_only  # only available in ephemeral worlds
+
+  # Active deployments — populated via operator API, not declared statically
+  # Format: { org, app, domain, subdomain }
+  deployments: []
+
+
+# ─────────────────────────────────────────────
+# GATEWAY PORTAL
+# The boundary object. Not a service — a role played by the gateway.
+# Straddles L0 (real world) and L2 (in-world). Special because it's a boundary.
+# ─────────────────────────────────────────────
+gateway_portal:
+  enabled: true
+
+  # Real internet posture — how the world relates to the actual internet
+  real_internet:
+    mode: isolated
+    # isolated  — no real internet; only in-world names resolve
+    # shadowed  — real internet reachable; in-world names take priority (shadow real names)
+    # mirrored  — real hostnames (github.com, s3.amazonaws.com) resolve to in-world services
+    #             app thinks it's talking to real internet; it's talking to in-world fakes
+    #             requires service_mirrors to be configured
+    # exposed   — in-world services published outward to real internet via gateway NAT
+    # custom    — explicit rule list (use when presets don't fit)
+
+    # Required if mode: mirrored
+    # service_mirrors:
+    #   - real_hostname: s3.amazonaws.com
+    #     in_world_service: storage.platform.internal
+    #   - real_hostname: github.com
+    #     in_world_service: gitea.acme.internal
+
+    # Required if mode: custom
+    # rules: []
+
+    # DNS upstream — only relevant for modes that allow real internet name resolution
+    # (shadowed, exposed, custom). Ignored in isolated and mirrored.
+    upstream_resolver:
+      enabled: false
+      forwarder_ip: 8.8.8.8
+
+  # Cross-world connectivity — how this world relates to other NetEngines worlds
+  cross_world:
+    mode: none
+    # none       — no cross-world connectivity
+    # peered     — routing between worlds; no shared trust (DNS + routing only)
+    # federated  — active trust establishment: OIDC federation, PKI cross-signing,
+    #              cross-domain mail with full SPF/DKIM/DMARC between world CAs
+
+    peers: []
+    # Format (peered or federated):
+    # - name: partner-world
+    #   endpoint: 10.99.0.1        # gateway IP of the peer world
+    #   mode: peered               # can override per-peer if global mode is federated
+    #   # federated only:
+    #   # trust_anchor_cert: |     # PEM of peer world's root CA — explicit trust establishment
+    #   #   -----BEGIN CERTIFICATE-----
+    #   #   ...
+
+
+# ─────────────────────────────────────────────
+# OPERATOR API
+# REST interface for programmatic world control — authenticated via identity_platform
+# ─────────────────────────────────────────────
+operator:
+  api:
+    enabled: true
+    listen_ip: 172.20.0.11
+    port: 8080
+    canonical_name: api.platform.internal
+
+  # Endpoint reference — implementation detail, not schema
+  # GET  /api/v1/world              — current spec + runtime state
+  # POST /api/v1/reload             — apply new spec (diff + apply in dep order)
+  # GET  /api/v1/services           — all running services + status
+  # GET  /api/v1/dns/{domain}       — DNS records for domain
+  # GET  /api/v1/pki/certs          — issued certs, expiry, renewal status
+  # POST /api/v1/orgs               — admit new org to world_registry
+  # POST /api/v1/orgs/{org}/apps    — deploy org_app into org AND
+  # GET  /api/v1/registry/domains   — domain_registry query
+  # GET  /api/v1/registry/addresses — address allocation query
+  # POST /api/v1/gateway/peers      — add cross-world peer (peered/federated)
+  # GET  /api/v1/export             — exportable world state (.tar.gz)
+  # POST /api/v1/import             — restore world state (persistent mode only)
+  # DELETE /api/v1/world            — teardown (ephemeral only; persistent requires confirm)
+
+  auth:
+    provider: oidc
+    issuer: "https://auth.platform.internal/realms/platform"
+    required_scope: "netengines:read"  # per-endpoint scope checks in handler
+
+
+---
+# Runtime pseudocode
+#
+# BOOTSTRAP dependency graph:
+#   substrate.ntp → substrate.networks → substrate.gateway
+#   dns.root → dns.platform_zone → dns.tlds
+#   dns.* → pki.root_ca → pki.acme
+#   pki.acme → identity_platform
+#   identity_platform → world_registry
+#   world_registry → domain_registry
+#   domain_registry → identity_inworld
+#   identity_inworld → ands
+#   ands → world_services
+#   world_services → org_apps
+#   gateway_portal (applies policy to gateway stub from Phase 0, final configuration here)
+#
+# RELOAD (POST /api/v1/reload):
+#   1. Parse new spec
+#   2. Diff: old spec → new spec (added / removed / updated)
+#   3. ephemeral: apply immediately, no guards
+#      persistent: refuse removal of durable services; refuse PKI reconfig mid-rotation
+#   4. Apply in dependency order
+#   5. Return change list + errors
+#
+# Healthcheck strategy:
+#   Each phase has a smoke test (DNS resolves, ACME responds, etc.)
+#   Failure → world enters ERROR state; operator must resolve or reset
+#   ephemeral reset: delete everything, rerun bootstrap
+#   persistent reset: requires explicit confirmation (destroys durable state)
