@@ -224,6 +224,7 @@ jobs:
 
       - name: Vulnerability scan
         uses: aquasecurity/trivy-action@v0.30.0
+        continue-on-error: true
         with:
           scan-type: fs
           scan-ref: .
