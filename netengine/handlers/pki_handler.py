@@ -91,6 +91,7 @@ class PKIHandler:
                 self.volume_name: {"bind": "/home/step", "mode": "rw"},
                 tmpdir: {"bind": "/tmp/pass", "mode": "ro"},
             }
+            password_file_path = "/tmp/pass/password.txt"
             cmd = [
                 "step",
                 "ca",
@@ -101,9 +102,9 @@ class PKIHandler:
                 self.ca_dns,
                 "--provisioner",
                 "acme",
-                "--password-file",
-                "/tmp/pass/password.txt",
-                "--no-start",
+                "--password-file", password_file_path,
+                "--provisioner-password-file", password_file_path,
+                # "--no-start",  # (optional, can be removed)
             ]
             logger.info(f"Running step ca init with command: {' '.join(cmd)}")
             result = await self.docker.run_container_one_off(
