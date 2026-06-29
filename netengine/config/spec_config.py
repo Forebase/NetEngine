@@ -1,18 +1,21 @@
 """Infrastructure specification configuration and loading."""
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from omegaconf import OmegaConf
 
 from netengine.config.loader import ConfigLoader
+
+if TYPE_CHECKING:
+    from netengine.spec.models import NetEngineSpec
 
 
 class SpecConfig:
     """Load and manage infrastructure specifications with composition support."""
 
     @staticmethod
-    def load(
+    def load_raw(
         spec_path: Path | str,
         base_path: Optional[Path | str] = None,
         overrides: Optional[dict[str, Any]] = None,
@@ -25,7 +28,7 @@ class SpecConfig:
             overrides: Optional overrides dictionary
 
         Returns:
-            Loaded and merged specification as dictionary
+            Loaded and merged raw specification as dictionary
         """
         spec_path = Path(spec_path)
 
@@ -42,7 +45,34 @@ class SpecConfig:
         return spec_dict
 
     @staticmethod
-    def load_environment_variants(
+    def load(
+        spec_path: Path | str,
+        base_path: Optional[Path | str] = None,
+        overrides: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Load spec as a raw dictionary.
+
+        This backwards-compatible alias preserves the historical ``SpecConfig.load``
+        behavior. Prefer ``load_raw`` for new raw merge callers or
+        ``load_validated`` when a validated ``NetEngineSpec`` is required.
+        """
+        return SpecConfig.load_raw(spec_path, base_path=base_path, overrides=overrides)
+
+    @staticmethod
+    def load_validated(
+        spec_path: Path | str,
+        base_path: Optional[Path | str] = None,
+        overrides: Optional[dict[str, Any]] = None,
+        validate_feature_states: bool = True,
+    ) -> "NetEngineSpec":
+        """Load, compose, and validate a spec into a ``NetEngineSpec``."""
+        from netengine.spec.loader import validate_spec_data
+
+        spec_dict = SpecConfig.load_raw(spec_path, base_path=base_path, overrides=overrides)
+        return validate_spec_data(spec_dict, validate_feature_states=validate_feature_states)
+
+    @staticmethod
+    def load_environment_variants_raw(
         base_spec: Path | str,
         environment: str = "dev",
         overrides: Optional[dict[str, Any]] = None,
@@ -59,7 +89,7 @@ class SpecConfig:
             overrides: Optional additional overrides
 
         Returns:
-            Merged specification
+            Merged raw specification dictionary
         """
         base_path = Path(base_spec)
         base_dir = base_path.parent
@@ -77,6 +107,39 @@ class SpecConfig:
             spec_dict = ConfigLoader.merge_configs(spec_dict, overrides)
 
         return spec_dict
+
+    @staticmethod
+    def load_environment_variants(
+        base_spec: Path | str,
+        environment: str = "dev",
+        overrides: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Load environment variants as a raw dictionary.
+
+        This backwards-compatible alias preserves the historical
+        ``SpecConfig.load_environment_variants`` behavior. Prefer
+        ``load_environment_variants_raw`` for new raw merge callers or
+        ``load_environment_variant_validated`` when a validated ``NetEngineSpec``
+        is required.
+        """
+        return SpecConfig.load_environment_variants_raw(
+            base_spec, environment=environment, overrides=overrides
+        )
+
+    @staticmethod
+    def load_environment_variant_validated(
+        base_spec: Path | str,
+        environment: str = "dev",
+        overrides: Optional[dict[str, Any]] = None,
+        validate_feature_states: bool = True,
+    ) -> "NetEngineSpec":
+        """Load an environment variant and validate it into a ``NetEngineSpec``."""
+        from netengine.spec.loader import validate_spec_data
+
+        spec_dict = SpecConfig.load_environment_variants_raw(
+            base_spec, environment=environment, overrides=overrides
+        )
+        return validate_spec_data(spec_dict, validate_feature_states=validate_feature_states)
 
     @staticmethod
     def to_dict(spec_obj: Any) -> dict[str, Any]:

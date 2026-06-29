@@ -1,7 +1,6 @@
 """YAML spec loading and validation with OmegaConf composition support."""
 
 import ipaddress
-import netengine.logs as logs
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Optional
@@ -9,6 +8,7 @@ from typing import Any, Optional
 import yaml
 from pydantic import ValidationError
 
+import netengine.logs as logs
 from netengine.config.loader import ConfigLoader
 from netengine.spec.models import SUPPORTED_SPEC_SCHEMA_VERSIONS, NetEngineSpec
 from netengine.spec.types import GatewayRealInternetMode
@@ -222,6 +222,35 @@ def load_spec(yaml_path: str | Path, *, validate_feature_states: bool = True) ->
     """Load and validate a NetEngine YAML specification.
 
     Args:
+        data: Composed raw specification dictionary
+        validate_feature_states: Whether to enforce feature-state metadata
+
+    Returns:
+        Validated, immutable NetEngineSpec object
+
+    Raises:
+        SpecLoadError: If the composed spec data is invalid
+    """
+    yaml_path = Path(yaml_path)
+
+    if not yaml_path.exists():
+        raise SpecLoadError(f"Spec file not found: {yaml_path}")
+
+    try:
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        raise SpecLoadError(f"Failed to parse YAML: {e}")
+    except IOError as e:
+        raise SpecLoadError(f"Failed to read file: {e}")
+
+    return _validate_spec_data(data, validate_feature_states=validate_feature_states)
+
+
+def load_spec(yaml_path: str | Path, *, validate_feature_states: bool = True) -> NetEngineSpec:
+    """Load and validate a NetEngine YAML specification.
+
+    Args:
         yaml_path: Path to YAML spec file
 
     Returns:
@@ -243,7 +272,7 @@ def load_spec(yaml_path: str | Path, *, validate_feature_states: bool = True) ->
     except IOError as e:
         raise SpecLoadError(f"Failed to read file: {e}")
 
-    return _validate_spec_data(data, validate_feature_states=validate_feature_states)
+    return validate_spec_data(data, validate_feature_states=validate_feature_states)
 
 
 def load_spec_with_composition(
