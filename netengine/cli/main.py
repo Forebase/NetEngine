@@ -10,6 +10,7 @@ import click
 import yaml
 
 from netengine.cli.doctor import doctor
+from netengine.cli.env import db_url_from_env
 from netengine.core.migrations import MigrationService, MigrationStatus
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
@@ -119,7 +120,7 @@ async def _run_migrations(db_url: str) -> MigrationRunResult:
 
 def _db_url_from_env() -> str | None:
     """Return the database URL used by CLI migration operations."""
-    return os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+    return db_url_from_env()
 
 
 def _print_migration_status(status: MigrationStatus) -> None:
