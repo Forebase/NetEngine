@@ -9,6 +9,7 @@ from typing import Any
 import click
 import yaml
 
+from netengine.cli.doctor import doctor
 from netengine.core.migrations import MigrationService, MigrationStatus
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
@@ -160,6 +161,9 @@ def _print_migration_status(status: MigrationStatus) -> None:
 @click.group()
 def cli() -> None:
     """NetEngine — spin up, reload, and tear down authority-autonomous worlds."""
+
+
+cli.add_command(doctor)
 
 
 @cli.group()
