@@ -164,6 +164,20 @@ class DomainRegistryOutput(PhaseOutputBase, total=False):
     tld_delegations: list[dict[str, JsonValue]]
 
 
+class ANDInstanceState(TypedDict, total=False):
+    name: str
+    org: str
+    profile: str
+    cidr: str
+    gateway_ip: str
+    bridge_name: str
+    dns_suffix: str
+    deployed_at: str
+    dynamic_ip: bool
+    reverse_dns: bool
+    bgp: str | None
+
+
 class GenericPhaseOutput(PhaseOutputBase, total=False):
     status: str
     healthy: bool
@@ -221,6 +235,7 @@ class RuntimeState:
     domain_registry_output: Optional[DomainRegistryOutput] = None
     identity_inworld_output: Optional[GenericPhaseOutput] = None
     ands_output: Optional[GenericPhaseOutput] = None
+    ands_instances: Dict[str, ANDInstanceState] = field(default_factory=dict)
     world_services_output: Optional[GenericPhaseOutput] = None
     org_apps_output: Optional[GenericPhaseOutput] = None
 

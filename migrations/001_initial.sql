@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS address_pools (
 CREATE TABLE IF NOT EXISTS address_leases (
     and_name    TEXT PRIMARY KEY,
     cidr        CIDR NOT NULL,
-    assigned_at TIMESTAMPTZ DEFAULT NOW()
+    assigned_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT address_leases_cidr_unique UNIQUE (cidr)
 );
 
 -- Domain records
