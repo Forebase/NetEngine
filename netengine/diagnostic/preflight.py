@@ -1,0 +1,463 @@
+"""Host-readiness preflight probes for NetEngine.
+
+Doctor/preflight checks validate local prerequisites before a world is
+bootstrapped: host commands, Docker availability, bindable ports, writable
+runtime paths, and optional database prerequisites. These probes intentionally
+operate on :class:`DoctorContext` instead of ``NetEngineSpec`` so ``netengine
+doctor`` can run before any spec is loaded.
+
+By contrast, :mod:`netengine.diagnostic.runner` probes validate health of an
+already configured/running world and require a loaded ``NetEngineSpec``.
+"""
+
+from __future__ import annotations
+
+import json
+import socket
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from enum import StrEnum
+from pathlib import Path
+from typing import Callable, Iterable
+from urllib.parse import urlparse
+
+import click
+import yaml
+
+
+class DoctorStatus(StrEnum):
+    """Status values emitted by the doctor command."""
+
+    OK = "ok"
+    WARN = "warn"
+    FAIL = "fail"
+    SKIP = "skip"
+
+
+@dataclass(frozen=True)
+class DoctorCheckResult:
+    """Single preflight check result."""
+
+    name: str
+    status: DoctorStatus
+    detail: str
+    hint: str | None = None
+    group: str = "general"
+    required: bool = True
+
+
+@dataclass(frozen=True)
+class DoctorContext:
+    """Input for host-readiness probes, independent of ``NetEngineSpec``."""
+
+    db_url: str | None
+    state_file: Path
+    project_root: Path
+    required_ports: tuple[tuple[int, str], ...]
+    required_commands: tuple[str, ...] = ("docker", "psql")
+    optional_commands: tuple[str, ...] = ("step",)
+    feature_flags: dict[str, bool] | None = None
+
+
+DoctorProbe = Callable[[DoctorContext], DoctorCheckResult | Iterable[DoctorCheckResult]]
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _run(command: list[str], *, timeout: float = 8.0) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
+
+
+def _compose_config(project_root: Path | None = None) -> dict:
+    compose_file = (project_root or _repo_root()) / "docker-compose.yml"
+    try:
+        return yaml.safe_load(compose_file.read_text()) or {}
+    except Exception:
+        return {}
+
+
+def _compose_ports_and_resources(
+    project_root: Path | None = None,
+) -> tuple[set[tuple[int, str]], set[str], set[str], set[str]]:
+    config = _compose_config(project_root)
+    ports: set[tuple[int, str]] = set()
+    containers: set[str] = set()
+    volumes: set[str] = set((config.get("volumes") or {}).keys())
+    networks: set[str] = set((config.get("networks") or {}).keys())
+    for service_name, service in (config.get("services") or {}).items():
+        containers.add(service.get("container_name") or f"netengine-{service_name}-1")
+        for volume in service.get("volumes") or []:
+            if isinstance(volume, str) and volume and not volume.startswith((".", "/", "~")):
+                volumes.add(volume.split(":", 1)[0])
+        for port in service.get("ports") or []:
+            raw = str(port)
+            published = raw.split(":", 1)[0] if ":" in raw else raw
+            if published.isdigit():
+                ports.add((int(published), "tcp"))
+    ports.update({(5432, "tcp"), (53, "tcp"), (53, "udp")})
+    return ports, containers, volumes, networks
+
+
+def _check_python() -> DoctorCheckResult:
+    ok = sys.version_info >= (3, 13)
+    return DoctorCheckResult(
+        "Python runtime",
+        DoctorStatus.OK if ok else DoctorStatus.FAIL,
+        f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}; pyproject requires ^3.13",
+        None if ok else "Install Python 3.13 or newer and recreate the virtualenv.",
+        "host",
+    )
+
+
+def _check_command(name: str, *, required: bool = True) -> DoctorCheckResult:
+    import shutil
+
+    path = shutil.which(name)
+    return DoctorCheckResult(
+        f"command:{name}",
+        DoctorStatus.OK if path else (DoctorStatus.FAIL if required else DoctorStatus.SKIP),
+        path or "not found on PATH",
+        None if path else f"Install {name} or add it to PATH.",
+        "host",
+        required,
+    )
+
+
+def _check_docker_daemon() -> DoctorCheckResult:
+    try:
+        result = _run(["docker", "info"])
+    except Exception as exc:
+        return DoctorCheckResult(
+            "Docker daemon",
+            DoctorStatus.FAIL,
+            str(exc),
+            "Start Docker and verify socket access.",
+            "docker",
+        )
+    if result.returncode == 0:
+        return DoctorCheckResult(
+            "Docker daemon", DoctorStatus.OK, "docker info succeeded", group="docker"
+        )
+    return DoctorCheckResult(
+        "Docker daemon",
+        DoctorStatus.FAIL,
+        (result.stderr or result.stdout).strip() or "docker info failed",
+        "Start Docker and verify the current user can access it.",
+        "docker",
+    )
+
+
+def _check_compose() -> DoctorCheckResult:
+    try:
+        result = _run(["docker", "compose", "version"])
+    except Exception as exc:
+        return DoctorCheckResult(
+            "Docker Compose",
+            DoctorStatus.FAIL,
+            str(exc),
+            "Install the Docker Compose plugin.",
+            "docker",
+        )
+    if result.returncode == 0:
+        return DoctorCheckResult(
+            "Docker Compose",
+            DoctorStatus.OK,
+            (result.stdout or "available").strip(),
+            group="docker",
+        )
+    return DoctorCheckResult(
+        "Docker Compose",
+        DoctorStatus.FAIL,
+        (result.stderr or result.stdout).strip() or "docker compose version failed",
+        "Install or enable Docker Compose v2.",
+        "docker",
+    )
+
+
+def _parse_db_url(db_url: str | None) -> DoctorCheckResult:
+    if not db_url:
+        return DoctorCheckResult(
+            "Database URL",
+            DoctorStatus.FAIL,
+            "NETENGINE_DB_URL/DATABASE_URL is not set",
+            "Set NETENGINE_DB_URL=postgresql://netengine:dev_password@localhost:5432/netengine",
+            "database",
+        )
+    parsed = urlparse(db_url)
+    ok = (
+        parsed.scheme in {"postgres", "postgresql"}
+        and bool(parsed.hostname)
+        and bool(parsed.path.strip("/"))
+    )
+    return DoctorCheckResult(
+        "Database URL",
+        DoctorStatus.OK if ok else DoctorStatus.FAIL,
+        "parseable PostgreSQL URL" if ok else "not a valid PostgreSQL URL",
+        None if ok else "Use a postgresql:// URL with host and database name.",
+        "database",
+    )
+
+
+def _check_psql(db_url: str, sql: str, name: str, *, hint: str) -> DoctorCheckResult:
+    try:
+        result = _run(["psql", db_url, "-tAc", sql])
+    except Exception as exc:
+        return DoctorCheckResult(name, DoctorStatus.FAIL, str(exc), hint, "database")
+    if result.returncode == 0:
+        detail = (result.stdout or "ok").strip()
+        if name == "pgmq extension" and detail != "pgmq":
+            return DoctorCheckResult(
+                name, DoctorStatus.FAIL, "pgmq extension is not installed", hint, "database"
+            )
+        return DoctorCheckResult(name, DoctorStatus.OK, detail, group="database")
+    return DoctorCheckResult(
+        name,
+        DoctorStatus.FAIL,
+        (result.stderr or result.stdout).strip() or "psql command failed",
+        hint,
+        "database",
+    )
+
+
+def _check_dir_writable(path: Path, name: str) -> DoctorCheckResult:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=path, prefix=".netengine-doctor-", delete=True):
+            pass
+        return DoctorCheckResult(name, DoctorStatus.OK, f"writable: {path}", group="filesystem")
+    except Exception as exc:
+        return DoctorCheckResult(
+            name,
+            DoctorStatus.FAIL,
+            f"not writable: {path} ({exc})",
+            "Fix directory ownership or choose a writable path.",
+            "filesystem",
+        )
+
+
+def _check_state_file(path: Path) -> DoctorCheckResult:
+    if not path.exists():
+        return DoctorCheckResult(
+            "State file", DoctorStatus.OK, f"no existing state at {path}", group="filesystem"
+        )
+    try:
+        data = json.loads(path.read_text())
+        phases = data.get("phase_completed", {}) if isinstance(data, dict) else {}
+        return DoctorCheckResult(
+            "State file",
+            DoctorStatus.WARN,
+            f"existing state file with {len(phases)} completed phase flag(s): {path}",
+            "Remove or back up the state file before bootstrapping a new world.",
+            "filesystem",
+            required=False,
+        )
+    except Exception as exc:
+        return DoctorCheckResult(
+            "State file",
+            DoctorStatus.WARN,
+            f"existing unreadable/corrupt state file: {exc}",
+            "Inspect or remove the state file before continuing.",
+            "filesystem",
+            required=False,
+        )
+
+
+def _can_bind(port: int, proto: str) -> bool:
+    typ = socket.SOCK_DGRAM if proto == "udp" else socket.SOCK_STREAM
+    with socket.socket(socket.AF_INET, typ) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("127.0.0.1", port))
+    return True
+
+
+def _check_port(port: int, proto: str) -> DoctorCheckResult:
+    try:
+        _can_bind(port, proto)
+        return DoctorCheckResult(
+            f"port:{port}/{proto}", DoctorStatus.OK, "available on 127.0.0.1", group="ports"
+        )
+    except PermissionError as exc:
+        return DoctorCheckResult(
+            f"port:{port}/{proto}",
+            DoctorStatus.WARN,
+            f"permission denied while probing: {exc}",
+            "Run with privileges or check listeners manually.",
+            "ports",
+            required=False,
+        )
+    except OSError as exc:
+        return DoctorCheckResult(
+            f"port:{port}/{proto}",
+            DoctorStatus.FAIL,
+            f"unavailable on 127.0.0.1: {exc}",
+            f"Stop the process using {port}/{proto} or change the compose/spec port.",
+            "ports",
+        )
+
+
+def _docker_names(kind: str) -> set[str]:
+    try:
+        if kind == "container":
+            result = _run(["docker", "ps", "-a", "--format", "{{.Names}}"])
+        elif kind == "volume":
+            result = _run(["docker", "volume", "ls", "--format", "{{.Name}}"])
+        else:
+            result = _run(["docker", "network", "ls", "--format", "{{.Name}}"])
+    except Exception:
+        return set()
+    return (
+        {line.strip() for line in result.stdout.splitlines() if line.strip()}
+        if result.returncode == 0
+        else set()
+    )
+
+
+def _check_docker_conflicts(ctx: DoctorContext) -> list[DoctorCheckResult]:
+    _, containers, volumes, networks = _compose_ports_and_resources(ctx.project_root)
+    checks = []
+    for kind, expected in (("container", containers), ("volume", volumes), ("network", networks)):
+        conflicts = sorted(expected & _docker_names(kind))
+        checks.append(
+            DoctorCheckResult(
+                f"Docker {kind} names",
+                DoctorStatus.WARN if conflicts else DoctorStatus.OK,
+                ", ".join(conflicts) if conflicts else "no known name conflicts",
+                (
+                    "Run `netengine down` or remove stale Docker resources if these belong to an old run."
+                    if conflicts
+                    else None
+                ),
+                "docker",
+                required=False,
+            )
+        )
+    return checks
+
+
+def build_context(
+    db_url: str | None,
+    state_file: Path,
+    *,
+    skip_db: bool = False,
+    project_root: Path | None = None,
+) -> DoctorContext:
+    """Build the default doctor context from CLI inputs and compose metadata."""
+    root = project_root or _repo_root()
+    ports, _, _, _ = _compose_ports_and_resources(root)
+    return DoctorContext(
+        db_url=db_url,
+        state_file=state_file,
+        project_root=root,
+        required_ports=tuple(sorted(ports)),
+        feature_flags={"skip_db": skip_db},
+    )
+
+
+def _check_required_commands(ctx: DoctorContext) -> list[DoctorCheckResult]:
+    return [_check_command(name) for name in ctx.required_commands]
+
+
+def _check_optional_commands(ctx: DoctorContext) -> list[DoctorCheckResult]:
+    return [_check_command(name, required=False) for name in ctx.optional_commands]
+
+
+def _check_database(ctx: DoctorContext) -> list[DoctorCheckResult]:
+    if (ctx.feature_flags or {}).get("skip_db", False):
+        return [
+            DoctorCheckResult(
+                "Database checks",
+                DoctorStatus.SKIP,
+                "--skip-db requested",
+                group="database",
+                required=False,
+            )
+        ]
+    checks = [parsed := _parse_db_url(ctx.db_url)]
+    if ctx.db_url and parsed.status == DoctorStatus.OK:
+        checks.append(
+            _check_psql(
+                ctx.db_url,
+                "SELECT 1;",
+                "Postgres connectivity",
+                hint="Start Postgres or fix NETENGINE_DB_URL.",
+            )
+        )
+        checks.append(
+            _check_psql(
+                ctx.db_url,
+                "SELECT extname FROM pg_extension WHERE extname = 'pgmq';",
+                "pgmq extension",
+                hint="Install/enable pgmq in the configured database.",
+            )
+        )
+    return checks
+
+
+def _check_ports(ctx: DoctorContext) -> list[DoctorCheckResult]:
+    return [_check_port(port, proto) for port, proto in ctx.required_ports]
+
+
+def _check_filesystem(ctx: DoctorContext) -> list[DoctorCheckResult]:
+    return [
+        _check_dir_writable(ctx.state_file.parent, "State directory"),
+        _check_dir_writable(Path.home() / ".netengine", "User runtime directory"),
+        _check_state_file(ctx.state_file),
+    ]
+
+
+def standard_probes() -> tuple[DoctorProbe, ...]:
+    """Return host-readiness probes; each accepts only ``DoctorContext``."""
+    return (
+        lambda ctx: _check_python(),
+        _check_required_commands,
+        _check_optional_commands,
+        lambda ctx: _check_docker_daemon(),
+        lambda ctx: _check_compose(),
+        _check_database,
+        _check_ports,
+        _check_filesystem,
+        _check_docker_conflicts,
+    )
+
+
+def run_preflight(
+    ctx: DoctorContext, probes: Iterable[DoctorProbe] | None = None
+) -> list[DoctorCheckResult]:
+    """Run host-readiness probes for a doctor context."""
+    results: list[DoctorCheckResult] = []
+    for probe in probes or standard_probes():
+        result = probe(ctx)
+        if isinstance(result, DoctorCheckResult):
+            results.append(result)
+        else:
+            results.extend(result)
+    return results
+
+
+def run_checks(
+    db_url: str | None, state_file: Path, *, skip_db: bool = False
+) -> list[DoctorCheckResult]:
+    """Compatibility wrapper for callers that do not build ``DoctorContext``."""
+    return run_preflight(build_context(db_url, state_file, skip_db=skip_db))
+
+
+def _print_report(results: Iterable[DoctorCheckResult]) -> None:
+    by_group: dict[str, list[DoctorCheckResult]] = {}
+    for result in results:
+        by_group.setdefault(result.group, []).append(result)
+    symbols = {
+        DoctorStatus.OK: "✓",
+        DoctorStatus.WARN: "!",
+        DoctorStatus.FAIL: "✗",
+        DoctorStatus.SKIP: "-",
+    }
+    for group, group_results in by_group.items():
+        click.echo(f"\n{group.title()}")
+        for result in group_results:
+            click.echo(f"  {symbols[result.status]} {result.name}: {result.detail}")
+            if result.hint and result.status != DoctorStatus.OK:
+                click.echo(f"      → {result.hint}")

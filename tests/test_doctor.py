@@ -8,6 +8,7 @@ from click.testing import CliRunner
 from netengine.cli import doctor as doctor_mod
 from netengine.cli import main as cli_main
 from netengine.cli.doctor import DoctorCheckResult, DoctorStatus
+from netengine.diagnostic.preflight import DoctorContext, run_preflight
 
 
 def test_doctor_appears_in_help() -> None:
@@ -119,3 +120,23 @@ def test_state_file_conflict_is_warning(tmp_path: Path) -> None:
     assert result.status == DoctorStatus.WARN
     assert result.required is False
     assert "existing state file" in result.detail
+
+
+def test_preflight_probe_accepts_doctor_context_without_spec(tmp_path: Path) -> None:
+    ctx = DoctorContext(
+        db_url=None,
+        state_file=tmp_path / "state.json",
+        project_root=tmp_path,
+        required_ports=(),
+        required_commands=(),
+        optional_commands=(),
+        feature_flags={},
+    )
+
+    def probe(context: DoctorContext) -> DoctorCheckResult:
+        assert context.project_root == tmp_path
+        return DoctorCheckResult("custom", DoctorStatus.OK, "ready")
+
+    results = run_preflight(ctx, probes=[probe])
+
+    assert results == [DoctorCheckResult("custom", DoctorStatus.OK, "ready")]
