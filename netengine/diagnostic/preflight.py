@@ -12,6 +12,7 @@ already configured/running world and require a loaded ``NetEngineSpec``.
 
 from __future__ import annotations
 
+import importlib
 import json
 import socket
 import subprocess
@@ -24,7 +25,6 @@ from typing import Any, Callable, Iterable, NamedTuple
 from urllib.parse import urlparse
 
 import click
-import yaml
 
 
 class DoctorStatus(StrEnum):
@@ -90,6 +90,20 @@ KNOWN_DOCKER_VOLUMES: frozenset[str] = frozenset(
 )
 KNOWN_DOCKER_NETWORKS: frozenset[str] = frozenset()
 
+
+PYTHON_DEPENDENCY_MODULES: tuple[tuple[str, str], ...] = (
+    ("pydantic", "pydantic"),
+    ("pyyaml", "yaml"),
+    ("loguru", "loguru"),
+    ("docker", "docker"),
+    ("aiohttp", "aiohttp"),
+    ("dnspython", "dns"),
+    ("asyncpg", "asyncpg"),
+    ("fastapi", "fastapi"),
+    ("omegaconf", "omegaconf"),
+    ("prometheus-client", "prometheus_client"),
+)
+
 _DNS_PORT_HINT = (
     "Port 53 is commonly held by a local DNS resolver. Stop or reconfigure systemd-resolved, "
     "dnsmasq, named/CoreDNS, or another DNS server, or change the NetEngine DNS bind port."
@@ -107,6 +121,7 @@ def _run(command: list[str], *, timeout: float = 8.0) -> subprocess.CompletedPro
 def _compose_config(project_root: Path | None = None) -> dict[str, Any]:
     compose_file = (project_root or _repo_root()) / "docker-compose.yml"
     try:
+        yaml = importlib.import_module("yaml")
         return yaml.safe_load(compose_file.read_text()) or {}
     except Exception:
         return {}
@@ -165,6 +180,32 @@ def _check_python() -> DoctorCheckResult:
         f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro};"
         " pyproject requires ^3.13",
         None if ok else "Install Python 3.13 or newer and recreate the virtualenv.",
+        "host",
+    )
+
+
+def _check_python_dependencies() -> DoctorCheckResult:
+    """Verify that required runtime Python packages can be imported."""
+    missing: list[str] = []
+    for package_name, module_name in PYTHON_DEPENDENCY_MODULES:
+        try:
+            importlib.import_module(module_name)
+        except ImportError:
+            missing.append(f"{package_name} ({module_name})")
+
+    if not missing:
+        return DoctorCheckResult(
+            "Python dependencies",
+            DoctorStatus.OK,
+            f"{len(PYTHON_DEPENDENCY_MODULES)} required runtime modules importable",
+            group="host",
+        )
+
+    return DoctorCheckResult(
+        "Python dependencies",
+        DoctorStatus.FAIL,
+        "missing required runtime module(s): " + ", ".join(missing),
+        "Install project dependencies with `poetry install`, then rerun `netengine doctor`.",
         "host",
     )
 
@@ -614,6 +655,7 @@ def standard_probes() -> tuple[DoctorProbe, ...]:
     """Return host-readiness probes; each accepts only ``DoctorContext``."""
     return (
         lambda ctx: _check_python(),
+        lambda ctx: _check_python_dependencies(),
         _check_required_commands,
         _check_optional_commands,
         lambda ctx: _check_step_version(),

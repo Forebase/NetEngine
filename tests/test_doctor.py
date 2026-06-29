@@ -291,3 +291,41 @@ def test_docker_resource_conflicts_use_short_format_commands(monkeypatch, tmp_pa
     assert (["docker", "ps", "--format", "{{.Names}}"], 2.0) in commands
     assert (["docker", "volume", "ls", "--format", "{{.Name}}"], 2.0) in commands
     assert (["docker", "network", "ls", "--format", "{{.Name}}"], 2.0) in commands
+
+
+def test_python_dependency_probe_passes_when_required_modules_import(monkeypatch) -> None:
+    imported = []
+
+    def fake_import_module(name: str):
+        imported.append(name)
+        return SimpleNamespace(__name__=name)
+
+    monkeypatch.setattr(doctor_mod._preflight.importlib, "import_module", fake_import_module)
+
+    result = doctor_mod._check_python_dependencies()
+
+    assert result.status == DoctorStatus.OK
+    assert result.name == "Python dependencies"
+    assert result.group == "host"
+    assert "required runtime modules importable" in result.detail
+    assert imported == [module for _, module in doctor_mod._preflight.PYTHON_DEPENDENCY_MODULES]
+
+
+def test_python_dependency_probe_reports_missing_modules_with_poetry_install(monkeypatch) -> None:
+    missing_modules = {"yaml", "docker", "prometheus_client"}
+
+    def fake_import_module(name: str):
+        if name in missing_modules:
+            raise ImportError(f"No module named {name}")
+        return SimpleNamespace(__name__=name)
+
+    monkeypatch.setattr(doctor_mod._preflight.importlib, "import_module", fake_import_module)
+
+    result = doctor_mod._check_python_dependencies()
+
+    assert result.status == DoctorStatus.FAIL
+    assert result.required is True
+    assert "pyyaml (yaml)" in result.detail
+    assert "docker (docker)" in result.detail
+    assert "prometheus-client (prometheus_client)" in result.detail
+    assert "poetry install" in (result.hint or "")

@@ -34,6 +34,7 @@ __all__ = [
     "build_context",
     "doctor",
     "run_checks",
+    "_check_python_dependencies",
     "run_preflight",
 ]
 
@@ -41,6 +42,7 @@ __all__ = [
 _run = _preflight._run
 _can_bind = _preflight._can_bind
 _check_python = _preflight._check_python
+_check_python_dependencies = _preflight._check_python_dependencies
 _check_command = _preflight._check_command
 _check_docker_daemon = _preflight._check_docker_daemon
 _check_compose = _preflight._check_compose
