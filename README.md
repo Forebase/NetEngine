@@ -219,7 +219,7 @@ See `docs/runbook.md` for the full rollback and recovery procedure.
 
 **Spec compatibility** is tracked in `metadata.schema_version` (default `netengine.spec.v1`). The loader accepts missing schema versions for existing alpha specs, rejects unsupported versions before boot/import, and includes the spec schema in support bundles so alpha.2+ can decide whether an alpha.1 world is safe to restore.
 
-**Support bundles** are produced with `netengine export --out netengine-support-bundle.json` or `GET /api/v1/export`. Bundles include schema metadata, the world spec, phase completion, public CA material, and sanitized phase outputs with secret-looking fields/private PEMs removed. Restore with `netengine import <bundle-file>` or `POST /api/v1/import`; import validates the bundle schema, spec schema compatibility, spec parseability, known phases, phase prerequisites, and required outputs before replacing local runtime state.
+**Support bundles** are produced with `netengine export --out netengine-support-bundle.json` or `GET /api/v1/export`. Bundles include schema metadata, the world spec, phase completion, public CA material, and sanitized phase outputs with secret-looking fields/private PEMs removed. Redaction is performed through the `redactable` package when it is installed, with NetEngine's built-in fallback used only for alpha compatibility. Restore with `netengine import <bundle-file>` or `POST /api/v1/import`; import validates the bundle schema, spec schema compatibility, spec parseability, known phases, phase prerequisites, and required outputs before replacing local runtime state.
 
 **Persistent teardown safety** requires typed confirmation. CLI teardown of a persistent world must pass `netengine down --confirm <world-name>`; the operator API requires both `confirm=true` and `confirmation` equal to the world name. `--yes` is intentionally not enough for persistent destructive operations.
 
@@ -267,7 +267,13 @@ docs/           Architecture decisions, audit findings
 
 ## Operator API
 
-When a world is running, the operator API is available at `https://api.platform.internal:8080`. Authentication uses the platform OIDC realm — include a bearer token from Keycloak.
+When a world is running, the operator API is available at `https://api.platform.internal:8080`. Authentication uses the platform OIDC realm — include a bearer token from Keycloak. Mutating routes (`POST`, `PUT`, `PATCH`, and `DELETE`) require an administrative role (`admin`, `netengine-admin`, or `operator-admin`) after the platform realm is available. Token validation errors distinguish missing tokens, inactive/expired tokens, Keycloak introspection failures, and OIDC issuer transport/TLS failures.
+
+During alpha bootstrap (before Phase 4 brings up Keycloak), the operator API is not unauthenticated: callers must send the host-local `X-Bootstrap-Secret` matching `NETENGINES_BOOTSTRAP_SECRET`. The secret is generated/read locally by the CLI, cannot be set over the API, is retired for operator API calls once Phase 4 completes, and must not be committed or included in support artifacts.
+
+TLS verification for OIDC issuer calls defaults to secure certificate validation. For self-signed world CAs, configure `NETENGINE_CA_BUNDLE` or place the runtime CA bundle at `runtime/ca-bundle.pem`. Disabling verification requires explicit opt-in with `NETENGINE_INSECURE_TLS=true` and emits a warning; use it only in isolated development environments.
+
+Unauthenticated health checks intentionally return only phase completion, overall status, and whether an error exists. Detailed runtime errors and state remain behind authenticated operator endpoints.
 
 ```
 GET  /health          Liveness check
