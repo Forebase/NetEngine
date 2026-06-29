@@ -165,6 +165,22 @@ poetry run netengine up spec.yaml --set metadata.name=my-world
 
 ---
 
+## Alpha secrets handling
+
+Runtime state is central to resuming worlds, so the alpha stance is conservative: the local runtime state file is the authoritative resumable snapshot and may contain secrets. Treat it as sensitive operational state, not as a shareable artifact.
+
+- **Where admin passwords are generated:** Bootstrap/operator credentials are generated during identity bootstrap phases and by the deployment environment for pre-Phase-4 bootstrap access. The world spec only names admin users; it does not commit their passwords.
+- **Where they are stored:** Generated credentials and OIDC client secrets can be stored in the runtime state file selected by `NETENGINE_STATE_FILE` (default `netengines_state.json`) and, when configured, mirrored to the runtime-state database for audit/convenience. The local JSON state remains authoritative.
+- **How to rotate them:** During alpha, rotate credentials at the backing service (for example Keycloak admin users/clients or the bootstrap-secret environment value), update the corresponding runtime state/env value, and restart affected API/worker processes. A dedicated `netengine secrets rotate` command is planned.
+- **How to export/import them:** `netengine export` and `GET /api/v1/export` create support/import bundles with secrets redacted by default. They are intended for support and compatible restores, not for secret escrow. If a restore needs live credentials, re-enter or rotate them after import.
+- **How to redact them:** Redaction is centralized through `netengine.security.redaction`, which uses Sober-Co `redactable` when installed and falls back to local alpha rules. API world responses redact secret fields unless `include_secrets=true` is explicitly requested by an admin; support bundles always redact by default.
+- **What is safe to commit:** Specs, examples, migrations, tests, and docs are safe when they contain only placeholders or public material such as CA certificates. Never commit generated runtime state, `.env` files, database dumps, support bundles containing sensitive topology, private keys, tokens, passwords, or real operator/customer data.
+- **What should be in `.gitignore`:** Keep `netengines_state.json`, `data/`, local `.env*` files, support bundles, private keys, generated certificates with private material, database dumps, and tool-specific secret stores ignored. The repository already ignores the default runtime state file and local data directory.
+
+Alpha defaults are: runtime state is written atomically with file mode `0600`; generated credentials are displayed once by the component that creates them and then stored in protected runtime state or the backing service; support bundle redaction is on by default; and secret fields in API responses remain redacted unless an authenticated admin explicitly requests them.
+
+---
+
 
 ## Operator migration guidance
 
@@ -219,7 +235,7 @@ See `docs/runbook.md` for the full rollback and recovery procedure.
 
 **Spec compatibility** is tracked in `metadata.schema_version` (default `netengine.spec.v1`). The loader accepts missing schema versions for existing alpha specs, rejects unsupported versions before boot/import, and includes the spec schema in support bundles so alpha.2+ can decide whether an alpha.1 world is safe to restore.
 
-**Support bundles** are produced with `netengine export --out netengine-support-bundle.json` or `GET /api/v1/export`. Bundles include schema metadata, the world spec, phase completion, public CA material, and sanitized phase outputs with secret-looking fields/private PEMs removed. Restore with `netengine import <bundle-file>` or `POST /api/v1/import`; import validates the bundle schema, spec schema compatibility, spec parseability, known phases, phase prerequisites, and required outputs before replacing local runtime state.
+**Support bundles** are produced with `netengine export --out netengine-support-bundle.json` or `GET /api/v1/export`. Bundles include schema metadata, the world spec, phase completion, public CA material, and sanitized phase outputs with secret-looking fields/private PEMs removed. NetEngine uses the Sober-Co [`redactable`](https://github.com/Sober-Co/redactable) package for redaction when it is installed (with a local alpha fallback until it is available on PyPI). Restore with `netengine import <bundle-file>` or `POST /api/v1/import`; import validates the bundle schema, spec schema compatibility, spec parseability, known phases, phase prerequisites, and required outputs before replacing local runtime state.
 
 **Persistent teardown safety** requires typed confirmation. CLI teardown of a persistent world must pass `netengine down --confirm <world-name>`; the operator API requires both `confirm=true` and `confirmation` equal to the world name. `--yes` is intentionally not enough for persistent destructive operations.
 
