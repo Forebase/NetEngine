@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 if TYPE_CHECKING:
-    import asyncpg  # type: ignore[import]
+    import asyncpg  # type: ignore[import-untyped]
 
 MIGRATION_TABLE = "netengine_schema_migrations"
 
@@ -65,13 +65,11 @@ def migration_checksum(sql: str) -> str:
 
 def postgres_allows_transaction(sql: str) -> bool:
     """Return False for common PostgreSQL operations forbidden in transaction blocks."""
-
     return not any(pattern.search(sql) for pattern in NON_TRANSACTIONAL_PATTERNS)
 
 
 def split_sql_statements(sql: str) -> list[str]:
     """Split SQL on semicolons while preserving quoted and dollar-quoted bodies."""
-
     statements: list[str] = []
     start = 0
     i = 0
@@ -146,7 +144,9 @@ def split_sql_statements(sql: str) -> list[str]:
 
 
 class MigrationService:
-    def __init__(self, db_url: str, migrations_dir: Path, logger: Callable[[str], None] | None = None):
+    def __init__(
+        self, db_url: str, migrations_dir: Path, logger: Callable[[str], None] | None = None
+    ):
         self.db_url = db_url
         self.migrations_dir = migrations_dir
         self.logger = logger or (lambda message: None)
@@ -214,7 +214,9 @@ class MigrationService:
                         context = _statement_context(statement)
                         await conn.execute(statement)
             else:
-                self.logger(f"Migration {path.name}: pending (non-transactional operations detected)")
+                self.logger(
+                    f"Migration {path.name}: pending (non-transactional operations detected)"
+                )
                 for statement in statements:
                     context = _statement_context(statement)
                     await conn.execute(statement)
@@ -268,7 +270,7 @@ def _statement_context(statement: str, max_length: int = 240) -> str:
 
 def _asyncpg() -> Any:
     try:
-        import asyncpg  # type: ignore[import]
+        import asyncpg
     except ModuleNotFoundError as exc:
         raise RuntimeError("asyncpg is required to run database migrations") from exc
     return asyncpg

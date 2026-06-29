@@ -45,9 +45,7 @@ def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
 
         parts = key.split(".")
         if any(part == "" for part in parts):
-            raise click.BadParameter(
-                "keys must be non-empty dotted paths", param_hint="--set"
-            )
+            raise click.BadParameter("keys must be non-empty dotted paths", param_hint="--set")
 
         value = yaml.safe_load(raw_value)
         cursor = overrides
@@ -105,8 +103,7 @@ async def _run_migrations(db_url: str) -> MigrationRunResult:
     for migration in result.results:
         if migration.status == "applied":
             logger.info(
-                f"Applied migration: {migration.filename} "
-                f"({migration.duration_seconds:.3f}s)"
+                f"Applied migration: {migration.filename} " f"({migration.duration_seconds:.3f}s)"
             )
         elif migration.status == "skipped":
             logger.info(f"Skipped migration: {migration.filename} (already applied)")
@@ -126,16 +123,12 @@ def _print_migration_status(status: MigrationStatus) -> None:
     click.echo("Migration status")
     click.echo(f"  Applied: {len(status.applied)}")
     for record in status.applied:
-        applied_at = (
-            record.applied_at.isoformat() if record.applied_at else "unknown time"
-        )
+        applied_at = record.applied_at.isoformat() if record.applied_at else "unknown time"
         click.echo(f"    ✓ {record.version} {record.name} ({applied_at})")
 
     click.echo(f"  Pending: {len(status.pending)}")
     for migration in status.pending:
-        click.echo(
-            f"    • {migration.version} {migration.name} ({migration.path.name})"
-        )
+        click.echo(f"    • {migration.version} {migration.name} ({migration.path.name})")
 
     click.echo(f"  Failed: {len(status.failed)}")
     for record in status.failed:
@@ -251,9 +244,7 @@ def validate(
 ) -> None:
     """Validate SPEC_FILE without booting a world."""
     try:
-        spec = _load_spec_for_cli(
-            spec_file, environment=environment, set_values=set_values
-        )
+        spec = _load_spec_for_cli(spec_file, environment=environment, set_values=set_values)
     except SpecLoadError as exc:
         click.echo(f"Spec validation failed: {exc}", err=True)
         sys.exit(1)
@@ -339,9 +330,7 @@ async def _up(
     spec = _load_spec_for_cli(spec_file, environment=environment, set_values=set_values)
 
     if mock:
-        click.echo(
-            "WARNING: running in mock mode — no real infrastructure will be created."
-        )
+        click.echo("WARNING: running in mock mode — no real infrastructure will be created.")
 
     if not skip_migrations and not mock:
         db_url = _db_url_from_env()
@@ -359,8 +348,41 @@ async def _up(
 
     orchestrator = Orchestrator(spec, mock_mode=mock)
     click.echo(f"Booting world from {spec_file} (phases 0–{up_to})…")
+
+    import time
+
+    _phase_start_times: dict[int, float] = {}
+
+    def _on_start(phase_num: int, phase_name: str) -> None:
+        _phase_start_times[phase_num] = time.monotonic()
+        click.echo(f"  ⧗  Phase {phase_num}: {phase_name}…")
+
+    def _on_complete(phase_num: int, phase_name: str) -> None:
+        elapsed = time.monotonic() - _phase_start_times.get(phase_num, time.monotonic())
+        click.echo(
+            click.style(f"  ✓  Phase {phase_num}: {phase_name}", fg="green")
+            + click.style(f"  ({elapsed:.1f}s)", fg="bright_black")
+        )
+
+    def _on_skip(phase_num: int, phase_name: str) -> None:
+        click.echo(
+            click.style(f"  –  Phase {phase_num}: {phase_name} (already done)", fg="bright_black")
+        )
+
+    def _on_error(phase_num: int, phase_name: str, exc: Exception) -> None:
+        click.echo(
+            click.style(f"  ✗  Phase {phase_num}: {phase_name} — {exc}", fg="red", bold=True),
+            err=True,
+        )
+
     try:
-        await orchestrator.execute_phases(up_to_phase=up_to)
+        await orchestrator.execute_phases(
+            up_to_phase=up_to,
+            on_phase_start=_on_start,
+            on_phase_complete=_on_complete,
+            on_phase_skip=_on_skip,
+            on_phase_error=_on_error,
+        )
     except Exception as exc:
         click.echo(f"Bootstrap failed: {exc}", err=True)
         sys.exit(1)
@@ -463,9 +485,7 @@ def reload(spec_file: str) -> None:
 
     is_ephemeral = old_spec.metadata.lifecycle.value == "ephemeral"
     click.echo("Computing diff…")
-    result = asyncio.run(
-        apply_reload(old_spec, new_spec, state, is_ephemeral=is_ephemeral)
-    )
+    result = asyncio.run(apply_reload(old_spec, new_spec, state, is_ephemeral=is_ephemeral))
 
     if result.immutability_violations:
         click.echo("Reload REJECTED — immutable fields changed:", err=True)
@@ -503,24 +523,27 @@ _CONTAINER_PREFIXES = ("netengine_", "netengines_")
 
 
 @cli.command()
-@click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
-@click.option(
-    "--dry-run", is_flag=True, help="Show what would be removed without removing it."
-)
-def down(yes: bool, dry_run: bool) -> None:
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt for ephemeral worlds.")
+@click.option("--confirm", default=None, help="For persistent worlds, type the world name exactly.")
+@click.option("--dry-run", is_flag=True, help="Show what would be removed without removing it.")
+def down(yes: bool, confirm: str | None, dry_run: bool) -> None:
     """Tear down the running world (containers, networks, volumes)."""
-    asyncio.run(_down(yes, dry_run))
+    asyncio.run(_down(yes, confirm, dry_run))
 
 
-async def _down(yes: bool, dry_run: bool) -> None:
+async def _down(yes: bool, confirm: str | None, dry_run: bool) -> None:
     state = RuntimeState.load()
     if state.world_spec and not dry_run:
-        raw_lifecycle = (state.world_spec.get("metadata") or {}).get(
-            "lifecycle", "ephemeral"
-        )
-        if raw_lifecycle == "persistent" and not yes:
+        raw_lifecycle = (state.world_spec.get("metadata") or {}).get("lifecycle", "ephemeral")
+        world_name = (state.world_spec.get("metadata") or {}).get("name", "")
+        if raw_lifecycle == "persistent" and confirm != world_name:
+            raise click.ClickException(
+                "Persistent world teardown requires typed confirmation. "
+                f"Re-run with --confirm {world_name!r}."
+            )
+        if raw_lifecycle != "persistent" and not yes:
             click.confirm(
-                "This is a PERSISTENT world — all durable state will be destroyed. Continue?",
+                "This world will be destroyed. Continue?",
                 abort=True,
             )
 
@@ -569,9 +592,7 @@ async def _down(yes: bool, dry_run: bool) -> None:
                         errors.append(f"{label}: {exc}")
 
         for network in client.networks.list():
-            if network.name and any(
-                network.name.startswith(p) for p in _CONTAINER_PREFIXES
-            ):
+            if network.name and any(network.name.startswith(p) for p in _CONTAINER_PREFIXES):
                 label = f"network:{network.name}"
                 if dry_run:
                     click.echo(f"  would remove  {label}")
@@ -698,16 +719,12 @@ async def _diagnose(spec_file: str, as_json: bool) -> None:
                 "status": r.status.value,
                 "detail": r.detail,
                 "hint": r.hint,
-                "elapsed_ms": round(r.elapsed_ms, 1)
-                if r.elapsed_ms is not None
-                else None,
+                "elapsed_ms": round(r.elapsed_ms, 1) if r.elapsed_ms is not None else None,
             }
             for r in results
         ]
         click.echo(_json.dumps(payload, indent=2))
-        issues = sum(
-            1 for r in results if r.status in (ProbeStatus.FAIL, ProbeStatus.WARN)
-        )
+        issues = sum(1 for r in results if r.status in (ProbeStatus.FAIL, ProbeStatus.WARN))
         if issues:
             sys.exit(1)
         return
@@ -747,12 +764,8 @@ async def _diagnose(spec_file: str, as_json: bool) -> None:
 
 
 @cli.command()
-@click.option(
-    "--interval", default=30, type=int, help="Poll interval in seconds (default 30)."
-)
-@click.option(
-    "--max-retries", default=3, type=int, help="Max self-heal retries per phase."
-)
+@click.option("--interval", default=30, type=int, help="Poll interval in seconds (default 30).")
+@click.option("--max-retries", default=3, type=int, help="Max self-heal retries per phase.")
 @click.option("--no-auto-heal", is_flag=True, help="Detect drift but don't auto-heal.")
 def drift_watch(interval: int, max_retries: int, no_auto_heal: bool) -> None:
     """Watch running world for drift and optionally auto-heal (Ctrl+C to stop)."""
@@ -765,9 +778,7 @@ async def _drift_watch(interval: int, max_retries: int, no_auto_heal: bool) -> N
         click.echo("No running world found — use `netengine up` first.", err=True)
         sys.exit(1)
 
-    click.echo(
-        f"Starting drift detection (interval={interval}s, auto-heal={not no_auto_heal})…"
-    )
+    click.echo(f"Starting drift detection (interval={interval}s, auto-heal={not no_auto_heal})…")
     click.echo("Press Ctrl+C to stop.\n")
 
     orchestrator = Orchestrator(state.world_spec, mock_mode=False)
@@ -841,6 +852,101 @@ def drift_status() -> None:
         click.echo("\nDrift history: (no events)")
 
 
+@cli.command("export")
+@click.option(
+    "--out",
+    "out_path",
+    type=click.Path(dir_okay=False),
+    default="netengine-support-bundle.json",
+    show_default=True,
+)
+def export_support_bundle(out_path: str) -> None:
+    """Write a sanitized support bundle for backup/support/import."""
+    import datetime as _dt
+    import json as _json
+
+    from netengine.api.routes import (
+        IMPORT_SCHEMA_VERSION,
+        SUPPORT_BUNDLE_SCHEMA_VERSION,
+        _sanitize_export_value,
+    )
+    from netengine.core.state import RUNTIME_STATE_SCHEMA_VERSION, RuntimeState
+    from netengine.spec.models import SPEC_SCHEMA_VERSION
+
+    state = RuntimeState.load()
+    bundle = {
+        "schema_version": IMPORT_SCHEMA_VERSION,
+        "support_bundle_schema_version": SUPPORT_BUNDLE_SCHEMA_VERSION,
+        "bundle_kind": "netengine.support",
+        "exported_at": _dt.datetime.utcnow().isoformat(),
+        "runtime_state_schema_version": state.schema_version,
+        "supported_runtime_state_schema_version": RUNTIME_STATE_SCHEMA_VERSION,
+        "spec_schema_version": ((state.world_spec or {}).get("metadata") or {}).get(
+            "schema_version", SPEC_SCHEMA_VERSION
+        ),
+        "spec": state.world_spec,
+        "phase_completed": state.phase_completed,
+        "ca_cert_pem": state.ca_cert_pem,
+        "substrate_output": _sanitize_export_value(state.substrate_output),
+        "pki_output": _sanitize_export_value(state.pki_output),
+        "dns_output": _sanitize_export_value(state.dns_output),
+        "identity_platform_output": _sanitize_export_value(state.identity_platform_output),
+        "world_registry_output": _sanitize_export_value(state.world_registry_output),
+        "domain_registry_output": _sanitize_export_value(state.domain_registry_output),
+        "identity_inworld_output": _sanitize_export_value(state.identity_inworld_output),
+        "ands_output": _sanitize_export_value(state.ands_output),
+        "world_services_output": _sanitize_export_value(state.world_services_output),
+        "org_apps_output": _sanitize_export_value(state.org_apps_output),
+    }
+    path = Path(out_path)
+    path.write_text(_json.dumps(bundle, indent=2) + "\n")
+    os.chmod(path, 0o600)
+    click.echo(f"Wrote support bundle: {path}")
+
+
+@cli.command("import")
+@click.argument("bundle_file", type=click.Path(exists=True, dir_okay=False))
+def import_support_bundle(bundle_file: str) -> None:
+    """Validate and restore a compatible support bundle."""
+    import json as _json
+
+    from netengine.api.routes import SUPPORTED_IMPORT_SCHEMA_VERSIONS, _validate_import_phase_state
+    from netengine.core.state import RuntimeState
+    from netengine.spec.models import SUPPORTED_SPEC_SCHEMA_VERSIONS, NetEngineSpec
+
+    body = _json.loads(Path(bundle_file).read_text())
+    if body.get("schema_version") not in SUPPORTED_IMPORT_SCHEMA_VERSIONS:
+        raise click.ClickException(
+            f"Unsupported bundle schema_version: {body.get('schema_version')!r}"
+        )
+    spec_data = body.get("spec")
+    if not isinstance(spec_data, dict):
+        raise click.ClickException("Support bundle is missing a spec object")
+    spec_schema = (spec_data.get("metadata") or {}).get("schema_version")
+    if spec_schema is not None and spec_schema not in SUPPORTED_SPEC_SCHEMA_VERSIONS:
+        raise click.ClickException(f"Unsupported spec metadata.schema_version: {spec_schema!r}")
+    spec = NetEngineSpec.model_validate(spec_data)
+    imported_state = RuntimeState(
+        world_spec=spec.model_dump(mode="json"),
+        phase_completed=dict(body.get("phase_completed") or {}),
+        ca_cert_pem=body.get("ca_cert_pem"),
+        substrate_output=body.get("substrate_output"),
+        pki_output=body.get("pki_output"),
+        dns_output=body.get("dns_output"),
+        identity_platform_output=body.get("identity_platform_output"),
+        world_registry_output=body.get("world_registry_output"),
+        domain_registry_output=body.get("domain_registry_output"),
+        identity_inworld_output=body.get("identity_inworld_output"),
+        ands_output=body.get("ands_output"),
+        world_services_output=body.get("world_services_output"),
+        org_apps_output=body.get("org_apps_output"),
+        pki_bootstrapped=bool(body.get("ca_cert_pem") or body.get("pki_output")),
+    )
+    _validate_import_phase_state(imported_state)
+    imported_state.save()
+    click.echo(f"Imported support bundle for world: {spec.metadata.name}")
+
+
 @cli.command()
 @click.option(
     "--queue",
@@ -887,9 +993,7 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
                     )
                     if rows:
                         click.echo(
-                            click.style(
-                                f"  {dlq_name} ({len(rows)} message(s)):", bold=True
-                            )
+                            click.style(f"  {dlq_name} ({len(rows)} message(s)):", bold=True)
                         )
                         for row in rows:
                             import json as _json
@@ -899,18 +1003,14 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
                                 event_type = payload.get("event_type", "?")
                                 emitted_by = payload.get("emitted_by", "?")
                                 retry_count = payload.get("retry_count", 0)
-                                dlq_reason = (payload.get("payload") or {}).get(
-                                    "dlq_reason", ""
-                                )
+                                dlq_reason = (payload.get("payload") or {}).get("dlq_reason", "")
                                 click.echo(
                                     f"    [{row['msg_id']}] {event_type} "
                                     f"from={emitted_by} retries={retry_count}"
                                     + (f" reason={dlq_reason}" if dlq_reason else "")
                                 )
                             except Exception:
-                                click.echo(
-                                    f"    [{row['msg_id']}] (unparseable message)"
-                                )
+                                click.echo(f"    [{row['msg_id']}] (unparseable message)")
                     else:
                         click.echo(f"  {dlq_name}: empty")
                 except Exception as exc:
@@ -920,9 +1020,7 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
             for q in queues_to_check:
                 dlq_name = dlq_for(Queue(q)).value
                 try:
-                    depth_row = await conn.fetchrow(
-                        "SELECT count(*) AS depth FROM pgmq.q_$1", q
-                    )
+                    depth_row = await conn.fetchrow("SELECT count(*) AS depth FROM pgmq.q_$1", q)
                     dlq_row = await conn.fetchrow(
                         "SELECT count(*) AS depth FROM pgmq.q_$1", dlq_name
                     )
@@ -934,9 +1032,7 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
                         else click.style("!", fg="yellow")
                     )
                     dlq_status = (
-                        ""
-                        if dlq_depth == 0
-                        else click.style(f"  DLQ: {dlq_depth}", fg="red")
+                        "" if dlq_depth == 0 else click.style(f"  DLQ: {dlq_depth}", fg="red")
                     )
                     click.echo(f"  {status}  {q:<30} depth={depth}{dlq_status}")
                 except Exception as exc:
@@ -988,9 +1084,7 @@ def _print_status(state: RuntimeState) -> None:
         "dev-sandbox: two orgs, all services, dev apps."
     ),
 )
-@click.option(
-    "--output", "-o", default=None, help="Output file path (default: <name>.yaml)."
-)
+@click.option("--output", "-o", default=None, help="Output file path (default: <name>.yaml).")
 @click.option(
     "--yes",
     "-y",
@@ -1037,9 +1131,7 @@ def init(
             click.confirm(f"{early_path} already exists — overwrite?", abort=True)
 
     try:
-        cfg: WorldConfig = run_wizard(
-            preset=preset, yes=yes, name=name, lifecycle=lifecycle
-        )
+        cfg: WorldConfig = run_wizard(preset=preset, yes=yes, name=name, lifecycle=lifecycle)
     except click.Abort:
         click.echo("\nAborted.", err=True)
         return
@@ -1100,9 +1192,7 @@ def _print_init_summary(cfg: "Any", out_path: Path) -> None:
         click.echo(f"\n  Organisations ({len(cfg.orgs)}):")
         for org in cfg.orgs:
             user_count = len(org.users)
-            click.echo(
-                f"    • {org.name:<20} profile={org.and_profile}  users={user_count}"
-            )
+            click.echo(f"    • {org.name:<20} profile={org.and_profile}  users={user_count}")
     else:
         click.echo("\n  Organisations: none (add later with `netengine reload`)")
 

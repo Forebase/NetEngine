@@ -5,8 +5,8 @@ from typing import Any
 from netengine.events.emitter import emit_event
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
-from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.handlers.pki_handler import PKIHandler
+from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.logging import get_logger
 from netengine.workers.pki_cert_rotation_worker import CertTypeRotationConfig, PKICertRotationWorker
 

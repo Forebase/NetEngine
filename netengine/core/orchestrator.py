@@ -1,5 +1,5 @@
 import os
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from pydantic import ValidationError
 
@@ -111,15 +111,28 @@ class Orchestrator:
                 "Run earlier phases first."
             )
 
-    async def execute_phases(self, up_to_phase: int = 9) -> None:
+    async def execute_phases(
+        self,
+        up_to_phase: int = 9,
+        on_phase_start: Optional[Callable[[int, str], None]] = None,
+        on_phase_complete: Optional[Callable[[int, str], None]] = None,
+        on_phase_skip: Optional[Callable[[int, str], None]] = None,
+        on_phase_error: Optional[Callable[[int, str, Exception], None]] = None,
+    ) -> None:
         """Execute phases 0 through up_to_phase.
 
         Args:
             up_to_phase: Highest phase number to execute (default 9, all phases)
+            on_phase_start: Optional callback(phase_num, phase_name) called before each phase
+            on_phase_complete: Optional callback(phase_num, phase_name) called on success
+            on_phase_skip: Optional callback(phase_num, phase_name) called when phase is skipped
+            on_phase_error: Optional callback(phase_num, phase_name, exc) called on failure
 
         Raises:
             RuntimeError: If any phase fails or dependency validation fails
         """
+        from netengine.phase_labels import PHASE_LABELS
+
         if not self.runtime_state.world_spec:
             self.runtime_state.world_spec = self.spec.model_dump()
             self.runtime_state.save()
@@ -128,6 +141,7 @@ class Orchestrator:
             if phase_num > up_to_phase:
                 break
 
+            phase_name = PHASE_LABELS.get(str(phase_num), handler_class.__name__)
             handler = handler_class()
 
             if await handler.should_skip(self.context):
@@ -135,11 +149,15 @@ class Orchestrator:
                     f"Phase {phase_num}: {handler_class.__name__} already completed, skipping"
                 )
                 self._mark_phase_complete(phase_num, handler)
+                if on_phase_skip:
+                    on_phase_skip(phase_num, phase_name)
                 continue
 
             self._check_prerequisites(phase_num)
 
             logger.info(f"Phase {phase_num}: {handler_class.__name__} starting")
+            if on_phase_start:
+                on_phase_start(phase_num, phase_name)
             try:
                 with record_phase(phase_num):
                     await handler.execute(self.context)
@@ -152,11 +170,15 @@ class Orchestrator:
                 self.runtime_state.save()
                 self.runtime_state.sync_to_supabase()
                 logger.info(f"Phase {phase_num} completed successfully")
+                if on_phase_complete:
+                    on_phase_complete(phase_num, phase_name)
 
             except Exception as e:
                 logger.error(f"Phase {phase_num} failed: {e}")
                 self.runtime_state.last_error = str(e)
                 self.runtime_state.save()
+                if on_phase_error:
+                    on_phase_error(phase_num, phase_name, e)
                 raise
 
     async def start_consumers(self) -> None:

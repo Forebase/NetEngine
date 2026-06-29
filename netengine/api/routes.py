@@ -17,12 +17,12 @@ from pydantic import BaseModel, Field
 
 from netengine.api.auth import require_admin, require_auth
 from netengine.core.reload import ReloadResult, apply_reload, check_immutability, compute_diff
-from netengine.core.state import RuntimeState
+from netengine.core.state import RUNTIME_STATE_SCHEMA_VERSION, RuntimeState
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import SpecLoadError, load_spec
-from netengine.spec.models import NetEngineSpec
+from netengine.spec.models import SPEC_SCHEMA_VERSION, NetEngineSpec
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1")
@@ -33,6 +33,8 @@ router = APIRouter(prefix="/api/v1")
 # ─────────────────────────────────────────────
 
 IMPORT_SCHEMA_VERSION = "netengine.import.v1"
+SUPPORT_BUNDLE_SCHEMA_VERSION = "netengine.support_bundle.v1"
+SUPPORTED_IMPORT_SCHEMA_VERSIONS = {IMPORT_SCHEMA_VERSION, SUPPORT_BUNDLE_SCHEMA_VERSION}
 
 PHASE_REQUIRED_OUTPUTS = {
     "0": ("substrate_output",),
@@ -52,25 +54,18 @@ def _validate_import_phase_state(state: RuntimeState) -> None:
     """Reject import snapshots with invalid phase completion state."""
     unknown = sorted(set(state.phase_completed) - set(PHASE_REQUIRED_OUTPUTS))
     if unknown:
-        raise HTTPException(
-            status_code=422, detail=f"Unknown phase ID(s): {', '.join(unknown)}"
-        )
+        raise HTTPException(status_code=422, detail=f"Unknown phase ID(s): {', '.join(unknown)}")
 
-    completed = {
-        phase for phase, is_completed in state.phase_completed.items() if is_completed
-    }
+    completed = {phase for phase, is_completed in state.phase_completed.items() if is_completed}
     for phase in completed:
         required_outputs = PHASE_REQUIRED_OUTPUTS[phase]
-        missing = [
-            field for field in required_outputs if not getattr(state, field, None)
-        ]
+        missing = [field for field in required_outputs if not getattr(state, field, None)]
         if missing:
             missing_str = ", ".join(missing)
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    f"Phase {phase} is completed but missing required "
-                    f"output(s): {missing_str}"
+                    f"Phase {phase} is completed but missing required " f"output(s): {missing_str}"
                 ),
             )
 
@@ -83,23 +78,10 @@ def _validate_import_phase_state(state: RuntimeState) -> None:
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    "Impossible phase combination; missing prerequisite "
-                    f"phase(s): {missing_str}"
+                    "Impossible phase combination; missing prerequisite " f"phase(s): {missing_str}"
                 ),
             )
 
-
-PHASE_LABELS = {
-    "0": "Substrate",
-    "1": "DNS root + platform zones",
-    "2": "DNS TLD hierarchy",
-    "3": "PKI + ACME",
-    "4": "Platform identity",
-    "5": "Registries",
-    "6": "In-world identity",
-    "7": "ANDs",
-    "8": "Services",
-}
 
 @router.get("/health")
 async def health() -> dict[str, Any]:
@@ -193,6 +175,9 @@ async def reload_world(body: ReloadRequest, user: dict = Depends(require_auth)) 
 
 class WorldTeardownRequest(BaseModel):
     confirm: bool = False
+    confirmation: str | None = Field(
+        default=None, description="For persistent worlds, type the world name exactly."
+    )
 
 
 @router.delete("/world")
@@ -202,17 +187,19 @@ async def teardown_world(
     """Tear down the running world.
 
     Ephemeral: proceeds immediately.
-    Persistent: requires confirm=true in the request body.
+    Persistent: requires confirm=true and confirmation=<world name> in the request body.
     """
     state = RuntimeState.load()
     if state.world_spec:
-        raw_lifecycle = (state.world_spec.get("metadata") or {}).get(
-            "lifecycle", "ephemeral"
-        )
-        if raw_lifecycle == "persistent" and not body.confirm:
+        raw_lifecycle = (state.world_spec.get("metadata") or {}).get("lifecycle", "ephemeral")
+        world_name = (state.world_spec.get("metadata") or {}).get("name", "")
+        if raw_lifecycle == "persistent" and (not body.confirm or body.confirmation != world_name):
             raise HTTPException(
                 status_code=409,
-                detail="Persistent world teardown requires confirm=true in request body",
+                detail=(
+                    "Persistent world teardown requires confirm=true and "
+                    f"confirmation={world_name!r} in request body"
+                ),
             )
 
     removed: list[str] = []
@@ -982,7 +969,14 @@ async def export_world(user: dict = Depends(require_admin)) -> dict[str, Any]:
 
     return {
         "schema_version": IMPORT_SCHEMA_VERSION,
+        "support_bundle_schema_version": SUPPORT_BUNDLE_SCHEMA_VERSION,
         "exported_at": _dt.datetime.utcnow().isoformat(),
+        "runtime_state_schema_version": state.schema_version,
+        "supported_runtime_state_schema_version": RUNTIME_STATE_SCHEMA_VERSION,
+        "spec_schema_version": ((state.world_spec or {}).get("metadata") or {}).get(
+            "schema_version", SPEC_SCHEMA_VERSION
+        ),
+        "bundle_kind": "netengine.support",
         "spec": state.world_spec,
         "phase_completed": state.phase_completed,
         "ca_cert_pem": state.ca_cert_pem,
@@ -998,9 +992,7 @@ async def export_world(user: dict = Depends(require_admin)) -> dict[str, Any]:
 
 
 class ImportRequest(BaseModel):
-    schema_version: str = Field(
-        ..., description="Import snapshot schema/version identifier"
-    )
+    schema_version: str = Field(..., description="Import snapshot schema/version identifier")
     spec: dict[str, Any]
     phase_completed: dict[str, bool] = Field(default_factory=dict)
     ca_cert_pem: str | None = None
@@ -1021,18 +1013,19 @@ async def import_world(body: ImportRequest, user: dict = Depends(require_admin))
     """Restore world state from an export snapshot (persistent mode only)."""
     state = RuntimeState.load()
     if state.world_spec:
-        raw_lifecycle = (state.world_spec.get("metadata") or {}).get(
-            "lifecycle", "ephemeral"
-        )
+        raw_lifecycle = (state.world_spec.get("metadata") or {}).get("lifecycle", "ephemeral")
         if raw_lifecycle == "ephemeral":
             raise HTTPException(
                 status_code=409, detail="Import is only valid for persistent worlds"
             )
 
-    if body.schema_version != IMPORT_SCHEMA_VERSION:
+    if body.schema_version not in SUPPORTED_IMPORT_SCHEMA_VERSIONS:
         raise HTTPException(
             status_code=422,
-            detail=f"Unsupported import schema_version: {body.schema_version}",
+            detail=(
+                f"Unsupported import schema_version: {body.schema_version}. "
+                f"Supported versions: {sorted(SUPPORTED_IMPORT_SCHEMA_VERSIONS)}"
+            ),
         )
 
     try:
@@ -1058,9 +1051,7 @@ async def import_world(body: ImportRequest, user: dict = Depends(require_admin))
     )
     _validate_import_phase_state(imported_state)
 
-    phases_restored = [
-        phase for phase, completed in body.phase_completed.items() if completed
-    ]
+    phases_restored = [phase for phase, completed in body.phase_completed.items() if completed]
     imported_state.save()
     phases_restored = list(body.phase_completed.keys())
     state.world_spec = body.spec

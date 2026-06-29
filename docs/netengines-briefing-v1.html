@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetEngines — Project Briefing v1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f10; --surface: #1a1a1d; --surface-2: #212125;
+    --border: #2a2a2d; --text: #ffffff; --text-2: #a0a0a0; --text-3: #666;
+    --accent: #D97757; --accent-muted: rgba(217,119,87,0.12); --accent-border: rgba(217,119,87,0.3);
+    --green: #4ade80; --green-muted: rgba(74,222,128,0.1);
+    --blue: #60a5fa; --blue-muted: rgba(96,165,250,0.1);
+    --purple: #a78bfa; --purple-muted: rgba(167,139,250,0.1);
+    --yellow: #fbbf24; --yellow-muted: rgba(251,191,36,0.1);
+    --red: #f87171; --red-muted: rgba(248,113,113,0.1);
+    --radius: 12px; --radius-sm: 8px; --font: 'Inter', system-ui, sans-serif;
+  }
+  html { scroll-behavior: smooth; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
+
+  nav { position: sticky; top: 0; z-index: 100; background: rgba(15,15,16,0.88); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); padding: 14px 0; }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; }
+  .nav-logo { font-weight: 700; font-size: 16px; letter-spacing: -0.3px; }
+  .nav-logo span { color: var(--accent); }
+  .nav-links { display: flex; gap: 22px; }
+  .nav-links a { color: var(--text-2); text-decoration: none; font-size: 13px; transition: color .2s; }
+  .nav-links a:hover { color: var(--text); }
+
+  .hero { padding: 100px 0 80px; text-align: center; }
+  .hero-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--accent-muted); border: 1px solid var(--accent-border); color: var(--accent); border-radius: 100px; padding: 5px 14px; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 28px; }
+  .hero h1 { font-size: clamp(36px,6vw,64px); font-weight: 700; letter-spacing: -1.5px; line-height: 1.1; margin-bottom: 20px; }
+  .hero h1 em { color: var(--accent); font-style: normal; }
+  .hero-sub { font-size: 18px; color: var(--text-2); max-width: 620px; margin: 0 auto 48px; line-height: 1.7; }
+  .hero-tags { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+  .tag { background: var(--surface); border: 1px solid var(--border); border-radius: 100px; padding: 6px 14px; font-size: 13px; color: var(--text-2); }
+
+  section { padding: 80px 0; border-top: 1px solid var(--border); }
+  .section-label { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; }
+  .section-title { font-size: clamp(24px,3.5vw,34px); font-weight: 700; letter-spacing: -0.5px; line-height: 1.2; margin-bottom: 14px; }
+  .section-desc { color: var(--text-2); max-width: 600px; line-height: 1.7; margin-bottom: 40px; }
+
+  .cards { display: grid; gap: 16px; }
+  .cards-3 { grid-template-columns: repeat(3, 1fr); }
+  .cards-2 { grid-template-columns: repeat(2, 1fr); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
+  .card-icon { font-size: 26px; margin-bottom: 14px; }
+  .card h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+  .card p { font-size: 13px; color: var(--text-2); line-height: 1.6; }
+
+  .stack { display: flex; flex-direction: column; gap: 4px; }
+  .layer { border-radius: var(--radius-sm); padding: 18px 22px; display: flex; align-items: flex-start; gap: 16px; }
+  .layer-l0 { background: #1e1e22; border: 1px solid #333; }
+  .layer-l1 { background: #1e1e2a; border: 1px solid #3a3a55; }
+  .layer-l1b { background: #1e2228; border: 1px solid #2a4050; }
+  .layer-l2 { background: #1e2620; border: 1px solid #2a4535; }
+  .layer-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; white-space: nowrap; margin-top: 2px; }
+  .l0-label { background: rgba(100,100,120,0.3); color: #aaa; }
+  .l1-label { background: rgba(96,165,250,0.2); color: var(--blue); }
+  .l1b-label { background: rgba(96,200,250,0.15); color: #67d8f5; }
+  .l2-label { background: rgba(74,222,128,0.2); color: var(--green); }
+  .layer-content h4 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .layer-content p { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+  .stack-arrow { text-align: center; color: var(--text-3); font-size: 18px; line-height: 1; }
+
+  .phases { display: flex; flex-direction: column; }
+  .phase { display: flex; gap: 20px; align-items: flex-start; padding: 18px 0; border-bottom: 1px solid var(--border); }
+  .phase:last-child { border-bottom: none; }
+  .phase-num { width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); }
+  .phase-num.active { background: var(--accent-muted); border-color: var(--accent-border); color: var(--accent); }
+  .phase-body h4 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .phase-body p { font-size: 13px; color: var(--text-2); }
+  .phase-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .phase-tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border); }
+
+  .reg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .reg-card { background: var(--surface); border-radius: var(--radius); padding: 24px; border: 1px solid var(--border); }
+  .reg-card.world { border-color: rgba(96,165,250,0.3); }
+  .reg-card.domain { border-color: rgba(74,222,128,0.3); }
+  .reg-card h3 { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  .reg-card .reg-level { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 14px; }
+  .reg-card.world .reg-level { color: var(--blue); }
+  .reg-card.domain .reg-level { color: var(--green); }
+  .reg-item { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
+  .reg-item::before { content: "→"; color: var(--text-3); flex-shrink: 0; }
+
+  .profiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .profile-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px; text-align: center; }
+  .profile-card .icon { font-size: 24px; margin-bottom: 10px; }
+  .profile-card h4 { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .profile-card ul { list-style: none; }
+  .profile-card li { font-size: 11px; color: var(--text-3); line-height: 1.8; }
+
+  .callout { background: var(--accent-muted); border: 1px solid var(--accent-border); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); padding: 18px 20px; margin-top: 24px; }
+  .callout p { font-size: 13px; color: var(--text-2); line-height: 1.6; }
+  .callout strong { color: var(--text); }
+
+  .callout-blue { background: var(--blue-muted); border: 1px solid rgba(96,165,250,0.25); border-left: 3px solid var(--blue); border-radius: var(--radius-sm); padding: 18px 20px; margin-top: 16px; }
+  .callout-blue p { font-size: 13px; color: var(--text-2); line-height: 1.6; }
+  .callout-blue strong { color: var(--text); }
+
+  .crosscut { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .crosscut-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 18px; }
+  .crosscut-card .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+  .crosscut-card h4 { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .crosscut-card p { font-size: 12px; color: var(--text-2); line-height: 1.5; }
+
+  .lifecycle { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .lifecycle-card { border-radius: var(--radius); padding: 24px; }
+  .lifecycle-card.ephemeral { background: var(--yellow-muted); border: 1px solid rgba(251,191,36,0.25); }
+  .lifecycle-card.persistent { background: var(--purple-muted); border: 1px solid rgba(167,139,250,0.25); }
+  .lifecycle-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .lifecycle-card.ephemeral h3 { color: var(--yellow); }
+  .lifecycle-card.persistent h3 { color: var(--purple); }
+  .lifecycle-card ul { list-style: none; margin-top: 12px; }
+  .lifecycle-card li { font-size: 13px; color: var(--text-2); padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .lifecycle-card li:last-child { border-bottom: none; }
+  .lifecycle-card li::before { content: "· "; color: var(--text-3); }
+
+  /* Gateway mode table */
+  .mode-table { width: 100%; border-collapse: collapse; margin-top: 24px; }
+  .mode-table th { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-3); text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .mode-table td { font-size: 13px; padding: 12px 14px; border-bottom: 1px solid var(--border); color: var(--text-2); vertical-align: top; }
+  .mode-table tr:last-child td { border-bottom: none; }
+  .mode-table tr:hover td { background: var(--surface); }
+  .mode-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; font-family: monospace; }
+  .mode-isolated { background: rgba(100,100,120,0.25); color: #aaa; }
+  .mode-shadowed { background: var(--blue-muted); color: var(--blue); border: 1px solid rgba(96,165,250,0.2); }
+  .mode-mirrored { background: var(--purple-muted); color: var(--purple); border: 1px solid rgba(167,139,250,0.2); }
+  .mode-exposed { background: var(--yellow-muted); color: var(--yellow); border: 1px solid rgba(251,191,36,0.2); }
+  .mode-peered { background: var(--green-muted); color: var(--green); border: 1px solid rgba(74,222,128,0.2); }
+  .mode-federated { background: var(--accent-muted); color: var(--accent); border: 1px solid var(--accent-border); }
+
+  /* Service split */
+  .service-split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 8px; }
+  .service-col { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; }
+  .service-col.world-col { border-color: rgba(96,165,250,0.25); }
+  .service-col.org-col { border-color: rgba(74,222,128,0.25); }
+  .service-col-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; }
+  .world-col .service-col-label { color: var(--blue); }
+  .org-col .service-col-label { color: var(--green); }
+  .service-col h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+  .service-item { font-size: 13px; color: var(--text-2); padding: 5px 0; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+  .service-item:last-child { border-bottom: none; }
+  .service-item-icon { font-size: 16px; flex-shrink: 0; }
+
+  pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 18px; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 12px; line-height: 1.7; overflow-x: auto; color: #c9d1d9; }
+  .kw { color: #7dd3fc; } .str { color: #86efac; } .comment { color: #555; } .key { color: #fca5a5; }
+
+  footer { border-top: 1px solid var(--border); padding: 40px 0; text-align: center; }
+  footer p { font-size: 13px; color: var(--text-3); }
+
+  @media (max-width: 700px) {
+    .cards-3, .cards-2, .reg-grid, .lifecycle, .profiles, .crosscut, .service-split { grid-template-columns: 1fr; }
+    .nav-links { display: none; }
+    .profiles { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="nav-logo">Net<span>Engines</span></div>
+    <div class="nav-links">
+      <a href="#what">What</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#bootstrap">Bootstrap</a>
+      <a href="#registry">Registries</a>
+      <a href="#ands">ANDs</a>
+      <a href="#services">Services</a>
+      <a href="#gateway">Gateway</a>
+      <a href="#lifecycle">Lifecycle</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="wrap">
+    <div class="hero-badge">📡 Project Briefing · v1</div>
+    <h1>The internet,<br><em>owned by you.</em></h1>
+    <p class="hero-sub">NetEngines spins up self-contained, authority-autonomous digital worlds. Each world owns its DNS root, certificate authority, identity, naming, and network governance — running real software, not mocks.</p>
+    <div class="hero-tags">
+      <span class="tag">Authority-autonomous</span>
+      <span class="tag">Real software, real protocols</span>
+      <span class="tag">Declarative spec</span>
+      <span class="tag">Ephemeral or persistent</span>
+      <span class="tag">Multi-org</span>
+      <span class="tag">Cross-world capable</span>
+    </div>
+  </div>
+</div>
+
+<!-- WHAT IS IT -->
+<section id="what">
+  <div class="wrap">
+    <div class="section-label">What is it</div>
+    <h2 class="section-title">A bounded internet you control end-to-end</h2>
+    <p class="section-desc">Not a network simulator. Not an API mock. NetEngines runs real DNS, real TLS, real SMTP, real OIDC — inside a world where you own every root of trust.</p>
+
+    <div class="cards cards-3">
+      <div class="card">
+        <div class="card-icon">🌐</div>
+        <h3>Own the roots</h3>
+        <p>Your DNS root isn't IANA's. Your CA isn't Let's Encrypt. Your identity trust anchor isn't Google. Every chain of trust originates inside the world you control.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">⚙️</div>
+        <h3>Real software, real protocols</h3>
+        <p>CoreDNS really serves DNS. Postfix really speaks SMTP. step-ca really issues TLS certs via ACME. Nothing is mocked. It's enclosure, not emulation.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🏢</div>
+        <h3>Organisations as inhabitants</h3>
+        <p>Orgs live inside a world. They own domains, hold address allocations, run mail, host services. They experience the internet from the inside — with all its friction and realism.</p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <p><strong>The right analogy:</strong> LocalStack is to AWS as NetEngines is to the internet's service layer — except LocalStack mocks APIs. NetEngines encloses real ones inside a world where you own all the authority. Enclosure, not emulation. That's a fundamentally different engineering posture.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ARCHITECTURE -->
+<section id="architecture">
+  <div class="wrap">
+    <div class="section-label">Architecture</div>
+    <h2 class="section-title">Three reality levels</h2>
+    <p class="section-desc">Everything in NetEngines sits at one of three levels. The levels don't share trust anchors or naming — which is the whole point.</p>
+
+    <div class="stack">
+      <div class="layer layer-l0">
+        <div class="layer-label l0-label">L0</div>
+        <div class="layer-content">
+          <h4>Host Substrate</h4>
+          <p>The real machine: kernel, Docker daemon, orchestrator, physical or virtual hardware. NetEngines runs <em>on</em> this. Given and fixed.</p>
+        </div>
+      </div>
+      <div class="stack-arrow">↓</div>
+      <div class="layer layer-l1">
+        <div class="layer-label l1-label">L1</div>
+        <div class="layer-content">
+          <h4>Platform / Engine</h4>
+          <p>NetEngines itself. Holds the declarative spec, wires topology, instantiates the world. Has god-view. Split internally into <strong>definition</strong> (the YAML spec) and <strong>runtime</strong> (what executes it).</p>
+        </div>
+      </div>
+      <div class="stack-arrow">↓</div>
+      <div class="layer layer-l1b">
+        <div class="layer-label l1b-label">L1·Org</div>
+        <div class="layer-content">
+          <h4>Organisation</h4>
+          <p>Admitted to the world by the World Registry. Owns resources — domains, address allocations, services — within L2. Sits between platform and in-world: governed by L1 authority, inhabits L2 space. Want full isolation between two orgs? Give each its own world.</p>
+        </div>
+      </div>
+      <div class="stack-arrow">↓</div>
+      <div class="layer layer-l2">
+        <div class="layer-label l2-label">L2</div>
+        <div class="layer-content">
+          <h4>In-World</h4>
+          <p>The inhabited internet. Users, mail servers, web services, DNS zones, TLS certificates. Nothing here knows it's enclosed — from inside, the root DNS <em>is</em> the root. Data/control/management planes recur here.</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:40px;">
+      <h3 style="font-size:15px;font-weight:600;margin-bottom:8px;">Four cross-cutting concerns</h3>
+      <p style="color:var(--text-2);font-size:13px;margin-bottom:20px;">Not levels or planes — properties and vantages that cut across the whole stack.</p>
+      <div class="crosscut">
+        <div class="crosscut-card">
+          <h4><span class="dot" style="background:var(--blue)"></span>Operator vantage</h4>
+          <p>The human moves between levels — god-view at L1, org admin at L2 management plane, end user at L2 data plane. A projection, not a fixed layer.</p>
+        </div>
+        <div class="crosscut-card">
+          <h4><span class="dot" style="background:var(--green)"></span>Gateway portal</h4>
+          <p>The single boundary object that straddles L0 and L2. Where the world touches reality, or where two worlds touch each other. Special because it's a boundary, not a service.</p>
+        </div>
+        <div class="crosscut-card">
+          <h4><span class="dot" style="background:var(--purple)"></span>Dual identity roots</h4>
+          <p>Two separate trust anchors that must never share a root. L1 identity: who may operate NetEngines. L2 identity: who holds a mailbox, owns a domain, is a user inside the world.</p>
+        </div>
+        <div class="crosscut-card">
+          <h4><span class="dot" style="background:var(--yellow)"></span>State lifecycle</h4>
+          <p>Ephemeral or persistent. The primary control surface — drives volume strategy, PKI posture, and HA topology. Same spec, same runtime, one sharp threshold to cross deliberately.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- BOOTSTRAP -->
+<section id="bootstrap">
+  <div class="wrap">
+    <div class="section-label">Bootstrap</div>
+    <h2 class="section-title">Nine phases, topologically sorted</h2>
+    <p class="section-desc">The world bootstraps in dependency order. Each phase has a healthcheck. Failure is loud and immediate — no silent degradation.</p>
+
+    <div class="phases">
+      <div class="phase">
+        <div class="phase-num active">0</div>
+        <div class="phase-body">
+          <h4>Substrate</h4>
+          <p>NTP sync, Docker bridge networks (L0 facts), gateway stub. Exists before naming or PKI. Everything else depends on this.</p>
+          <div class="phase-tags"><span class="phase-tag">NTP</span><span class="phase-tag">Bridge networks</span><span class="phase-tag">Gateway stub</span></div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-num active">1</div>
+        <div class="phase-body">
+          <h4>DNS Root</h4>
+          <p>Authoritative root nameserver on a hardcoded IP — the one circularity break. Everything else resolves from here.</p>
+          <div class="phase-tags"><span class="phase-tag">CoreDNS</span><span class="phase-tag">Root zone</span><span class="phase-tag">Hardcoded IP</span></div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-num active">2</div>
+        <div class="phase-body">
+          <h4>DNS Hierarchy</h4>
+          <p>TLD servers come online. Root delegates to them. The naming stack is fully functional.</p>
+          <div class="phase-tags"><span class="phase-tag">TLD servers</span><span class="phase-tag">Delegation chain</span><span class="phase-tag">.internal / .localnet</span></div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-num active">3</div>
+        <div class="phase-body">
+          <h4>PKI + ACME</h4>
+          <p>Root CA generates key material. step-ca starts on hardcoded IP, issues itself a cert to break the bootstrap. Downstream services can now get TLS via ACME.</p>
+          <div class="phase-tags"><span class="phase-tag">step-ca</span><span class="phase-tag">ACME</span><span class="phase-tag">Root CA</span><span class="phase-tag">Self-issuance</span></div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-num">4</div>
+        <div class="phase-body">
+          <h4>Platform Identity</h4>
+          <p>L1 OIDC — who may operate NetEngines. Separate trust root from in-world identity. Admin user seeded.</p>
+          <div class="phase-tags"><span class="phase-tag">Keycloak</span><span class="phase-tag">Platform realm</span><span class="phase-tag">Operator OIDC</span></div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-num">5</div>
+        <div class="phase-body">
+          <h4>World Registry + Domain Registry</h4>
+          <p>World Registry: who may exist in this world — orgs admitted, capabilities granted, AND profiles assigned. Domain Registry: who owns what resources — TLD delegations, address space allocations, WHOIS.</p>
+          <div class="phase-tags"><span class="phase-tag">World Registry</span><span class="phase-tag">Domain Registry</span><span class="phase-tag">WHOIS</span><span class="phase-tag">Address allocation</span></div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-num">6</div>
+        <div class="phase-body">
+          <h4>In-World Identity</h4>
+          <p>L2 OIDC — inhabitants, users, orgs. Realms seeded from World Registry org list. Separate trust root from platform identity.</p>
+          <div class="phase-tags"><span class="phase-tag">Keycloak</span><span class="phase-tag">In-world realm</span><span class="phase-tag">Org users</span></div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-num">7</div>
+        <div class="phase-body">
+          <h4>ANDs — Administrative Network Domains</h4>
+          <p>Each org provisioned with a network profile. Addresses consumed from Domain Registry allocation — not self-declared. Firewall policy, NAT, DHCP applied per profile.</p>
+          <div class="phase-tags"><span class="phase-tag">AND profiles</span><span class="phase-tag">Address allocation</span><span class="phase-tag">NAT / firewall</span><span class="phase-tag">DHCP</span></div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-num">8</div>
+        <div class="phase-body">
+          <h4>Services</h4>
+          <p>World services (mail backbone, object storage) provisioned for all inhabitants. Org apps deployed per-org inside their AND on demand.</p>
+          <div class="phase-tags"><span class="phase-tag">Postfix</span><span class="phase-tag">DKIM/SPF/DMARC</span><span class="phase-tag">MinIO</span><span class="phase-tag">Org app catalog</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TWO REGISTRIES -->
+<section id="registry">
+  <div class="wrap">
+    <div class="section-label">Registries</div>
+    <h2 class="section-title">Two registries, two different questions</h2>
+    <p class="section-desc">These are not the same object. Collapsing them produces a god-object with mixed failure modes and mixed governance semantics.</p>
+
+    <div class="reg-grid">
+      <div class="reg-card world">
+        <div class="reg-level">L1-adjacent · World Registry</div>
+        <h3>Who may exist in this world?</h3>
+        <div style="margin-top:14px;">
+          <div class="reg-item">Organisations and their capability grants</div>
+          <div class="reg-item">AND profile assignment per org</div>
+          <div class="reg-item">World operators and their roles</div>
+          <div class="reg-item">WHOIS (governance view)</div>
+        </div>
+        <div class="callout" style="margin-top:16px;padding:12px 14px;">
+          <p style="font-size:12px;">Deleting a World Registry entry removes an <strong>entire organisation</strong>. This is a governance operation.</p>
+        </div>
+      </div>
+      <div class="reg-card domain">
+        <div class="reg-level">L2 · Domain Registry</div>
+        <h3>Who owns what resources?</h3>
+        <div style="margin-top:14px;">
+          <div class="reg-item">TLD delegations and governance</div>
+          <div class="reg-item">Address space — allocated to AND pools</div>
+          <div class="reg-item">Domain name registrations</div>
+          <div class="reg-item">Reverse DNS zones</div>
+        </div>
+        <div class="callout" style="margin-top:16px;padding:12px 14px;">
+          <p style="font-size:12px;">Deleting a Domain Registry entry removes a <strong>name or address block</strong>. This is a resource operation.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout-blue" style="margin-top:20px;">
+      <p><strong>Address allocation model:</strong> The Domain Registry allocates address blocks. ANDs consume what they've been assigned — they do not declare their own addresses. The same way a real ISP receives allocation from ARIN/RIPE rather than inventing its own.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ANDs -->
+<section id="ands">
+  <div class="wrap">
+    <div class="section-label">Network Model</div>
+    <h2 class="section-title">Administrative Network Domains</h2>
+    <p class="section-desc">Not ISPs. Not VLANs. An AND is an ownership and policy boundary. Each org is assigned a connectivity profile that determines how they experience the network. Addresses come from the Domain Registry.</p>
+
+    <div class="profiles">
+      <div class="profile-card">
+        <div class="icon">🏠</div>
+        <h4>Residential</h4>
+        <ul>
+          <li>Dynamic IP / DHCP</li>
+          <li>NAT enabled</li>
+          <li>Inbound blocked</li>
+          <li>CGNAT experience</li>
+          <li>No reverse DNS</li>
+        </ul>
+      </div>
+      <div class="profile-card">
+        <div class="icon">🏢</div>
+        <h4>Business</h4>
+        <ul>
+          <li>Static allocation</li>
+          <li>NAT optional</li>
+          <li>Inbound allowed</li>
+          <li>Reverse DNS</li>
+          <li>DHCP available</li>
+        </ul>
+      </div>
+      <div class="profile-card">
+        <div class="icon">🖥️</div>
+        <h4>Datacenter</h4>
+        <ul>
+          <li>Public subnet</li>
+          <li>No NAT</li>
+          <li>Full routing</li>
+          <li>Reverse DNS</li>
+          <li>BGP optional†</li>
+        </ul>
+      </div>
+      <div class="profile-card">
+        <div class="icon">🔒</div>
+        <h4>Air-gapped</h4>
+        <ul>
+          <li>No gateway</li>
+          <li>Isolated segment</li>
+          <li>Internal only</li>
+          <li>No inbound/outbound</li>
+          <li>Cyber range use</li>
+        </ul>
+      </div>
+    </div>
+    <p style="font-size:11px;color:var(--text-3);margin-top:10px;">† BGP fabric is future scope — an optional module, not core.</p>
+
+    <div style="margin-top:28px;">
+      <pre><span class="comment"># Profile-driven — not hardcoded tiers. Address comes from domain_registry, not declared here.</span>
+<span class="key">ands</span>:
+  <span class="key">instances</span>:
+    - <span class="key">name</span>: <span class="str">acme-corp-net</span>
+      <span class="key">org</span>: <span class="str">acme-corp</span>
+      <span class="key">profile</span>: <span class="str">business</span>
+      <span class="key">dns_suffix</span>: <span class="str">acme.internal</span>
+
+    - <span class="key">name</span>: <span class="str">bob-home-net</span>
+      <span class="key">org</span>: <span class="str">bob-home</span>
+      <span class="key">profile</span>: <span class="str">residential</span>
+      <span class="key">dns_suffix</span>: <span class="str">bob-home.localnet</span></pre>
+    </div>
+  </div>
+</section>
+
+<!-- SERVICES -->
+<section id="services">
+  <div class="wrap">
+    <div class="section-label">Services</div>
+    <h2 class="section-title">World services vs org apps</h2>
+    <p class="section-desc">Not the same thing. World services are infrastructure — part of what makes a world a world. Org apps are things organisations deploy inside their own AND.</p>
+
+    <div class="service-split">
+      <div class="service-col world-col">
+        <div class="service-col-label">World Services</div>
+        <h3>Infrastructure for all inhabitants</h3>
+        <p style="font-size:13px;color:var(--text-2);margin-bottom:16px;">Provisioned at Phase 8 as part of bootstrap. The world provides these; orgs consume them.</p>
+        <div class="service-item"><span class="service-item-icon">📬</span>Mail backbone — Postfix, DKIM/SPF/DMARC, world-level SMTP</div>
+        <div class="service-item"><span class="service-item-icon">🗄️</span>Object storage — MinIO S3-compatible, platform + org buckets</div>
+      </div>
+      <div class="service-col org-col">
+        <div class="service-col-label">Org Apps</div>
+        <h3>Deployed by orgs inside their AND</h3>
+        <p style="font-size:13px;color:var(--text-2);margin-bottom:16px;">Deployed on demand. Runtime provisions container, registers DNS, issues ACME cert, wires OIDC.</p>
+        <div class="service-item"><span class="service-item-icon">🐙</span>Gitea — self-hosted git</div>
+        <div class="service-item"><span class="service-item-icon">☁️</span>Nextcloud — file sync</div>
+        <div class="service-item"><span class="service-item-icon">📝</span>WordPress — web publishing</div>
+        <div class="service-item"><span class="service-item-icon">✉️</span>Mailpit — dev mail sink (ephemeral only)</div>
+      </div>
+    </div>
+
+    <div class="callout" style="margin-top:24px;">
+      <p><strong>The line:</strong> if the world wouldn't function as a world without it, it's a world service. If an org deploys it to serve their own inhabitants, it's an org app. Mail infrastructure is the clearest example — the world provides SMTP for everyone; an org can additionally run their own MX inside their AND.</p>
+    </div>
+  </div>
+</section>
+
+<!-- GATEWAY -->
+<section id="gateway">
+  <div class="wrap">
+    <div class="section-label">Gateway Portal</div>
+    <h2 class="section-title">The boundary object</h2>
+    <p class="section-desc">Not a service — a role played by the gateway. The single object that straddles L0 and L2. Two separate concerns: how the world relates to the real internet, and how it relates to other worlds.</p>
+
+    <h3 style="font-size:14px;font-weight:600;margin-bottom:4px;">Real internet posture</h3>
+    <p style="font-size:13px;color:var(--text-2);margin-bottom:0;">How in-world traffic and naming relates to the actual internet outside.</p>
+
+    <table class="mode-table">
+      <thead>
+        <tr>
+          <th>Mode</th>
+          <th>What it means</th>
+          <th>When to use</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="mode-badge mode-isolated">isolated</span></td>
+          <td>No real internet. Only in-world names resolve. Fully self-contained.</td>
+          <td>Default. Security labs, pure dev environments, demos.</td>
+        </tr>
+        <tr>
+          <td><span class="mode-badge mode-shadowed">shadowed</span></td>
+          <td>Real internet reachable, but in-world names take priority over real ones.</td>
+          <td>Dev environments that occasionally need real internet access.</td>
+        </tr>
+        <tr>
+          <td><span class="mode-badge mode-mirrored">mirrored</span></td>
+          <td>Real hostnames (github.com, s3.amazonaws.com) resolve to in-world services. App thinks it's talking to the real internet.</td>
+          <td>Integration testing without real external dependencies.</td>
+        </tr>
+        <tr>
+          <td><span class="mode-badge mode-exposed">exposed</span></td>
+          <td>In-world services published outward via gateway NAT. The world accepts real inbound traffic.</td>
+          <td>Long-lived testbeds, shared infrastructure accessible from outside.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 style="font-size:14px;font-weight:600;margin-top:32px;margin-bottom:4px;">Cross-world connectivity</h3>
+    <p style="font-size:13px;color:var(--text-2);margin-bottom:0;">How this world relates to other NetEngines worlds.</p>
+
+    <table class="mode-table">
+      <thead>
+        <tr>
+          <th>Mode</th>
+          <th>What it means</th>
+          <th>What's shared</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="mode-badge mode-isolated">none</span></td>
+          <td>Fully isolated. No cross-world connectivity.</td>
+          <td>Nothing</td>
+        </tr>
+        <tr>
+          <td><span class="mode-badge mode-peered">peered</span></td>
+          <td>Routing between worlds. DNS resolution across boundaries. No shared trust.</td>
+          <td>Routes + DNS</td>
+        </tr>
+        <tr>
+          <td><span class="mode-badge mode-federated">federated</span></td>
+          <td>Active trust establishment — OIDC federation, PKI cross-signing, cross-domain mail with full SPF/DKIM/DMARC between world CAs.</td>
+          <td>Routes + DNS + Identity + PKI</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout-blue" style="margin-top:20px;">
+      <p><strong>Isolation escape hatch:</strong> if two organisations need complete isolation — separate roots of trust, no shared infrastructure, no lateral movement risk — give each its own world and set cross_world: none. That's a cleaner answer than trying to enforce hard walls between orgs inside a shared world.</p>
+    </div>
+  </div>
+</section>
+
+<!-- LIFECYCLE -->
+<section id="lifecycle">
+  <div class="wrap">
+    <div class="section-label">Lifecycle</div>
+    <h2 class="section-title">One dial, one sharp threshold</h2>
+    <p class="section-desc">Same spec, same runtime. <code style="background:var(--surface);padding:2px 6px;border-radius:4px;font-size:13px;">lifecycle: ephemeral | persistent</code> drives volume strategy, PKI posture, and HA topology. Build against ephemeral first. Cross the threshold deliberately.</p>
+
+    <div class="lifecycle">
+      <div class="lifecycle-card ephemeral">
+        <h3>⚡ Ephemeral</h3>
+        <p style="font-size:13px;color:var(--text-2);margin-top:6px;">Per-branch, per-CI-run, per-dev. Fast spinup, full teardown.</p>
+        <ul>
+          <li>CA keys generated at spinup, discarded on teardown</li>
+          <li>No volume durability required</li>
+          <li>Single instance — no HA needed</li>
+          <li>Reload API applies diffs immediately, no safety guards</li>
+          <li>State loss is expected and fine</li>
+          <li>Mailpit as mail sink — no real SMTP delivery</li>
+        </ul>
+      </div>
+      <div class="lifecycle-card persistent">
+        <h3>🔐 Persistent</h3>
+        <p style="font-size:13px;color:var(--text-2);margin-top:6px;">Long-lived shared testbed. Multi-org. Production-grade posture.</p>
+        <ul>
+          <li>PKI key ceremony — durable root CA, rotation calendar</li>
+          <li>Durable volumes with backup strategy</li>
+          <li>HA topology for critical services</li>
+          <li>Reload API refuses dangerous changes</li>
+          <li>Reset requires explicit confirmation</li>
+          <li>Real Postfix SMTP — actual mail delivery mechanics</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TOOLING -->
+<section>
+  <div class="wrap">
+    <div class="section-label">Implementation</div>
+    <h2 class="section-title">Key components</h2>
+    <p class="section-desc">Every piece is open-source and already exists. The value is the assembly, the declarative surface, and the bootstrap sequencing on top.</p>
+    <div class="cards cards-3">
+      <div class="card"><div class="card-icon">📡</div><h3>DNS</h3><p>CoreDNS as root and TLD nameservers. Three-tier hierarchy: root → TLD → authoritative. DNSSEC for in-world zones.</p></div>
+      <div class="card"><div class="card-icon">🔐</div><h3>PKI</h3><p>step-ca with ACME provisioner. Issues certs to itself first to break bootstrap circularity. All services get real TLS.</p></div>
+      <div class="card"><div class="card-icon">🪪</div><h3>Identity</h3><p>Keycloak with two separate realms — platform (L1) and in-world (L2). Different trust roots, different issuers, never shared.</p></div>
+      <div class="card"><div class="card-icon">📬</div><h3>Mail</h3><p>Postfix + OpenDKIM. DKIM keys published to DNS at Phase 8. SPF and DMARC per domain. Real SMTP deliverability mechanics.</p></div>
+      <div class="card"><div class="card-icon">🗄️</div><h3>Storage</h3><p>MinIO for S3-compatible object storage. Platform-level bucket for NetEngines itself; orgs allocated buckets on demand.</p></div>
+      <div class="card"><div class="card-icon">🐍</div><h3>Runtime</h3><p>Python + FastAPI operator API. Pydantic spec models. Async phase handlers. DAG walk, topological sort, diff-and-reload.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>NetEngines · Project Briefing v1 · Conceptual architecture &amp; early prototyping phase</p>
+  </div>
+</footer>
+
+</body>
+</html>

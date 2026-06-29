@@ -20,7 +20,7 @@ import tempfile
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Any, Callable, Iterable
 from urllib.parse import urlparse
 
 import click
@@ -72,7 +72,7 @@ def _run(command: list[str], *, timeout: float = 8.0) -> subprocess.CompletedPro
     return subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
 
 
-def _compose_config(project_root: Path | None = None) -> dict:
+def _compose_config(project_root: Path | None = None) -> dict[str, Any]:
     compose_file = (project_root or _repo_root()) / "docker-compose.yml"
     try:
         return yaml.safe_load(compose_file.read_text()) or {}
@@ -107,7 +107,8 @@ def _check_python() -> DoctorCheckResult:
     return DoctorCheckResult(
         "Python runtime",
         DoctorStatus.OK if ok else DoctorStatus.FAIL,
-        f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}; pyproject requires ^3.13",
+        f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro};"
+        " pyproject requires ^3.13",
         None if ok else "Install Python 3.13 or newer and recreate the virtualenv.",
         "host",
     )
@@ -316,6 +317,94 @@ def _docker_names(kind: str) -> set[str]:
     )
 
 
+def _check_docker_subnet_conflicts(ctx: DoctorContext) -> DoctorCheckResult:
+    """Warn if any existing Docker network subnets overlap with NetEngine's configured subnets."""
+    compose_config = _compose_config(ctx.project_root)
+    ne_subnets: list[str] = []
+    for network_cfg in (compose_config.get("networks") or {}).values():
+        if isinstance(network_cfg, dict):
+            for ipam_config in (network_cfg.get("ipam") or {}).get("config") or []:
+                if isinstance(ipam_config, dict) and "subnet" in ipam_config:
+                    ne_subnets.append(ipam_config["subnet"])
+
+    if not ne_subnets:
+        return DoctorCheckResult(
+            "Docker subnet conflicts",
+            DoctorStatus.SKIP,
+            "no subnets defined in compose config",
+            group="docker",
+            required=False,
+        )
+
+    try:
+        import ipaddress
+
+        result = _run(["docker", "network", "ls", "-q"])
+        if result.returncode != 0 or not result.stdout.strip():
+            return DoctorCheckResult(
+                "Docker subnet conflicts",
+                DoctorStatus.OK,
+                "no existing Docker networks to check",
+                group="docker",
+            )
+        network_ids = result.stdout.split()
+        inspect_result = _run(["docker", "network", "inspect"] + network_ids)
+        if inspect_result.returncode != 0:
+            return DoctorCheckResult(
+                "Docker subnet conflicts",
+                DoctorStatus.WARN,
+                "could not inspect Docker networks",
+                "Run `docker network ls` manually to check for subnet conflicts.",
+                "docker",
+                required=False,
+            )
+
+        import json as _json
+
+        networks = _json.loads(inspect_result.stdout)
+        ne_networks = [ipaddress.ip_network(s, strict=False) for s in ne_subnets]
+        conflicts: list[str] = []
+        for network in networks:
+            name = network.get("Name", "unknown")
+            for ipam_config in (network.get("IPAM") or {}).get("Config") or []:
+                subnet_str = ipam_config.get("Subnet")
+                if not subnet_str:
+                    continue
+                try:
+                    existing = ipaddress.ip_network(subnet_str, strict=False)
+                except ValueError:
+                    continue
+                for ne_net in ne_networks:
+                    if existing.overlaps(ne_net):
+                        conflicts.append(f"{name} ({subnet_str}) overlaps {ne_net}")
+
+        if conflicts:
+            return DoctorCheckResult(
+                "Docker subnet conflicts",
+                DoctorStatus.WARN,
+                "; ".join(conflicts),
+                "Remove conflicting networks with"
+                " `docker network rm <name>` or `docker network prune`.",
+                "docker",
+                required=False,
+            )
+        return DoctorCheckResult(
+            "Docker subnet conflicts",
+            DoctorStatus.OK,
+            f"no conflicts with {', '.join(ne_subnets)}",
+            group="docker",
+        )
+    except Exception as exc:
+        return DoctorCheckResult(
+            "Docker subnet conflicts",
+            DoctorStatus.WARN,
+            f"subnet conflict check failed: {exc}",
+            "Run `docker network ls` manually to check for subnet conflicts.",
+            "docker",
+            required=False,
+        )
+
+
 def _check_docker_conflicts(ctx: DoctorContext) -> list[DoctorCheckResult]:
     _, containers, volumes, networks = _compose_ports_and_resources(ctx.project_root)
     checks = []
@@ -327,7 +416,8 @@ def _check_docker_conflicts(ctx: DoctorContext) -> list[DoctorCheckResult]:
                 DoctorStatus.WARN if conflicts else DoctorStatus.OK,
                 ", ".join(conflicts) if conflicts else "no known name conflicts",
                 (
-                    "Run `netengine down` or remove stale Docker resources if these belong to an old run."
+                    "Run `netengine down` or remove stale Docker resources"
+                    " if these belong to an old run."
                     if conflicts
                     else None
                 ),
@@ -363,6 +453,53 @@ def _check_required_commands(ctx: DoctorContext) -> list[DoctorCheckResult]:
 
 def _check_optional_commands(ctx: DoctorContext) -> list[DoctorCheckResult]:
     return [_check_command(name, required=False) for name in ctx.optional_commands]
+
+
+def _check_step_version() -> DoctorCheckResult:
+    """Check step CLI version for PKI compatibility."""
+    import shutil
+
+    step_path = shutil.which("step")
+    if not step_path:
+        return DoctorCheckResult(
+            "step version",
+            DoctorStatus.SKIP,
+            "step CLI not found; PKI features will be unavailable",
+            None,
+            "host",
+            required=False,
+        )
+
+    try:
+        result = _run(["step", "version"])
+        if result.returncode == 0:
+            version_output = result.stdout.strip()
+            return DoctorCheckResult(
+                "step version",
+                DoctorStatus.OK,
+                f"step CLI available: {version_output.split()[0] if version_output else 'unknown'}",
+                None,
+                "host",
+                required=False,
+            )
+    except Exception as exc:
+        return DoctorCheckResult(
+            "step version",
+            DoctorStatus.WARN,
+            f"Could not determine step version: {exc}",
+            "Ensure step CLI is installed and working correctly.",
+            "host",
+            required=False,
+        )
+
+    return DoctorCheckResult(
+        "step version",
+        DoctorStatus.WARN,
+        "step version check failed",
+        "Ensure step CLI is properly installed.",
+        "host",
+        required=False,
+    )
 
 
 def _check_database(ctx: DoctorContext) -> list[DoctorCheckResult]:
@@ -415,12 +552,14 @@ def standard_probes() -> tuple[DoctorProbe, ...]:
         lambda ctx: _check_python(),
         _check_required_commands,
         _check_optional_commands,
+        lambda ctx: _check_step_version(),
         lambda ctx: _check_docker_daemon(),
         lambda ctx: _check_compose(),
         _check_database,
         _check_ports,
         _check_filesystem,
         _check_docker_conflicts,
+        lambda ctx: _check_docker_subnet_conflicts(ctx),
     )
 
 

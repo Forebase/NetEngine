@@ -11,9 +11,9 @@ Responsibilities:
 from datetime import UTC, datetime
 from typing import Any, cast
 
+from netengine.core.state import SubstrateOutput
 from netengine.errors import SubstrateError
 from netengine.events.emitter import emit_event
-from netengine.core.state import SubstrateOutput
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 
