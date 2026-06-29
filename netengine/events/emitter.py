@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from netengine.core.state import EventSendFailure
-
 from netengine.events import factory as event_factory
 from netengine.events.queues import Queue, queue_for_event_type
 from netengine.events.schema import EventEnvelope

@@ -15,12 +15,12 @@ from datetime import datetime
 from typing import Any
 
 from netengine.errors import GatewayError, PKIError
-from netengine.events.queues import Queue
 from netengine.events.emitter import emit_event
+from netengine.events.queues import Queue
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
-from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.handlers.gateway_handler import GatewayHandler
+from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.logging import get_logger
 from netengine.spec.models import CrossWorldPeer, GatewayPortal
 from netengine.spec.types import GatewayCrossWorldMode, GatewayRealInternetMode

@@ -3,7 +3,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional, cast
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.core.state import RuntimeState
@@ -181,7 +181,7 @@ class PKICertRotationWorker:
                 try:
                     # Call rotation callback if present (for graceful transition prep)
                     if config.rotation_callback:
-                        await config.rotation_callback(cn, cert_metadata)
+                        await config.rotation_callback(cn, cast(Dict[str, Any], cert_metadata))
 
                     # Re-issue certificate with incremented version
                     sans = cert_metadata.get("sans", [])

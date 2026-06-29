@@ -131,7 +131,7 @@ async def run_migrations(
     migrations_dir: Path | str = MIGRATIONS_DIR,
 ) -> MigrationRunResult:
     """Apply all pending SQL migrations and return structured outcomes."""
-    import asyncpg  # type: ignore[import]
+    import asyncpg  # type: ignore[import-untyped]
 
     resolved_dir = Path(migrations_dir)
     migration_files = discover_migrations(resolved_dir)
@@ -233,7 +233,7 @@ async def migration_status(
     migrations_dir: Path | str = MIGRATIONS_DIR,
 ) -> MigrationStatusReport:
     """Inspect migration state without applying pending migration files."""
-    import asyncpg  # type: ignore[import]
+    import asyncpg
 
     resolved_dir = Path(migrations_dir)
     migration_files = discover_migrations(resolved_dir)
@@ -251,7 +251,8 @@ async def migration_status(
             checksum = migration_checksum(sql)
             filename = migration_path.name
             existing = await conn.fetchrow(
-                "SELECT checksum, success, applied_at, error FROM schema_migrations WHERE filename = $1",
+                "SELECT checksum, success, applied_at, error"
+                " FROM schema_migrations WHERE filename = $1",
                 filename,
             )
             if not existing:

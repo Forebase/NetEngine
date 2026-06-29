@@ -150,6 +150,7 @@ class TestAPIHealthAfterBootstrap:
             substrate_output={"healthy": True},
             dns_output={"healthy": True},
             pki_bootstrapped=True,
+            pki_output={"bootstrapped": True},
             identity_platform_output={"healthy": True},
             world_registry_output={"healthy": True},
             domain_registry_output={"healthy": True},

@@ -109,8 +109,8 @@ async def require_auth(
             with _keycloak_ssl_context(state) as ssl_context:
                 async with session.post(
                     f"{KEYCLOAK_ISSUER}/protocol/openid-connect/token/introspect",
-                    data={"token": token},
-                    auth=aiohttp.BasicAuth("admin-cli", admin_password),
+                    data={"token": token, "client_id": client_id},
+                    auth=aiohttp.BasicAuth(client_id, client_secret),
                     ssl=ssl_context,
                 ) as resp:
                     if resp.status != 200:

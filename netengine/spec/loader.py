@@ -10,7 +10,7 @@ import yaml
 from pydantic import ValidationError
 
 from netengine.config.loader import ConfigLoader
-from netengine.spec.models import NetEngineSpec, SUPPORTED_SPEC_SCHEMA_VERSIONS
+from netengine.spec.models import SUPPORTED_SPEC_SCHEMA_VERSIONS, NetEngineSpec
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ def _resolve_feature_state_paths(spec: NetEngineSpec) -> Iterator[tuple[Any, str
     """Yield feature-state entries with concrete paths, values, and defaults."""
     from collections.abc import Mapping
 
-    from pydantic.fields import PydanticUndefined
+    from pydantic.fields import PydanticUndefined  # type: ignore[attr-defined]
 
     from netengine.spec.feature_state import FEATURE_STATE_REGISTRY
 
@@ -87,7 +87,7 @@ def _is_active_feature_value(value: Any, default_value: Any) -> bool:
         return comparable_value is True and comparable_value != comparable_default
     if comparable_value in (None, "", [], {}, (), set()):
         return False
-    return comparable_value != comparable_default
+    return bool(comparable_value != comparable_default)
 
 
 def _validate_feature_states(spec: NetEngineSpec) -> None:

@@ -518,9 +518,7 @@ class TestExportImportRoutes:
         assert resp.status_code == 422
         assert "Unknown phase ID" in resp.json()["detail"]
 
-    def test_import_rejects_phase_completion_without_required_output(
-        self, tmp_path, monkeypatch
-    ):
+    def test_import_rejects_phase_completion_without_required_output(self, tmp_path, monkeypatch):
         client = _make_client(monkeypatch, tmp_path)
 
         state = RuntimeState()
@@ -563,6 +561,7 @@ class TestExportImportRoutes:
         )
         assert resp.status_code == 422
         assert "Impossible phase combination" in resp.json()["detail"]
+
     def test_export_sanitizes_secret_phase_output(self, tmp_path, monkeypatch):
         monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "test-secret")

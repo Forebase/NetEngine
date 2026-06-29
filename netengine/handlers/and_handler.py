@@ -7,9 +7,9 @@ from netengine.errors import ServicesError
 from netengine.events.schema import EventEnvelope
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
-from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.handlers.domain_registry_handler import DomainRegistryHandler
 from netengine.handlers.gateway_handler import GatewayHandler
+from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.logging import get_logger
 
 

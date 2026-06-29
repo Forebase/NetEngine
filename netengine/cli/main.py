@@ -879,7 +879,7 @@ def import_support_bundle(bundle_file: str) -> None:
 
     from netengine.api.routes import SUPPORTED_IMPORT_SCHEMA_VERSIONS, _validate_import_phase_state
     from netengine.core.state import RuntimeState
-    from netengine.spec.models import NetEngineSpec, SUPPORTED_SPEC_SCHEMA_VERSIONS
+    from netengine.spec.models import SUPPORTED_SPEC_SCHEMA_VERSIONS, NetEngineSpec
 
     body = _json.loads(Path(bundle_file).read_text())
     if body.get("schema_version") not in SUPPORTED_IMPORT_SCHEMA_VERSIONS:
