@@ -165,7 +165,7 @@ class TestFeatureStateValidation:
         return spec_file
 
     def test_experimental_pki_field_logs_warning_not_error(self, tmp_path, caplog) -> None:
-        import logs
+        import netengine.logs as logs
 
         # DNSSEC/CRL/OCSP were promoted from unsupported to experimental once the
         # CoreDNS online-signing + step-ca config paths were wired (WS-A). They
@@ -181,7 +181,7 @@ class TestFeatureStateValidation:
         )
 
     def test_experimental_gateway_mode_logs_warning_not_raises(self, tmp_path, caplog) -> None:
-        import logs
+        import netengine.logs as logs
 
         spec_file = self._write_spec(
             tmp_path,
@@ -255,7 +255,7 @@ class TestFeatureStateValidation:
 
 
     def test_experimental_profile_field_logs_warning_not_raises(self, tmp_path, caplog) -> None:
-        import logs
+        import netengine.logs as logs
 
         spec_file = self._write_spec(
             tmp_path,
@@ -284,7 +284,7 @@ class TestFeatureStateValidation:
         )
 
     def test_experimental_enabled_field_logs_warning(self, tmp_path, caplog) -> None:
-        import logs
+        import netengine.logs as logs
 
         spec_file = self._write_spec(tmp_path, {"pki": {"intermediate_ca_enabled": True}})
 
@@ -298,7 +298,7 @@ class TestFeatureStateValidation:
         )
 
     def test_no_warnings_for_default_spec(self, caplog, minimal_spec) -> None:
-        import logs
+        import netengine.logs as logs
 
         with caplog.at_level(logs.WARNING, logger="netengine.spec.loader"):
             from netengine.spec.loader import _validate_feature_states

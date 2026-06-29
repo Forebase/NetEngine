@@ -16,7 +16,7 @@ import pytest
 from netengine.core.state import RuntimeState
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
-from logs import get_logger
+from netengine.logs import get_logger
 from netengine.phases.phase_inworld_identity import InWorldIdentityPhaseHandler
 from netengine.spec.models import IdentityInWorldPhase, InWorldUser, OrgUsers
 

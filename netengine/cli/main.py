@@ -28,7 +28,7 @@ from netengine.db.migrations import (
     run_migrations,
 )
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
-from logs import get_logger
+from netengine.logs import get_logger
 from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import (
     SpecLoadError,

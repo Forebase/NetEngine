@@ -1,7 +1,7 @@
 """YAML spec loading and validation with OmegaConf composition support."""
 
 import ipaddress
-import logs
+import netengine.logs as logs
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Optional

@@ -1,7 +1,7 @@
 """Monitoring service — runs all probes on schedule and publishes world_health events to pgmq."""
 
 import asyncio
-import logs
+import netengine.logs as logs
 from typing import Any
 
 from netengine.core.pgmq_client import PGMQClient

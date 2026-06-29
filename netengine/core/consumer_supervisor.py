@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any, Callable, Coroutine, Dict
 
-from logs import get_logger
+from netengine.logs import get_logger
 
 logger = get_logger(__name__)
 

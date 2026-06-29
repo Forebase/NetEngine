@@ -8,7 +8,7 @@ from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.phase_pki import PKIPhaseHandler
 from netengine.handlers.substrate import SubstrateHandler
-from logs import get_logger
+from netengine.logs import get_logger
 from netengine.phases.phase_inworld_identity import InWorldIdentityPhaseHandler
 
 

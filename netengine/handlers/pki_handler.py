@@ -12,7 +12,7 @@ import aiohttp
 from netengine.core.state import RuntimeState
 from netengine.errors import PKIError
 from netengine.handlers.protocols import DockerAdapterProtocol
-from logs import get_logger
+from netengine.logs import get_logger
 
 logger = get_logger(__name__)
 

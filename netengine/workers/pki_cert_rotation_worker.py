@@ -1,6 +1,6 @@
 # netengine/workers/pki_cert_rotation_worker.py
 import asyncio
-import logs
+import netengine.logs as logs
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, List, Optional, cast

@@ -3,7 +3,7 @@
 Implements the logic for re-applying drifted phases and their dependencies.
 """
 
-import logs
+import netengine.logs as logs
 from dataclasses import dataclass
 from typing import Optional
 
