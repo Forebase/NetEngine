@@ -469,6 +469,7 @@ class TestFullMVPLifecycle:
     async def test_full_mvp_lifecycle(self, tmp_path, monkeypatch):
         monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
         monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "mvp-secret")
+        monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET_AFTER_PHASE4", "true")
 
         spec = load_spec(EXAMPLES_DIR / "minimal.yaml")
 

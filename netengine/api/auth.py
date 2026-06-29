@@ -29,6 +29,7 @@ KEYCLOAK_ISSUER = os.environ.get(
 INSECURE_TLS_ENV = "NETENGINE_INSECURE_TLS"
 CA_BUNDLE_ENV = "NETENGINE_CA_BUNDLE"
 ADMIN_ROLES = {"admin", "netengine-admin", "operator-admin"}
+POST_PHASE4_BOOTSTRAP_ENV = "NETENGINES_BOOTSTRAP_SECRET_AFTER_PHASE4"
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -90,20 +91,28 @@ async def require_auth(
     state = RuntimeState.load()
     phase4_done = state.phase_completed.get("4", False)
 
-    # Accept the bootstrap secret as a local break-glass admin credential when it
-    # is explicitly configured. This keeps local lifecycle automation usable even
-    # after Phase 4 records OIDC bootstrap completion.
     secret = request.headers.get("X-Bootstrap-Secret", "")
-    if bootstrap_secret and secret == bootstrap_secret:
-        return {"sub": "bootstrap", "roles": ["admin"]}
-
     if not phase4_done:
+        # Bootstrap phase: accept secret in X-Bootstrap-Secret header.
+        if bootstrap_secret and secret == bootstrap_secret:
+            return {"sub": "bootstrap", "roles": ["admin"]}
         # Also allow an unauthenticated health check
         if request.url.path.endswith("/health"):
             return {"sub": "anon"}
         raise HTTPException(
             status_code=401, detail="Bootstrap secret required (Phase 4 not yet complete)"
         )
+
+    # Post-Phase 4, OIDC is the default authority. The bootstrap secret can still
+    # be enabled as an explicit local break-glass credential for automation, but
+    # it must be separately opted in so deployments do not accidentally retain a
+    # static admin credential after identity bootstrap.
+    if (
+        _is_truthy(os.environ.get(POST_PHASE4_BOOTSTRAP_ENV))
+        and bootstrap_secret
+        and secret == bootstrap_secret
+    ):
+        return {"sub": "bootstrap", "roles": ["admin"]}
 
     if not credentials:
         raise HTTPException(status_code=401, detail="Bearer token required")
