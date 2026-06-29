@@ -212,14 +212,6 @@ class TestFeatureStateValidation:
             tmp_path, {"gateway_portal": {"real_internet": {"mode": "mirrored"}}}
         )
 
-        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
-            spec = load_spec(spec_file)
-
-        assert spec.gateway_portal.real_internet.mode.value == "mirrored"
-        assert any(
-            "gateway_portal.real_internet.mode is experimental in alpha" in r.message
-            for r in caplog.records
-        )
         with pytest.raises(SpecLoadError, match="at least one service mirror is required"):
             load_spec(spec_file)
 

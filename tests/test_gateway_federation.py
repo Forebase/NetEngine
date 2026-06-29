@@ -79,7 +79,17 @@ class TestGatewayPortalSpecLoads:
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         spec_file = _write_spec(
-            tmp_path, {"gateway_portal": {"real_internet": {"mode": "mirrored"}}}
+            tmp_path,
+            {
+                "gateway_portal": {
+                    "real_internet": {
+                        "mode": "mirrored",
+                        "service_mirrors": [
+                            {"real_hostname": "api.example.com", "in_world_service": "10.1.2.3"}
+                        ],
+                    }
+                }
+            },
         )
         with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
             spec = load_spec(spec_file)

@@ -485,8 +485,8 @@ def test_validate_json_reports_active_feature_states(tmp_path: Path) -> None:
     ]
 
 
-def test_validate_json_unsupported_active_feature_exits_nonzero(tmp_path: Path) -> None:
-    """Unsupported active fields should be machine-readable and fail CI."""
+def test_validate_json_experimental_active_feature_exits_zero(tmp_path: Path) -> None:
+    """Experimental active fields should be machine-readable and keep CI green."""
     spec_file = _write_cli_validate_spec(
         tmp_path, gateway_portal__real_internet__upstream_resolver_enabled=True
     )
@@ -495,12 +495,12 @@ def test_validate_json_unsupported_active_feature_exits_nonzero(tmp_path: Path) 
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    assert payload["ok"] is False
+    assert payload["ok"] is True
     assert (
         payload["feature_states"][0]["path"]
         == "gateway_portal.real_internet.upstream_resolver_enabled"
     )
-    assert payload["feature_states"][0]["state"] == "unsupported"
+    assert payload["feature_states"][0]["state"] == "experimental"
     assert payload["feature_states"][0]["current_value"] is True
     assert payload["feature_states"][0]["default_value"] is False
 

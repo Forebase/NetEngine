@@ -302,8 +302,8 @@ class StructuredLoggingMiddleware:
         request_logger = self.logger.bind(**context)
 
         # Log request
-        request_logger.info(
-            f"{scope['method']} {scope['path']}", extra={"event": "http.request.start"}
+        request_logger.bind(event="http.request.start").info(
+            f"{scope['method']} {scope['path']}"
         )
 
         start_time = time.time()
@@ -319,38 +319,27 @@ class StructuredLoggingMiddleware:
             await self.app(scope, receive, send_wrapper)
         except Exception as e:
             duration_ms = (time.time() - start_time) * 1000
-            request_logger.error(
-                f"Request failed: {type(e).__name__}",
-                extra={
-                    "event": "http.error",
-                    "status": 500,
-                    "duration_ms": duration_ms,
-                },
-            )
+            request_logger.bind(
+                event="http.error", status=500, duration_ms=duration_ms
+            ).error(f"Request failed: {type(e).__name__}")
             raise
         else:
             duration_ms = (time.time() - start_time) * 1000
 
             # Check for slow request
             if duration_ms > self.slow_request_threshold_ms:
-                request_logger.warning(
-                    f"Slow request: {scope['method']} {scope['path']}",
-                    extra={
-                        "event": "http.slow_request",
-                        "duration_ms": duration_ms,
-                        "threshold_ms": self.slow_request_threshold_ms,
-                        "status": status_code,
-                    },
-                )
+                request_logger.bind(
+                    event="http.slow_request",
+                    duration_ms=duration_ms,
+                    threshold_ms=self.slow_request_threshold_ms,
+                    status=status_code,
+                ).warning(f"Slow request: {scope['method']} {scope['path']}")
             else:
-                request_logger.info(
-                    f"{scope['method']} {scope['path']} {status_code}",
-                    extra={
-                        "event": "http.response.complete",
-                        "status": status_code,
-                        "duration_ms": duration_ms,
-                    },
-                )
+                request_logger.bind(
+                    event="http.response.complete",
+                    status=status_code,
+                    duration_ms=duration_ms,
+                ).info(f"{scope['method']} {scope['path']} {status_code}")
 
         finally:
             TraceContextManager.clear_context()

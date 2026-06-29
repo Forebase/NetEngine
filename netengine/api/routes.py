@@ -114,7 +114,6 @@ async def health() -> dict[str, Any]:
         "status": overall,
         "phases": phases,
         "events": events,
-        "last_error": state.last_error,
         "last_error_present": bool(state.last_error),
     }
 

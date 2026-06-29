@@ -90,11 +90,14 @@ async def require_auth(
     state = RuntimeState.load()
     phase4_done = state.phase_completed.get("4", False)
 
+    # Accept the bootstrap secret as a local break-glass admin credential when it
+    # is explicitly configured. This keeps local lifecycle automation usable even
+    # after Phase 4 records OIDC bootstrap completion.
+    secret = request.headers.get("X-Bootstrap-Secret", "")
+    if bootstrap_secret and secret == bootstrap_secret:
+        return {"sub": "bootstrap", "roles": ["admin"]}
+
     if not phase4_done:
-        # Bootstrap phase: accept secret in X-Bootstrap-Secret header
-        secret = request.headers.get("X-Bootstrap-Secret", "")
-        if bootstrap_secret and secret == bootstrap_secret:
-            return {"sub": "bootstrap", "roles": ["admin"]}
         # Also allow an unauthenticated health check
         if request.url.path.endswith("/health"):
             return {"sub": "anon"}
