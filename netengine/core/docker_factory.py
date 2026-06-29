@@ -25,7 +25,7 @@ def create_docker_client() -> tuple[Optional[Any], bool]:
     try:
         from netengine.handlers.docker_handler import DockerHandler
 
-        client: Any = DockerHandler()  # type: ignore[no-untyped-call]
+        client: Any = DockerHandler()
         return client, False
     except Exception as exc:
         logger.warning(f"Docker unavailable, falling back to mock mode: {exc}")

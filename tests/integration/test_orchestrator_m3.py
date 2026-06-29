@@ -19,6 +19,7 @@ async def _set_dns_output(context):
 
 async def _set_pki_output(context):
     context.runtime_state.pki_bootstrapped = True
+    context.runtime_state.pki_output = {"bootstrapped": True, "mock": True}
 
 
 class TestOrchestratorPhaseExecution:

@@ -1,0 +1,33 @@
+# Main repo: netengine
+
+Repository settings:
+  - Visibility: Public (or Private, depending on readiness)
+  - Default branch: main
+  - Require status checks: ✓
+  - Require code review: ✓ (1+ approver)
+  - Dismiss stale reviews: ✓
+  - Require branches up to date: ✓
+  - Allow auto-merge: ✓ (squash)
+
+Branch naming:
+  - feature/: new feature branches
+  - bugfix/: bug fixes
+  - refactor/: refactoring without behavior change
+  - docs/: documentation only
+  - chore/: dependency updates, linting, etc.
+
+CI/CD (.github/workflows/):
+  - test.yml: pytest + coverage on every PR
+  - lint.yml: black, isort, flake8, mypy on every commit
+  - build.yml: package build test
+  - publish.yml: publish to PyPI on tag (v*) to main
+
+Labels:
+  - bug, enhancement, documentation, question, wontfix
+  - architecture, urgent, help-wanted
+  - lifecycle:ephemeral, lifecycle:persistent (domain-specific)
+
+Milestones:
+  - v0.1.0-alpha: bootstrap phases 0-5 stable
+  - v0.2.0-beta: phases 6-8 + gateway modes
+  - v1.0.0: production-ready persistent mode

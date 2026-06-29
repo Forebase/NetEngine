@@ -150,6 +150,7 @@ class TestAPIHealthAfterBootstrap:
             substrate_output={"healthy": True},
             dns_output={"healthy": True},
             pki_bootstrapped=True,
+            pki_output={"bootstrapped": True},
             identity_platform_output={"healthy": True},
             world_registry_output={"healthy": True},
             domain_registry_output={"healthy": True},
@@ -452,3 +453,90 @@ class TestDownDryRun:
 
         assert result.exit_code == 0
         assert "would be removed" in result.output
+
+
+# ─────────────────────────────────────────────
+# Full MVP lifecycle
+# ─────────────────────────────────────────────
+
+
+class TestFullMVPLifecycle:
+    """Single end-to-end test covering the full dev-sandbox lifecycle:
+    bootstrap → API health → idempotent re-run → reload with new org.
+    """
+
+    @pytest.mark.asyncio
+    async def test_full_mvp_lifecycle(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("NETENGINE_STATE_FILE", str(tmp_path / "state.json"))
+        monkeypatch.setenv("NETENGINES_BOOTSTRAP_SECRET", "mvp-secret")
+
+        spec = load_spec(EXAMPLES_DIR / "minimal.yaml")
+
+        # ── Step 1: Full mock bootstrap, all 9 phases ──────────────────────
+        phase_events: list[tuple[str, int]] = []
+
+        def _on_start(n: int, name: str) -> None:
+            phase_events.append(("start", n))
+
+        def _on_complete(n: int, name: str) -> None:
+            phase_events.append(("complete", n))
+
+        def _on_skip(n: int, name: str) -> None:
+            phase_events.append(("skip", n))
+
+        with _all_phase_mocks():
+            orchestrator = Orchestrator(spec, mock_mode=True)
+            await orchestrator.execute_phases(
+                up_to_phase=9,
+                on_phase_start=_on_start,
+                on_phase_complete=_on_complete,
+                on_phase_skip=_on_skip,
+            )
+
+        state = orchestrator.runtime_state
+        for phase in range(10):
+            assert state.phase_completed.get(
+                str(phase)
+            ), f"Phase {phase} not complete after MVP bootstrap"
+
+        # DNSHandler covers phases 1+2 in one handler, so 9 handler invocations total
+        started = [n for event, n in phase_events if event == "start"]
+        completed = [n for event, n in phase_events if event == "complete"]
+        assert len(started) == 9, f"Expected 9 on_phase_start calls, got {len(started)}"
+        assert len(completed) == 9, f"Expected 9 on_phase_complete calls, got {len(completed)}"
+
+        # ── Step 2: World spec is recorded in state ────────────────────────
+        assert state.world_spec is not None
+        assert state.world_spec["metadata"]["name"] == spec.metadata.name
+
+        # ── Step 3: Reload adds a new org without full re-bootstrap ─────────
+        new_dict = spec.model_dump(mode="json")
+        new_dict["world_registry"]["organizations"].append(
+            {
+                "name": "mvp-corp",
+                "description": "Added in full lifecycle test",
+                "capabilities": ["host_services"],
+                "and_profile": "business",
+            }
+        )
+
+        from netengine.api.app import app
+
+        api_client = TestClient(app)
+        with patch(
+            "netengine.phases.phase_registries.RegistriesPhaseHandler.execute",
+            new_callable=AsyncMock,
+        ):
+            with patch(
+                "netengine.phases.phase_inworld_identity.InWorldIdentityPhaseHandler.execute",
+                new_callable=AsyncMock,
+            ):
+                resp = api_client.post(
+                    "/api/v1/reload",
+                    json={"spec_yaml": yaml.dump(new_dict)},
+                    headers={"X-Bootstrap-Secret": "mvp-secret"},
+                )
+
+        assert resp.status_code == 200
+        result = resp.json()
+        assert result["success"] is True, f"Reload failed: {result}"

@@ -49,7 +49,8 @@ def test_up_invokes_execute_phases_with_example_spec():
     mock_orchestrator_class.assert_called_once()
     spec_arg = mock_orchestrator_class.call_args.args[0]
     assert spec_arg.metadata.name == "minimal-example"
-    mock_orchestrator.execute_phases.assert_awaited_once_with(up_to_phase=9)
+    assert mock_orchestrator.execute_phases.await_count == 1
+    assert mock_orchestrator.execute_phases.call_args.kwargs["up_to_phase"] == 9
 
 
 def test_up_migration_failure_prevents_orchestrator_startup():
@@ -92,7 +93,8 @@ def test_up_allows_migration_failure_with_explicit_flag():
     assert result.exit_code == 0, result.output
     mock_migrations.assert_awaited_once_with("postgresql://example/db")
     mock_orchestrator_class.assert_called_once()
-    mock_orchestrator.execute_phases.assert_awaited_once_with(up_to_phase=9)
+    assert mock_orchestrator.execute_phases.await_count == 1
+    assert mock_orchestrator.execute_phases.call_args.kwargs["up_to_phase"] == 9
 
 
 def test_up_skip_migrations_bypasses_migration_execution():
@@ -113,7 +115,8 @@ def test_up_skip_migrations_bypasses_migration_execution():
     assert result.exit_code == 0, result.output
     mock_migrations.assert_not_awaited()
     mock_orchestrator_class.assert_called_once()
-    mock_orchestrator.execute_phases.assert_awaited_once_with(up_to_phase=9)
+    assert mock_orchestrator.execute_phases.await_count == 1
+    assert mock_orchestrator.execute_phases.call_args.kwargs["up_to_phase"] == 9
 
 
 def test_status_output_includes_phase_9():
@@ -148,7 +151,8 @@ def test_up_supports_environment_loader_option():
     mock_loader.assert_called_once_with(str(spec_file), environment="dev", overrides=None)
     spec_arg = mock_orchestrator_class.call_args.args[0]
     assert spec_arg.metadata.name == "minimal-example"
-    mock_orchestrator.execute_phases.assert_awaited_once_with(up_to_phase=9)
+    assert mock_orchestrator.execute_phases.await_count == 1
+    assert mock_orchestrator.execute_phases.call_args.kwargs["up_to_phase"] == 9
 
 
 def test_init_creates_spec_file(tmp_path: Path) -> None:
@@ -362,12 +366,14 @@ def test_up_supports_repeatable_set_overrides():
     spec_arg = mock_orchestrator_class.call_args.args[0]
     assert spec_arg.metadata.name == "my-world"
     assert spec_arg.world_services.mail.enabled is True
-    mock_orchestrator.execute_phases.assert_awaited_once_with(up_to_phase=9)
+    assert mock_orchestrator.execute_phases.await_count == 1
+    assert mock_orchestrator.execute_phases.call_args.kwargs["up_to_phase"] == 9
 
 
 def _write_cli_validate_spec(tmp_path: Path, **updates) -> Path:
     """Write an example-derived spec for validate command tests."""
     import copy
+
     import yaml
 
     source = Path(__file__).parent.parent / "examples" / "minimal.yaml"

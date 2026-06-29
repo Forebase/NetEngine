@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetEngines — Technical Architecture v1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f10; --surface: #1a1a1d; --surface-2: #212125; --surface-3: #262629;
+    --border: #2a2a2d; --border-2: #333337;
+    --text: #ffffff; --text-2: #a0a0a0; --text-3: #555;
+    --accent: #D97757; --accent-muted: rgba(217,119,87,0.10); --accent-border: rgba(217,119,87,0.28);
+    --green: #4ade80; --green-muted: rgba(74,222,128,0.09); --green-border: rgba(74,222,128,0.25);
+    --blue: #60a5fa; --blue-muted: rgba(96,165,250,0.09); --blue-border: rgba(96,165,250,0.25);
+    --purple: #a78bfa; --purple-muted: rgba(167,139,250,0.09); --purple-border: rgba(167,139,250,0.25);
+    --yellow: #fbbf24; --yellow-muted: rgba(251,191,36,0.09);
+    --red: #f87171; --red-muted: rgba(248,113,113,0.09);
+    --teal: #2dd4bf; --teal-muted: rgba(45,212,191,0.09); --teal-border: rgba(45,212,191,0.25);
+    --radius: 12px; --radius-sm: 8px; --radius-xs: 5px;
+    --font: 'Inter', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  html { scroll-behavior: smooth; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 15px; line-height: 1.65; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1020px; margin: 0 auto; padding: 0 24px; }
+
+  /* NAV */
+  nav { position: sticky; top: 0; z-index: 100; background: rgba(15,15,16,0.9); backdrop-filter: blur(14px); border-bottom: 1px solid var(--border); padding: 13px 0; }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; }
+  .nav-logo { font-weight: 700; font-size: 15px; letter-spacing: -0.3px; }
+  .nav-logo span { color: var(--accent); }
+  .nav-badge { font-size: 11px; font-weight: 600; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-3); padding: 2px 8px; border-radius: 4px; margin-left: 10px; vertical-align: middle; }
+  .nav-links { display: flex; gap: 20px; }
+  .nav-links a { color: var(--text-2); text-decoration: none; font-size: 13px; transition: color .15s; }
+  .nav-links a:hover { color: var(--text); }
+
+  /* HERO */
+  .hero { padding: 80px 0 64px; text-align: center; border-bottom: 1px solid var(--border); }
+  .hero-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-3); border-radius: 100px; padding: 4px 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; margin-bottom: 24px; }
+  .hero h1 { font-size: clamp(28px,4.5vw,48px); font-weight: 700; letter-spacing: -1px; line-height: 1.15; margin-bottom: 16px; }
+  .hero h1 em { color: var(--accent); font-style: normal; }
+  .hero-sub { font-size: 16px; color: var(--text-2); max-width: 580px; margin: 0 auto; line-height: 1.7; }
+
+  /* SECTIONS */
+  section { padding: 72px 0; border-top: 1px solid var(--border); }
+  .section-label { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
+  .section-title { font-size: clamp(20px,3vw,28px); font-weight: 700; letter-spacing: -0.4px; line-height: 1.25; margin-bottom: 12px; }
+  .section-desc { color: var(--text-2); max-width: 640px; line-height: 1.7; margin-bottom: 36px; }
+  h3.sub-title { font-size: 15px; font-weight: 600; margin: 32px 0 8px; color: var(--text); }
+  h3.sub-title + p { font-size: 13px; color: var(--text-2); line-height: 1.65; margin-bottom: 16px; }
+
+  /* CALLOUTS */
+  .callout { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 16px 18px; margin: 20px 0; border: 1px solid; border-left-width: 3px; }
+  .callout p { font-size: 13px; line-height: 1.65; }
+  .callout strong { color: var(--text); }
+  .callout-accent { background: var(--accent-muted); border-color: var(--accent-border); border-left-color: var(--accent); }
+  .callout-accent p { color: var(--text-2); }
+  .callout-blue { background: var(--blue-muted); border-color: var(--blue-border); border-left-color: var(--blue); }
+  .callout-blue p { color: var(--text-2); }
+  .callout-green { background: var(--green-muted); border-color: var(--green-border); border-left-color: var(--green); }
+  .callout-green p { color: var(--text-2); }
+  .callout-purple { background: var(--purple-muted); border-color: var(--purple-border); border-left-color: var(--purple); }
+  .callout-purple p { color: var(--text-2); }
+  .callout-teal { background: var(--teal-muted); border-color: var(--teal-border); border-left-color: var(--teal); }
+  .callout-teal p { color: var(--text-2); }
+  .callout-red { background: var(--red-muted); border-color: rgba(248,113,113,0.25); border-left-color: var(--red); }
+  .callout-red p { color: var(--text-2); }
+
+  /* CODE */
+  pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 18px 20px; font-family: var(--mono); font-size: 12px; line-height: 1.75; overflow-x: auto; color: #c9d1d9; margin: 16px 0; }
+  code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px; color: var(--text-2); }
+  .kw { color: #7dd3fc; } .str { color: #86efac; } .comment { color: #4a5568; } .key { color: #fca5a5; }
+  .fn { color: #c4b5fd; } .num { color: #fdba74; } .op { color: #94a3b8; }
+
+  /* TOPOLOGY BOX */
+  .topo { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 20px 24px; font-family: var(--mono); font-size: 12px; line-height: 1.9; color: #a0aec0; margin: 16px 0; overflow-x: auto; }
+  .topo .t-l0 { color: #718096; }
+  .topo .t-l1 { color: var(--blue); }
+  .topo .t-l2 { color: var(--green); }
+  .topo .t-gw { color: var(--accent); }
+  .topo .t-sb { color: var(--purple); }
+  .topo .t-and { color: var(--teal); }
+  .topo .t-note { color: #4a5568; }
+
+  /* CARDS */
+  .cards { display: grid; gap: 14px; }
+  .cards-2 { grid-template-columns: repeat(2, 1fr); }
+  .cards-3 { grid-template-columns: repeat(3, 1fr); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; }
+  .card-icon { font-size: 22px; margin-bottom: 12px; }
+  .card h4 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .card p { font-size: 13px; color: var(--text-2); line-height: 1.6; }
+  .card.accent-blue { border-color: var(--blue-border); }
+  .card.accent-green { border-color: var(--green-border); }
+  .card.accent-purple { border-color: var(--purple-border); }
+  .card.accent-teal { border-color: var(--teal-border); }
+  .card.accent-accent { border-color: var(--accent-border); }
+
+  /* LAYER STACK */
+  .layer-stack { display: flex; flex-direction: column; gap: 3px; margin: 20px 0; }
+  .ls-row { display: flex; gap: 10px; align-items: stretch; }
+  .ls-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; white-space: nowrap; display: flex; align-items: center; min-width: 48px; color: var(--text-3); }
+  .ls-block { flex: 1; border-radius: var(--radius-sm); padding: 14px 18px; border: 1px solid; }
+  .ls-block h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .ls-block p { font-size: 12px; line-height: 1.55; }
+  .ls-supabase { background: rgba(63,131,248,0.08); border-color: rgba(63,131,248,0.25); }
+  .ls-supabase h4 { color: #93c5fd; }
+  .ls-supabase p { color: #64748b; }
+  .ls-app { background: var(--accent-muted); border-color: var(--accent-border); }
+  .ls-app h4 { color: var(--accent); }
+  .ls-app p { color: #9ca3af; }
+  .ls-inworld { background: var(--green-muted); border-color: var(--green-border); }
+  .ls-inworld h4 { color: var(--green); }
+  .ls-inworld p { color: #6b7280; }
+  .ls-docker { background: rgba(100,100,120,0.15); border-color: #333; }
+  .ls-docker h4 { color: #9ca3af; }
+  .ls-docker p { color: #4a5568; }
+  .ls-arrow { text-align: center; color: var(--text-3); font-size: 16px; line-height: 1; padding: 2px 0; }
+
+  /* SEQUENCE */
+  .sequence { display: flex; flex-direction: column; gap: 0; margin: 20px 0; }
+  .seq-item { display: flex; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--border); position: relative; }
+  .seq-item:last-child { border-bottom: none; }
+  .seq-num { width: 28px; height: 28px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text-3); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+  .seq-num.hi { background: var(--accent-muted); border-color: var(--accent-border); color: var(--accent); }
+  .seq-body { flex: 1; }
+  .seq-body h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text); }
+  .seq-body p { font-size: 12px; color: var(--text-2); line-height: 1.55; }
+  .seq-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .seq-tag { font-size: 10px; padding: 2px 7px; border-radius: 3px; background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border); font-family: var(--mono); }
+  .seq-tag.blue { background: var(--blue-muted); color: var(--blue); border-color: var(--blue-border); }
+  .seq-tag.green { background: var(--green-muted); color: var(--green); border-color: var(--green-border); }
+  .seq-tag.accent { background: var(--accent-muted); color: var(--accent); border-color: var(--accent-border); }
+  .seq-tag.purple { background: var(--purple-muted); color: var(--purple); border-color: var(--purple-border); }
+
+  /* DECISION TABLE */
+  .dtable { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+  .dtable th { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-3); text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--border); }
+  .dtable td { padding: 11px 14px; border-bottom: 1px solid var(--border); color: var(--text-2); vertical-align: top; line-height: 1.55; }
+  .dtable tr:last-child td { border-bottom: none; }
+  .dtable tr:hover td { background: rgba(255,255,255,0.02); }
+  .pill { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 3px; font-family: var(--mono); white-space: nowrap; }
+  .pill-green { background: var(--green-muted); color: var(--green); border: 1px solid var(--green-border); }
+  .pill-blue { background: var(--blue-muted); color: var(--blue); border: 1px solid var(--blue-border); }
+  .pill-accent { background: var(--accent-muted); color: var(--accent); border: 1px solid var(--accent-border); }
+  .pill-purple { background: var(--purple-muted); color: var(--purple); border: 1px solid var(--purple-border); }
+  .pill-red { background: var(--red-muted); color: var(--red); border: 1px solid rgba(248,113,113,0.3); }
+  .pill-gray { background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border); }
+
+  /* SPLIT PANEL */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  .split-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .split-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; }
+  .split-card.mvp .split-label { color: var(--green); }
+  .split-card.future .split-label { color: var(--purple); }
+  .split-card h4 { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  .split-item { font-size: 12px; color: var(--text-2); padding: 5px 0; border-bottom: 1px solid var(--border); line-height: 1.5; }
+  .split-item:last-child { border-bottom: none; }
+  .split-item::before { content: "· "; color: var(--text-3); }
+
+  /* OPEN QUESTIONS */
+  .open-q { background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius-sm); padding: 14px 16px; margin: 8px 0; display: flex; gap: 12px; align-items: flex-start; }
+  .open-q-marker { font-size: 10px; font-weight: 700; background: var(--yellow-muted); color: var(--yellow); border: 1px solid rgba(251,191,36,0.3); border-radius: 3px; padding: 2px 6px; white-space: nowrap; margin-top: 2px; flex-shrink: 0; }
+  .open-q p { font-size: 13px; color: var(--text-2); line-height: 1.55; }
+
+  /* HANDLER MATRIX */
+  .hmatrix { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0; }
+  .hm-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; }
+  .hm-name { font-family: var(--mono); font-size: 11px; color: var(--accent); margin-bottom: 6px; font-weight: 500; }
+  .hm-calls { font-size: 11px; color: var(--text-3); line-height: 1.7; }
+  .hm-calls span { color: var(--text-2); }
+
+  /* SB PRIMITIVES */
+  .sb-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0; }
+  .sb-prim { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; }
+  .sb-prim h5 { font-size: 12px; font-weight: 600; margin-bottom: 5px; color: var(--text); }
+  .sb-prim p { font-size: 11px; color: var(--text-2); line-height: 1.5; }
+  .sb-prim .tag-sb { font-size: 10px; font-family: var(--mono); color: var(--purple); background: var(--purple-muted); padding: 1px 5px; border-radius: 3px; margin-bottom: 6px; display: inline-block; }
+
+  footer { border-top: 1px solid var(--border); padding: 40px 0; text-align: center; }
+  footer p { font-size: 12px; color: var(--text-3); }
+
+  @media (max-width: 720px) {
+    .cards-2, .cards-3, .split, .hmatrix, .sb-grid { grid-template-columns: 1fr; }
+    .nav-links { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="nav-logo">Net<span>Engines</span> <span class="nav-badge">Technical v1</span></div>
+    <div class="nav-links">
+      <a href="#app-model">App model</a>
+      <a href="#supabase">Supabase</a>
+      <a href="#docker">Docker topology</a>
+      <a href="#gateway">Gateway</a>
+      <a href="#registries">Registries</a>
+      <a href="#dns-handoff">DNS handoff</a>
+      <a href="#acme">ACME bootstrap</a>
+      <a href="#handlers">Handlers</a>
+      <a href="#reload">Reload</a>
+      <a href="#identity">Identity</a>
+      <a href="#archetypes">Archetypes</a>
+      <a href="#open">Open questions</a>
+    </div>
+  </div>
+</nav>
+
+<div class="hero">
+  <div class="wrap">
+    <div class="hero-badge">🔧 Companion · Implementation Architecture</div>
+    <h1>How NetEngines<br><em>actually works</em></h1>
+    <p class="hero-sub">The briefing covers what and why. This document covers how — implementation choices, sequencing mechanics, topology wiring, and where the hard problems live.</p>
+  </div>
+</div>
+
+<!-- APP MODEL -->
+<section id="app-model">
+  <div class="wrap">
+    <div class="section-label">App model</div>
+    <h2 class="section-title">Controller, not absorber</h2>
+    <p class="section-desc">The NetEngines Python app is a controller and coordinator. It does not replace in-world services — it orchestrates them. CoreDNS, step-ca, Keycloak, Postfix, MinIO remain what they are. The app calls them via their native interfaces and uses Supabase to coordinate sequencing, persist state, and propagate events between handlers.</p>
+
+    <div class="layer-stack">
+      <div class="ls-row">
+        <div class="ls-label">L1 app</div>
+        <div class="ls-block ls-app">
+          <h4>NetEngines operator surface</h4>
+          <p>REST API, CLI, phase orchestrator, diff engine, handler coordination. Authenticated via L1 identity. May have multiple surfaces — operator API (admin), management plane API (per-org).</p>
+        </div>
+      </div>
+      <div class="ls-arrow">↕</div>
+      <div class="ls-row">
+        <div class="ls-label">backend</div>
+        <div class="ls-block ls-supabase">
+          <h4>Supabase</h4>
+          <p>Postgres (runtime state, world registry, address allocation, operator records), pgmq (inter-handler event queue, async ops, retry), Realtime (push to connected operator clients), Storage / Auth as needed.</p>
+        </div>
+      </div>
+      <div class="ls-arrow">↕</div>
+      <div class="ls-row">
+        <div class="ls-label">Docker</div>
+        <div class="ls-block ls-docker">
+          <h4>Container runtime (L0 substrate)</h4>
+          <p>Docker SDK. App creates networks, starts containers, attaches volumes, runs exec commands. One isolated bridge per AND. Gateway container multi-homed across all AND bridges.</p>
+        </div>
+      </div>
+      <div class="ls-arrow">↕</div>
+      <div class="ls-row">
+        <div class="ls-label">L2</div>
+        <div class="ls-block ls-inworld">
+          <h4>In-world services</h4>
+          <p>CoreDNS, step-ca, Keycloak (in-world realm), Postfix/OpenDKIM, MinIO, gateway container. Real software, real protocols, real in-world IPs. The app seeds and configures them — it does not replace them.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-accent" style="margin-top:24px;">
+      <p><strong>The line:</strong> if in-world inhabitants or standard tooling needs to speak a protocol to it (DNS on port 53, SMTP on port 25, WHOIS on port 43, ACME over HTTPS), it lives in-world as a real service. If it is orchestration, governance, or state management that only the app needs, it lives in Supabase and is surfaced via the operator API.</p>
+    </div>
+
+    <h3 class="sub-title">Versioned surfaces</h3>
+    <p>The app may expose distinct surfaces per layer. At minimum: an L1 operator API (admin control, world management, phase orchestration) and potentially an L2 management plane API (per-org self-service — register a domain, deploy an app, provision a mailbox). These are separate auth boundaries and separate concerns. Not required for MVP — start with the operator API only.</p>
+
+    <div class="cards cards-2" style="margin-top:16px;">
+      <div class="card accent-accent">
+        <div class="card-icon">⚙️</div>
+        <h4>Operator API — L1</h4>
+        <p>World management, phase orchestration, org admission, reload. Authenticated via L1 identity (Keycloak platform realm). Listens on platform network only — not routable from in-world.</p>
+      </div>
+      <div class="card accent-green">
+        <div class="card-icon">🏢</div>
+        <h4>Management API — L2 (future)</h4>
+        <p>Per-org self-service. Deploy an app, register a domain, provision users. Authenticated via L2 identity (in-world Keycloak realm). Lives at a routable in-world address.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SUPABASE -->
+<section id="supabase">
+  <div class="wrap">
+    <div class="section-label">Supabase backend</div>
+    <h2 class="section-title">Full backend for the app layer</h2>
+    <p class="section-desc">Supabase is what the NetEngines app needs — not a replacement for in-world services. Postgres for persistence, pgmq for queuing, Realtime for push, Auth and Storage available where needed. Self-hosted for the authority-autonomous posture to hold.</p>
+
+    <div class="sb-grid">
+      <div class="sb-prim">
+        <div class="tag-sb">postgres</div>
+        <h5>Runtime state + world registry</h5>
+        <p>Phase completion, handler outputs, org admission records, AND assignments, address pool allocations. Row-level locking on address assignment prevents IPAM conflicts.</p>
+      </div>
+      <div class="sb-prim">
+        <div class="tag-sb">pgmq</div>
+        <h5>Inter-handler event queue</h5>
+        <p>Domain registration triggers DNS zone update. Phase completion triggers downstream phase. Async ops with retry. Replaces the event bus problem cleanly — it's a queue message, not a custom pub/sub.</p>
+      </div>
+      <div class="sb-prim">
+        <div class="tag-sb">realtime</div>
+        <h5>Operator push</h5>
+        <p>Live phase progress to connected CLI or web clients. Bootstrap log streaming. Service health state changes. No polling needed.</p>
+      </div>
+      <div class="sb-prim">
+        <div class="tag-sb">postgres</div>
+        <h5>Operator audit log</h5>
+        <p>Every API call, phase transition, reload diff. Queryable, durable, used for troubleshooting and persistent-mode safety guards.</p>
+      </div>
+      <div class="sb-prim">
+        <div class="tag-sb">auth</div>
+        <h5>Platform identity (optional)</h5>
+        <p>Alternative to Keycloak for L1 operator auth — see identity section. Only one should be used. Keycloak is preferred for consistency with spec.</p>
+      </div>
+      <div class="sb-prim">
+        <div class="tag-sb">storage</div>
+        <h5>World export / import</h5>
+        <p>Spec snapshots, exported world state tarballs. Persistent-mode backup artefacts. Not a replacement for MinIO in-world — separate concern.</p>
+      </div>
+    </div>
+
+    <div class="callout callout-purple">
+      <p><strong>Self-hosted Supabase is the right posture.</strong> Cloud-hosted Supabase puts the world's governance data outside the world's infrastructure — a tension with the authority-autonomous claim. For dev sandbox use cases this is acceptable. For the alternative internet substrate archetype it is not. Self-hosted Supabase adds operational weight; treat it as a known cost, not a surprise.</p>
+    </div>
+
+    <h3 class="sub-title">Key Postgres tables</h3>
+    <pre><span class="comment">-- Core tables the app needs</span>
+<span class="kw">runtime_state</span>     <span class="comment">-- phase completion, outputs, timestamps, errors</span>
+<span class="kw">world_registry</span>    <span class="comment">-- orgs, capability grants, AND profile assignments, operators</span>
+<span class="kw">address_pools</span>     <span class="comment">-- CIDR blocks by profile, allocated/available tracking</span>
+<span class="kw">address_leases</span>    <span class="comment">-- which AND holds which allocation; row-level lock on assignment</span>
+<span class="kw">domain_records</span>    <span class="comment">-- registrations: name, org, NS records, created_at</span>
+<span class="kw">operator_log</span>      <span class="comment">-- every API call, phase event, reload diff</span>
+<span class="kw">world_export</span>      <span class="comment">-- snapshot refs for persistent-mode backup</span></pre>
+  </div>
+</section>
+
+<!-- DOCKER TOPOLOGY -->
+<section id="docker">
+  <div class="wrap">
+    <div class="section-label">Docker topology</div>
+    <h2 class="section-title">The segmentation problem — and the fix</h2>
+    <p class="section-desc">Docker Swarm and Compose are built to maximise reachability. Overlay networks, service discovery, shared DNS — all designed so containers can find each other. NetEngines needs the opposite: deliberate segmentation, routed boundaries, NAT at the edge. These goals are in direct conflict.</p>
+
+    <div class="callout callout-red">
+      <p><strong>Why a shared overlay fails:</strong> if <code>acme-corp-net</code> and <code>bob-home-net</code> both attach to a Swarm overlay for management, they can reach each other directly at L2. There is no router between them. The "inbound blocked" firewall rule for the residential profile has nowhere to live. The broadcast domain boundary that makes a residential AND feel like residential simply does not exist.</p>
+    </div>
+
+    <h3 class="sub-title">The correct topology</h3>
+    <p>Each AND gets an isolated Docker bridge — not a shared overlay. The gateway container is the only container that attaches to more than one bridge. All inter-AND traffic must physically flow through it. This is not a policy choice — it is a topology fact that enforces the choke point.</p>
+
+    <div class="topo">
+<span class="t-note">┌─────────────────────────────────────────────────────────────────┐</span>
+<span class="t-note">│  L0 HOST                                                        │</span>
+<span class="t-note">│                                                                 │</span>
+<span class="t-l1">│  [platform bridge]  172.20.0.0/16</span>
+<span class="t-note">│       │</span>
+<span class="t-note">│       │  NetEngines app · Supabase · Operator API              │</span>
+<span class="t-note">│       │</span>
+<span class="t-l1">│  [core bridge]  10.0.0.0/8</span>
+<span class="t-note">│       │</span>
+<span class="t-note">│       │  CoreDNS root · step-ca · Keycloak · Postfix · MinIO  │</span>
+<span class="t-note">│       │</span>
+<span class="t-gw">│  [gateway container] ←── multi-homed: one interface per bridge │
+│       │                                                         │</span>
+<span class="t-note">│   ┌───┴──────────────────────────────────┐</span>
+<span class="t-note">│   │                                      │</span>
+<span class="t-and">│  [AND bridge: acme-corp-net]         [AND bridge: bob-home-net]</span>
+<span class="t-and">│   192.168.1.0/24                       192.168.2.0/24</span>
+<span class="t-note">│   │ isolated · policy: business          │ isolated · policy: residential</span>
+<span class="t-note">│   │ inbound: allowed                     │ inbound: blocked / NAT</span>
+<span class="t-note">│   │ reverse DNS: yes                     │ reverse DNS: no</span>
+<span class="t-note">│   │                                      │</span>
+<span class="t-l2">│   [acme containers]                  [bob containers]</span>
+<span class="t-note">└─────────────────────────────────────────────────────────────────┘</span></div>
+
+    <h3 class="sub-title">What the AND handler actually does</h3>
+    <div class="sequence">
+      <div class="seq-item">
+        <div class="seq-num hi">1</div>
+        <div class="seq-body">
+          <h4>Create isolated bridge per AND</h4>
+          <p>Docker SDK: <code>docker network create --driver bridge --internal netengines_and_{name}</code>. The <code>--internal</code> flag prevents the bridge from attaching to the default Docker NAT — isolation is structural, not rule-based.</p>
+          <div class="seq-tags"><span class="seq-tag blue">docker SDK</span><span class="seq-tag">--internal</span></div>
+        </div>
+      </div>
+      <div class="seq-item">
+        <div class="seq-num hi">2</div>
+        <div class="seq-body">
+          <h4>Assign subnet from domain_registry allocation</h4>
+          <p>Query Supabase <code>address_pools</code> for the AND's profile. Acquire a sub-range via row-level lock. Pass it to the bridge creation call. Write the lease to <code>address_leases</code>.</p>
+          <div class="seq-tags"><span class="seq-tag purple">supabase</span><span class="seq-tag">pgmq</span></div>
+        </div>
+      </div>
+      <div class="seq-item">
+        <div class="seq-num hi">3</div>
+        <div class="seq-body">
+          <h4>Attach gateway to the new bridge</h4>
+          <p><code>docker network connect netengines_and_{name} netengines_gateway --ip {gateway_ip}</code>. The gateway now has an interface on this AND. Inter-AND traffic has a routed path.</p>
+          <div class="seq-tags"><span class="seq-tag blue">docker SDK</span></div>
+        </div>
+      </div>
+      <div class="seq-item">
+        <div class="seq-num hi">4</div>
+        <div class="seq-body">
+          <h4>Generate and load nftables rules</h4>
+          <p>App generates nftables ruleset from AND profile (NAT masquerade for residential, stateful accept for business inbound, drop-all for airgapped). Writes to shared volume. Runs <code>docker exec netengines_gateway nft -f /etc/nftables/rules.nft</code>. Reload is atomic — <code>nft -f</code> applies the whole ruleset in one operation.</p>
+          <div class="seq-tags"><span class="seq-tag accent">nftables</span><span class="seq-tag">docker exec</span></div>
+        </div>
+      </div>
+      <div class="seq-item">
+        <div class="seq-num">5</div>
+        <div class="seq-body">
+          <h4>Register DNS suffix</h4>
+          <p>Emit a pgmq event → DNS handler adds the AND's <code>dns_suffix</code> zone to CoreDNS and reloads. All containers in the AND resolve via the world's DNS.</p>
+          <div class="seq-tags"><span class="seq-tag purple">pgmq</span><span class="seq-tag green">coreDNS reload</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-blue">
+      <p><strong>Compose/Swarm scope:</strong> Compose and Swarm are only used within a single AND — containers in <code>acme-corp-net</code> can discover each other freely via Docker's built-in DNS. Cross-AND traffic routes through the gateway. Swarm overlay networks are not used for production topology — only for management-plane connectivity between the NetEngines app and L1 services.</p>
+    </div>
+  </div>
+</section>
+
+<!-- GATEWAY -->
+<section id="gateway">
+  <div class="wrap">
+    <div class="section-label">Gateway implementation</div>
+    <h2 class="section-title">What actually runs in the gateway container</h2>
+    <p class="section-desc">The briefing describes gateway <em>roles</em> and <em>modes</em>. This section describes what implements them — and what's deferred.</p>
+
+    <div class="split">
+      <div class="split-card mvp">
+        <div class="split-label">MVP</div>
+        <h4>Alpine Linux + nftables</h4>
+        <div class="split-item">Lightweight — no external tooling dependency</div>
+        <div class="split-item">IP forwarding enabled on container start</div>
+        <div class="split-item">nftables for NAT, stateful firewall, per-AND policy</div>
+        <div class="split-item">Rules generated by app from AND profiles, written to volume</div>
+        <div class="split-item"><code>nft -f</code> reload is atomic — no dropped connections</div>
+        <div class="split-item">Multi-homed via <code>docker network connect</code> at AND spinup</div>
+        <div class="split-item">No BGP, no OSPF, no VRF — static routes only</div>
+      </div>
+      <div class="split-card future">
+        <div class="split-label">Future (BGP scope)</div>
+        <h4>VyOS</h4>
+        <div class="split-item">Full BGP/OSPF/MPLS/VRF support</div>
+        <div class="split-item">Needed when bgp_fabric module is enabled</div>
+        <div class="split-item">CLI-driven — programmatic config harder than nftables</div>
+        <div class="split-item">Official Docker image is build-it-yourself (no upstream image)</div>
+        <div class="split-item">Target: persistent mode only, datacenter AND profile</div>
+        <div class="split-item">Not a blocker for MVP or dev sandbox archetype</div>
+      </div>
+    </div>
+
+    <h3 class="sub-title">nftables rule structure per AND profile</h3>
+    <pre><span class="comment"># Generated by app/handlers/and_handler.py → gateway_handler.py
+# Written to /etc/nftables/rules/{and_name}.nft on gateway container</span>
+
+<span class="kw">table</span> ip netengines_acme_corp {
+  <span class="kw">chain</span> forward {
+    <span class="kw">type</span> filter hook forward priority 0<span class="op">;</span>
+    <span class="comment"># business profile: stateful, inbound allowed</span>
+    iifname <span class="str">"eth_core"</span> oifname <span class="str">"eth_acme_corp"</span> ct state established,related accept
+    iifname <span class="str">"eth_acme_corp"</span> oifname <span class="str">"eth_core"</span> accept
+    iifname <span class="str">"eth_acme_corp"</span> oifname <span class="str">"eth_acme_corp"</span> drop  <span class="comment"># no lateral movement</span>
+  }
+}
+
+<span class="kw">table</span> ip netengines_bob_home {
+  <span class="kw">chain</span> forward { ... }
+  <span class="kw">chain</span> postrouting {
+    <span class="kw">type</span> nat hook postrouting priority 100<span class="op">;</span>
+    <span class="comment"># residential profile: NAT masquerade</span>
+    oifname <span class="str">"eth_core"</span> masquerade
+  }
+  <span class="kw">chain</span> prerouting {
+    <span class="kw">type</span> nat hook prerouting priority -100<span class="op">;</span>
+    <span class="comment"># residential: block unsolicited inbound</span>
+    iifname <span class="str">"eth_core"</span> ct state new drop
+  }
+}</pre>
+
+    <div class="callout callout-teal">
+      <p><strong>Rule reload on AND profile change:</strong> changing an AND profile via the operator API triggers the AND handler to regenerate the nftables file and call <code>docker exec netengines_gateway nft -f /etc/nftables/rules.nft</code>. Because <code>nft -f</code> loads atomically, existing established connections survive the reload. This is the mechanism for live profile changes in ephemeral mode; persistent mode adds a safety guard requiring explicit confirmation.</p>
+    </div>
+
+    <div class="callout callout-blue">
+      <p><strong>Where to test gateway rules — and where not to.</strong> The correctness guarantee needs to live in the profile → ruleset translation layer, not in a parallel simulator environment. The right tests: given a profile definition, generate the nftables ruleset, parse it back with <code>nft --check</code>, and assert the semantic intent matches (residential has masquerade rule, business has stateful accept, airgapped has drop-all). This is pure Python unit test territory. A separate gateway simulator adds a second environment to maintain and doesn't actually test the translation logic. Dense unit tests on <code>gateway_handler.generate_rules(profile)</code> is the correct investment.</p>
+    </div>
+  </div>
+</section>
+
+<!-- REGISTRIES -->
+<section id="registries">
+  <div class="wrap">
+    <div class="section-label">Registry implementation</div>
+    <h2 class="section-title">What runs, what the app coordinates</h2>
+    <p class="section-desc">The registries are real in-world services — the app seeds them, coordinates interactions between them, and does not absorb them. What backs each one differs by concern.</p>
+
+    <table class="dtable">
+      <thead>
+        <tr>
+          <th>Concern</th>
+          <th>Lives where</th>
+          <th>Backed by</th>
+          <th>Who calls it</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Org existence / capabilities</strong></td>
+          <td>World Registry (in-world service)</td>
+          <td>Supabase <code>world_registry</code> table</td>
+          <td>App as coordinator; in-world services query via operator API</td>
+        </tr>
+        <tr>
+          <td><strong>Address allocation</strong></td>
+          <td>Domain Registry (in-world service)</td>
+          <td>Supabase <code>address_pools</code> + <code>address_leases</code></td>
+          <td>AND handler at Phase 7; row lock prevents conflicts</td>
+        </tr>
+        <tr>
+          <td><strong>Domain registration</strong></td>
+          <td>Domain Registrar (in-world service)</td>
+          <td>Supabase <code>domain_records</code> + CoreDNS zone file</td>
+          <td>App or org via registrar service; triggers DNS handoff via pgmq</td>
+        </tr>
+        <tr>
+          <td><strong>WHOIS</strong></td>
+          <td>In-world — port 43 TCP listener</td>
+          <td>Queries Supabase <code>domain_records</code> + <code>world_registry</code></td>
+          <td>Standard WHOIS clients inside the world; protocol: RFC 3912</td>
+        </tr>
+        <tr>
+          <td><strong>RDAP</strong> (future)</td>
+          <td>In-world — HTTPS endpoint</td>
+          <td>Same Supabase tables as WHOIS</td>
+          <td>Modern registry clients; replaces WHOIS long-term</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout callout-blue">
+      <p><strong>WHOIS implementation:</strong> a thin TCP server (port 43) as a container on <code>10.0.0.9</code>. Accepts plaintext queries, looks up <code>domain_records</code> and <code>world_registry</code> via the app's internal API, formats and returns RFC 3912 plaintext. Approximately 80 lines of Python. The briefing gives it a dedicated container and IP — that is correct, because in-world tooling needs to reach it on the standard port. The data source is Supabase, but the protocol surface is in-world.</p>
+    </div>
+
+    <h3 class="sub-title">Phase 5 — what actually runs</h3>
+    <p>The spec implies containerised registry services at their IPs. Phase 5 is more precisely: the app seeds Supabase from the spec (orgs, address pools, TLD delegations), starts the WHOIS listener, wires the domain registrar service, and ensures the operator API registry routes are live. The heavy lifting is data seeding, not container orchestration.</p>
+  </div>
+</section>
+
+<!-- DNS HANDOFF -->
+<section id="dns-handoff">
+  <div class="wrap">
+    <div class="section-label">DNS handoff</div>
+    <h2 class="section-title">Domain registration → CoreDNS reload</h2>
+    <p class="section-desc">The sequence from an org registering a domain to that domain resolving inside the world. Previously unaddressed — the cross-handler coordination was implicit and untraced.</p>
+
+    <div class="sequence">
+      <div class="seq-item">
+        <div class="seq-num hi">1</div>
+        <div class="seq-body">
+          <h4>Registration request arrives</h4>
+          <p>Org submits domain registration via the domain registrar service (<code>registrar.platform.internal</code>) or via operator API. App validates org capabilities (must hold <code>register_domains</code>) against world_registry.</p>
+          <div class="seq-tags"><span class="seq-tag accent">operator API</span><span class="seq-tag">world_registry check</span></div>
+        </div>
+      </div>
+      <div class="seq-item">
+        <div class="seq-num hi">2</div>
+        <div class="seq-body">
+          <h4>Write to domain_records</h4>
+          <p>App inserts row into Supabase <code>domain_records</code>: name, org, NS records, TTL, created_at. This is the authoritative registration. Atomic — if this fails, nothing downstream happens.</p>
+          <div class="seq-tags"><span class="seq-tag purple">supabase write</span></div>
+        </div>
+      </div>
+      <div class="seq-item">
+        <div class="seq-num hi">3</div>
+        <div class="seq-body">
+          <h4>Enqueue DNS update event</h4>
+          <p>App publishes to pgmq: <code>{ event: "domain_registered", name: "acme.internal", org: "acme-corp", ns: [...] }</code>. The DNS handler subscribes. Decoupled — DNS failure does not roll back the registration; it retries the DNS update.</p>
+          <div class="seq-tags"><span class="seq-tag purple">pgmq publish</span></div>
+        </div>
+      </div>
+      <div class="seq-item">
+        <div class="seq-num hi">4</div>
+        <div class="seq-body">
+          <h4>DNS handler generates zone update</h4>
+          <p>DNS handler dequeues the message. Calls <code>dns_handler.add_zone_record()</code> which generates the zone file delta and writes it to CoreDNS's config volume (or calls CoreDNS admin API if zone reload is supported without full restart).</p>
+          <div class="seq-tags"><span class="seq-tag green">dns_handler</span><span class="seq-tag">zone file write</span></div>
+        </div>
+      </div>
+      <div class="seq-item">
+        <div class="seq-num hi">5</div>
+        <div class="seq-body">
+          <h4>CoreDNS reload — via reload plugin</h4>
+          <p>DNS handler writes zone file to a watched config directory. CoreDNS's <code>reload</code> plugin with the <code>auto</code> directive detects the change and hot-reloads without restart. <code>docker exec SIGHUP</code> is not the primary mechanism — it creates a coupling to the Docker runtime that breaks under k3s where <code>docker exec</code> doesn't exist. The reload plugin works regardless of orchestrator.</p>
+          <div class="seq-tags"><span class="seq-tag green">coreDNS reload plugin</span><span class="seq-tag">auto directive</span><span class="seq-tag">orchestrator-agnostic</span></div>
+        </div>
+      </div>
+      <div class="seq-item">
+        <div class="seq-num">6</div>
+        <div class="seq-body">
+          <h4>DKIM record injection (mail domains)</h4>
+          <p>If the registered domain has mail services, a second pgmq event triggers the mail handler to generate DKIM keys, publish the TXT record to CoreDNS, and configure Postfix for the domain. Same sequence as above — DNS side effect of a domain event.</p>
+          <div class="seq-tags"><span class="seq-tag purple">pgmq</span><span class="seq-tag accent">mail_handler</span><span class="seq-tag green">DKIM TXT → coreDNS</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-green">
+      <p><strong>pgmq decouples registration from DNS propagation.</strong> The registration is committed first. The DNS update is a side effect that can retry on failure without rolling back the registration. This also means the DNS handler can be tested in isolation — replay events, validate zone output, without touching the domain registry.</p>
+    </div>
+
+    <div class="callout callout-red">
+      <p><strong>Dead-letter queue is not optional.</strong> If the dns_handler is down or fails repeatedly, messages must not silently disappear. Every pgmq queue that crosses a handler boundary needs a DLQ. After N retries the message moves to <code>dlq_{queue_name}</code>. The operator API must expose DLQ state — <code>GET /api/v1/queues</code> should show message counts, stuck events, and allow replay. An operator who can't see that "DNS event for acme.internal is stuck in DLQ" has no path to recovery. Treat DLQ visibility as a first-class operator tool, not an afterthought.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ACME BOOTSTRAP -->
+<section id="acme">
+  <div class="wrap">
+    <div class="section-label">ACME bootstrap</div>
+    <h2 class="section-title">Breaking the PKI circularity</h2>
+    <p class="section-desc">step-ca needs TLS to serve ACME. ACME issues TLS certs. Neither can start without the other — unless one side uses an IP address instead of a DNS name for the initial connection. That's the circularity break.</p>
+
+    <div class="sequence">
+      <div class="seq-item">
+        <div class="seq-num hi">1</div>
+        <div class="seq-body">
+          <h4>Phase 3 starts — DNS and networks exist, PKI does not</h4>
+          <p>Phases 0–2 complete: Docker bridges created, CoreDNS root running on <code>10.0.0.2</code>, TLD delegation chain functional. DNS resolves in-world names. No certificates exist yet.</p>
+          <div class="seq-tags"><span class="seq-tag green">phase 0–2 complete</span></div>
+        </div>
+      </div>
+      <div class="seq-item">
+        <div class="seq-num hi">2</div>
+        <div class="seq-body">
+          <h4>Generate CA root key material</h4>
+          <p>App calls <code>pki_handler.generate_root_ca()</code>. In ephemeral mode: generates new key/cert pair, writes to ephemeral volume. In persistent mode: either loads from durable volume (if exists) or runs key ceremony. CA cert PEM is written to <code>runtime_state.ca_cert_pem</code> in Supabase.</p>
+          <div class="seq-tags"><span class="seq-tag accent">pki_handler</span><span class="seq-tag purple">supabase write</span></div>
+        </div>
+      </div>
+      <div class="seq-item">
+        <div class="seq-num hi">3</div>
+        <div class="seq-body">
+          <h4>Start step-ca on hardcoded IP</h4>
+          <p>App starts step-ca container on <code>10.0.0.6</code> (from spec <code>pki.root_ca.acme.listen_ip</code>). Container has the CA key material via volume mount. step-ca generates a self-signed cert for its own identity <strong>using the root CA key</strong> — it is its own first client.</p>
+          <div class="seq-tags"><span class="seq-tag blue">docker create</span><span class="seq-tag accent">10.0.0.6 (hardcoded)</span></div>
+        </div>
+      </div>
+      <div class="seq-item">
+        <div class="seq-num hi">4</div>
+        <div class="seq-body">
+          <h4>ACME directory available via IP</h4>
+          <p><code>https://10.0.0.6/acme/acme/directory</code> is now reachable — by IP, not DNS name. The healthcheck uses this URL directly. Any downstream Phase 3 client that needs to trust the CA cert must install the root CA cert in its trust store before calling this endpoint.</p>
+          <div class="seq-tags"><span class="seq-tag green">healthcheck: https://10.0.0.6/acme/acme/directory</span></div>
+        </div>
+      </div>
+      <div class="seq-item">
+        <div class="seq-num">5</div>
+        <div class="seq-body">
+          <h4>DNS name registration for ACME server</h4>
+          <p>App adds <code>ca.platform.internal → 10.0.0.6</code> A record to the platform zone. From this point, downstream services can use DNS-based ACME normally — <code>https://ca.platform.internal/acme/acme/directory</code>. The IP address was only needed to break the initial circle.</p>
+          <div class="seq-tags"><span class="seq-tag green">dns_handler</span><span class="seq-tag">ca.platform.internal</span></div>
+        </div>
+      </div>
+      <div class="seq-item">
+        <div class="seq-num">6</div>
+        <div class="seq-body">
+          <h4>Org app ACME certificate issuance</h4>
+          <p>When an org app container is deployed (Phase 8), the <strong>app requests the cert on the container's behalf</strong> via the step-ca admin API — not the container running its own ACME client. App writes the cert and key to a shared volume the container mounts. Rationale: simpler container images (no ACME client), app controls cert lifecycle, cert status visible in operator API.</p>
+          <div class="seq-tags"><span class="seq-tag accent">app_handler</span><span class="seq-tag">step-ca admin API</span><span class="seq-tag blue">volume mount</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HANDLERS -->
+<section id="handlers">
+  <div class="wrap">
+    <div class="section-label">Handler coordination</div>
+    <h2 class="section-title">What each handler calls</h2>
+    <p class="section-desc">Handlers are not isolated — they call each other's outputs and emit events for cross-handler side effects. This is the full coordination map.</p>
+
+    <div class="hmatrix">
+      <div class="hm-card">
+        <div class="hm-name">docker_handler</div>
+        <div class="hm-calls">Calls: <span>Docker SDK directly</span><br>
+        Called by: <span>every phase handler</span><br>
+        Supabase: <span>reads network/container IDs from runtime_state</span></div>
+      </div>
+      <div class="hm-card">
+        <div class="hm-name">dns_handler</div>
+        <div class="hm-calls">Calls: <span>CoreDNS config volume write, docker exec SIGHUP</span><br>
+        Called by: <span>Phase 1, 2; pgmq events from domain_registry_handler, mail_handler, app_handler</span><br>
+        Supabase: <span>reads domain_records for zone generation</span></div>
+      </div>
+      <div class="hm-card">
+        <div class="hm-name">pki_handler</div>
+        <div class="hm-calls">Calls: <span>step-ca REST API, volume key material</span><br>
+        Called by: <span>Phase 3; app_handler at org app deploy</span><br>
+        Supabase: <span>writes ca_cert_pem to runtime_state</span></div>
+      </div>
+      <div class="hm-card">
+        <div class="hm-name">oidc_handler</div>
+        <div class="hm-calls">Calls: <span>Keycloak Admin REST API</span><br>
+        Called by: <span>Phase 4 (platform realm), Phase 6 (in-world realm), app_handler (OIDC client per org app)</span><br>
+        Supabase: <span>reads world_registry for realm seeding</span></div>
+      </div>
+      <div class="hm-card">
+        <div class="hm-name">world_registry_handler</div>
+        <div class="hm-calls">Calls: <span>Supabase world_registry writes</span><br>
+        Called by: <span>Phase 5; operator API /orgs endpoint</span><br>
+        Emits: <span>pgmq → oidc_handler (realm create), and_handler (profile assign)</span></div>
+      </div>
+      <div class="hm-card">
+        <div class="hm-name">domain_registry_handler</div>
+        <div class="hm-calls">Calls: <span>Supabase address_pools, domain_records</span><br>
+        Called by: <span>Phase 5; registrar service; operator API</span><br>
+        Emits: <span>pgmq → dns_handler (zone update), mail_handler (DKIM for mail domains)</span></div>
+      </div>
+      <div class="hm-card">
+        <div class="hm-name">and_handler</div>
+        <div class="hm-calls">Calls: <span>docker_handler (bridge + connect), gateway_handler (nftables), dns_handler (suffix zone)</span><br>
+        Called by: <span>Phase 7; pgmq from world_registry_handler</span><br>
+        Supabase: <span>reads/writes address_leases</span></div>
+      </div>
+      <div class="hm-card">
+        <div class="hm-name">gateway_handler</div>
+        <div class="hm-calls">Calls: <span>docker exec nft -f on gateway container</span><br>
+        Called by: <span>Phase 0 (stub), Phase 7 (policy), and_handler (per-AND rules)</span><br>
+        Generates: <span>nftables rulesets from AND profile definitions</span></div>
+      </div>
+      <div class="hm-card">
+        <div class="hm-name">mail_handler</div>
+        <div class="hm-calls">Calls: <span>Postfix config volume, OpenDKIM key gen</span><br>
+        Called by: <span>Phase 8; pgmq from domain_registry_handler</span><br>
+        Emits: <span>pgmq → dns_handler (DKIM TXT record, SPF, DMARC)</span></div>
+      </div>
+      <div class="hm-card">
+        <div class="hm-name">app_handler</div>
+        <div class="hm-calls">Calls: <span>docker_handler, dns_handler, pki_handler (cert), oidc_handler (OIDC client)</span><br>
+        Called by: <span>Phase 8, operator API /orgs/{org}/apps</span><br>
+        Sequence: <span>container → DNS → cert → OIDC wire</span></div>
+      </div>
+    </div>
+
+    <div class="callout callout-accent">
+      <p><strong>Org app deployment sequence:</strong> <code>app_handler</code> coordinates four steps in order — (1) start container inside org's AND bridge, (2) emit DNS registration event via pgmq → <code>dns_handler</code>, (3) request cert from step-ca via <code>pki_handler</code> and inject via volume, (4) create OIDC client in org's in-world Keycloak realm via <code>oidc_handler</code>. If any step fails, the partial deployment is logged to operator audit and can be retried or rolled back independently.</p>
+    </div>
+
+    <div class="callout callout-purple">
+      <p><strong>pgmq as state machine, not just a queue.</strong> When domain_registry_handler emits an event the dns_handler processes, which then triggers mail_handler, which emits back to dns_handler — the chain has observable state. Each message should carry a correlation ID and a parent event ID. The operator API should surface this as a queryable event graph: <code>GET /api/v1/events/{correlation_id}</code> shows the full chain, current state of each step, and where it's stuck. This is the difference between a system you can operate and one you can only restart.</p>
+    </div>
+  </div>
+</section>
+
+<!-- RELOAD -->
+<section id="reload">
+  <div class="wrap">
+    <div class="section-label">Reload / diff</div>
+    <h2 class="section-title">Spec diffing and live apply</h2>
+    <p class="section-desc">POST /reload computes the delta between old and new spec and applies changes in dependency order. What counts as a detectable change, and what happens on partial failure.</p>
+
+    <h3 class="sub-title">Immutability policy — what cannot change after bootstrap</h3>
+    <p>Certain fields in the spec are facts about the world's physical substrate. Changing them post-bootstrap is not a reload — it is a reset. This policy must be codified in the spec schema itself, not caught at runtime. Marked fields produce a validation error on reload diff, not a runtime failure.</p>
+
+    <table class="dtable">
+      <thead>
+        <tr><th>Field</th><th>Why immutable</th><th>Change path</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>substrate.networks.*</code></td>
+          <td>L0 Docker bridges. Every container IP depends on these CIDRs. Changing a subnet means every container in the world has the wrong address.</td>
+          <td>World reset only</td>
+        </tr>
+        <tr>
+          <td><code>dns.root.listen_ip</code></td>
+          <td>Hardcoded into every container's resolver config at spinup. Changing it silently breaks all DNS in the world.</td>
+          <td>World reset only</td>
+        </tr>
+        <tr>
+          <td><code>pki.root_ca.acme.listen_ip</code></td>
+          <td>Hardcoded into every service's ACME config and trust store. Changing it breaks all cert issuance.</td>
+          <td>World reset only</td>
+        </tr>
+        <tr>
+          <td><code>metadata.lifecycle</code></td>
+          <td>Ephemeral → persistent is a PKI key ceremony and storage migration, not a config change. Persistent → ephemeral destroys durable state.</td>
+          <td>Explicit migration procedure</td>
+        </tr>
+        <tr>
+          <td><code>domain_registry.address_space[*].cidr</code></td>
+          <td>Existing AND leases reference these. Changing a pool CIDR while leases are active produces overlapping or invalid allocations.</td>
+          <td>New pool entry only; existing pools frozen</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout callout-red">
+      <p><strong>Immutability must be enforced at spec parse time, not handler time.</strong> If the reload diff detects a change to any immutable field, the entire reload must be rejected with a clear error before any handler is called. A partial apply that changes mutable fields but fails on an immutable one leaves the world in an inconsistent state. The validator runs before the orchestrator — no exceptions.</p>
+    </div>
+
+    <h3 class="sub-title">Diff categories</h3>
+    <table class="dtable">
+      <thead>
+        <tr><th>Change type</th><th>Detection</th><th>Ephemeral</th><th>Persistent</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>New org added</strong></td>
+          <td>org name in new spec not in <code>world_registry</code></td>
+          <td><span class="pill pill-green">apply</span></td>
+          <td><span class="pill pill-green">apply</span></td>
+        </tr>
+        <tr>
+          <td><strong>Org removed</strong></td>
+          <td>org name in <code>world_registry</code> not in new spec</td>
+          <td><span class="pill pill-green">apply</span></td>
+          <td><span class="pill pill-red">refuse</span> — governance operation, requires explicit API call</td>
+        </tr>
+        <tr>
+          <td><strong>AND profile changed</strong></td>
+          <td>profile field diff on existing AND instance</td>
+          <td><span class="pill pill-green">apply</span> — regenerate nftables</td>
+          <td><span class="pill pill-accent">confirm</span> — warn before applying</td>
+        </tr>
+        <tr>
+          <td><strong>New org app</strong></td>
+          <td>deployment entry not in current state</td>
+          <td><span class="pill pill-green">apply</span></td>
+          <td><span class="pill pill-green">apply</span></td>
+        </tr>
+        <tr>
+          <td><strong>PKI reconfiguration</strong></td>
+          <td>any change to <code>pki.*</code> block</td>
+          <td><span class="pill pill-green">apply</span> — ephemeral CA, no ceremony</td>
+          <td><span class="pill pill-red">refuse</span> — requires explicit key ceremony outside reload</td>
+        </tr>
+        <tr>
+          <td><strong>Gateway mode change</strong></td>
+          <td><code>gateway_portal.real_internet.mode</code> diff</td>
+          <td><span class="pill pill-green">apply</span> — regenerate rules</td>
+          <td><span class="pill pill-accent">confirm</span></td>
+        </tr>
+        <tr>
+          <td><strong>DNS TLD added</strong></td>
+          <td>new entry in <code>dns.tlds</code></td>
+          <td><span class="pill pill-green">apply</span></td>
+          <td><span class="pill pill-green">apply</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-title">Partial failure handling</h3>
+    <p>Apply runs in dependency order. If a step fails, the apply halts at that step. Steps already applied are not rolled back — the world is in a partially-updated state. The operator audit log records exactly which steps succeeded and which failed. The operator can either fix the underlying issue and re-POST /reload (idempotent where possible) or reset in ephemeral mode.</p>
+
+    <div class="callout callout-blue">
+      <p><strong>Idempotency target:</strong> handler operations should be idempotent where possible — creating a Docker network that already exists returns the existing network, not an error; CoreDNS zone records that already exist are updated not duplicated. This makes partial-failure recovery via re-applying the full spec safe without manual cleanup.</p>
+    </div>
+
+    <div class="callout callout-accent">
+      <p><strong>Debugging tools must be first-class from day one.</strong> The system will spend a significant amount of time in partially-bootstrapped states during development and early operation. The operator needs: structured phase logs queryable by phase number and timestamp; event queue state (pending, processing, DLQ counts per queue); healthcheck status per phase accessible via <code>GET /api/v1/health</code>; and a way to replay a stuck event from DLQ without restarting the world. These are not post-MVP additions — a system you cannot inspect is a system you cannot debug, and debugging is most of the work during the bootstrap phase of development.</p>
+    </div>
+  </div>
+</section>
+
+<!-- IDENTITY -->
+<section id="identity">
+  <div class="wrap">
+    <div class="section-label">Identity</div>
+    <h2 class="section-title">Two trust roots — and a decision</h2>
+    <p class="section-desc">The architecture requires two separate identity trust anchors that must never share a root. One open question needs resolution before implementation.</p>
+
+    <div class="split">
+      <div class="split-card" style="border-color: var(--blue-border);">
+        <div class="split-label" style="color: var(--blue);">L1 — Platform identity</div>
+        <h4>Who may operate NetEngines</h4>
+        <div class="split-item">Controls operator API access</div>
+        <div class="split-item">Issues tokens for phase orchestration, org admission, reload</div>
+        <div class="split-item">Listens on platform network only — not in-world</div>
+        <div class="split-item"><strong>Decision needed:</strong> Keycloak platform realm vs Supabase Auth — pick one, not both</div>
+        <div class="split-item">Keycloak preferred — consistent with spec, proper OIDC flows</div>
+      </div>
+      <div class="split-card" style="border-color: var(--green-border);">
+        <div class="split-label" style="color: var(--green);">L2 — In-world identity</div>
+        <h4>Who inhabits the world</h4>
+        <div class="split-item">Mailboxes, domain ownership, SSO for org apps</div>
+        <div class="split-item">Separate Keycloak realm — different issuer URL, different signing key</div>
+        <div class="split-item">Routable from in-world — lives at <code>auth.internal</code></div>
+        <div class="split-item">Seeded from world_registry org list at Phase 6</div>
+        <div class="split-item">Never shares tokens or trust anchor with L1</div>
+      </div>
+    </div>
+
+    <div class="callout callout-red">
+      <p><strong>The open decision:</strong> Supabase Auth exists as a capability. The spec has Keycloak for the platform realm. Using both produces two competing L1 identity systems, which is worse than either alone. The recommendation is Keycloak for L1 — it gives proper OIDC flows, is already in-world as a container, and is consistent with the spec. If Supabase Auth is used for anything, it is a different concern (e.g. app-layer developer accounts on a SaaS offering of NetEngines) — not L1 operator identity.</p>
+    </div>
+
+    <h3 class="sub-title">Bootstrap auth problem</h3>
+    <p>The operator API validates tokens against the L1 Keycloak realm. But Keycloak is itself a Phase 4 bootstrapped service. What authenticates the operator during bootstrap (Phases 0–3)?</p>
+    <div class="callout callout-teal">
+      <p><strong>Resolution:</strong> phases 0–3 run under a bootstrap secret — not unauthenticated. The secret is generated at first run, written to a <code>.env</code> file on the host, and passed as an environment variable to the Python app. The API middleware checks for this secret on pre-Phase-4 endpoints. The CLI reads it from the same <code>.env</code>. It cannot be set by an API call — it is a local host secret that gates bootstrap initiation. After Phase 4 completes, the bootstrap secret is retired for operator API calls; all subsequent requests require OIDC tokens from the platform realm. The secret remains valid only for the CLI's local phase execution path.</p>
+    </div>
+
+    <div class="callout callout-red">
+      <p><strong>Keycloak Admin REST API is legendarily difficult.</strong> It is underdocumented, version-sensitive, and occasionally surprising in behaviour. Realm creation, client registration, user provisioning, and role assignment each have their own quirks. The <code>oidc_handler</code> will be one of the most brittle handlers to write and maintain. Mitigations: pin the Keycloak version in the container image and do not auto-update; write integration tests for every Admin API call the handler makes; log the full request and response body on any Admin API error, not just the status code. Budget more time for Phase 4 and 6 than the handler matrix implies.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ARCHETYPES -->
+<section id="archetypes">
+  <div class="wrap">
+    <div class="section-label">Archetype tension</div>
+    <h2 class="section-title">Four archetypes, one platform — explicit conflict</h2>
+    <p class="section-desc">These documents are coherent because they implicitly optimise for the dev sandbox archetype. That is the right starting point. But the other three archetypes have requirements that are currently invisible and will surface the moment someone tries to use NetEngines for them. Naming this tension now prevents architecture decisions that close off archetypes unintentionally.</p>
+
+    <table class="dtable">
+      <thead>
+        <tr><th>Archetype</th><th>Primary requirement</th><th>Conflicts with</th><th>Current stance</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Dev sandbox</strong></td>
+          <td>Fast spinup, ephemeral, mirrored gateway, ACME works, SSO works. Mailpit not Postfix.</td>
+          <td>—</td>
+          <td><span class="pill pill-green">optimised for</span></td>
+        </tr>
+        <tr>
+          <td><strong>Teaching lab</strong></td>
+          <td>Protocol fidelity — WHOIS on port 43, real SMTP delivery mechanics, BGP peering students can observe. Multiple isolated student worlds. Reset between cohorts.</td>
+          <td>Dev sandbox deprioritises protocol fidelity (Mailpit, REST WHOIS). BGP is future scope. Multi-world management is unaddressed.</td>
+          <td><span class="pill pill-gray">deferred</span></td>
+        </tr>
+        <tr>
+          <td><strong>Cyber range</strong></td>
+          <td>Malicious traffic simulation, impersonation of real services, air-gapped ANDs with deliberate attack paths. Forensic-quality logging. Hard isolation between attacker and defender environments.</td>
+          <td>App handler deploys known-good services from a catalog. Injecting malicious services is architecturally outside the current model. The gateway enforces isolation but the spec has no mechanism for deliberate vulnerability injection.</td>
+          <td><span class="pill pill-gray">deferred</span></td>
+        </tr>
+        <tr>
+          <td><strong>Alternative internet substrate</strong></td>
+          <td>Long-lived, persistent, HA, durable PKI, cross-world federation, real BGP routing fabric, DNSSEC rotation, external exposure. Self-hosted Supabase.</td>
+          <td>Everything that makes dev sandbox fast — ephemeral keys, no HA, Mailpit, cloud Supabase — is wrong for this archetype. The operational threshold is a sharp crossing, not a gradient.</td>
+          <td><span class="pill pill-purple">persistent mode scope</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout callout-accent">
+      <p><strong>The immediate risk:</strong> architecture decisions made while optimising for dev sandbox may silently close off other archetypes. Specific examples — a REST-only WHOIS endpoint (no port 43 listener) is fine for dev sandbox but breaks teaching lab protocol fidelity. Hardcoding Mailpit as the mail handler for ephemeral mode makes the code simpler but makes it harder to swap in Postfix for the same lifecycle. The AND profile system is extensible — but if the gateway handler only generates nftables rules for the four current profiles, adding a "cyber range attacker" profile later means touching the handler, not just adding a profile definition. Design for extensibility at the boundary points even when MVP doesn't need it.</p>
+    </div>
+
+    <div class="callout callout-blue">
+      <p><strong>Cross-world federation is out of MVP scope and should stay that way.</strong> BGP, DNSSEC cross-signing, OIDC federation, and cross-CA trust are each individually complex. Combining them for the alternative internet substrate archetype is a later milestone. The architecture supports it in principle (gateway portal cross_world modes, federated mode in spec). Do not let it distract from getting a single world solid first.</p>
+    </div>
+  </div>
+</section>
+
+<!-- OPEN QUESTIONS -->
+<section id="open">
+  <div class="wrap">
+    <div class="section-label">Open questions</div>
+    <h2 class="section-title">Unresolved before implementation</h2>
+    <p class="section-desc">Items that need a decision — not captured elsewhere in the briefing or this document.</p>
+
+    <div class="open-q">
+      <div class="open-q-marker">CLOSED</div>
+      <p><strong>CoreDNS zone update mechanism:</strong> resolved — use the <code>reload</code> plugin with the <code>auto</code> directive. CoreDNS watches the config directory and hot-reloads. <code>docker exec SIGHUP</code> is reserved for emergencies only. Reason: orchestrator-agnostic; works under k3s where <code>docker exec</code> doesn't exist. The <code>dns_handler</code> writes zone files to a watched volume mount and does not call Docker directly for reloads.</p>
+    </div>
+    <div class="open-q">
+      <div class="open-q-marker">CLOSED</div>
+      <p><strong>L1 platform identity:</strong> resolved — Keycloak platform realm. Supabase Auth is not used for operator authentication. If Supabase Auth is used in future it is for a separate concern (SaaS developer accounts) not L1 operator identity. The <code>oidc_handler</code> owns all Keycloak Admin REST API calls for both platform and in-world realms.</p>
+    </div>
+    <div class="open-q">
+      <div class="open-q-marker">DECIDE</div>
+      <p><strong>Self-hosted vs cloud Supabase for MVP:</strong> cloud is faster to start; self-hosted is the correct posture for the authority-autonomous claim. For dev sandbox MVP, cloud is acceptable. For persistent or alternative-internet archetype, self-hosted is required. This choice affects connection config and secrets management from day one — decide before writing any Supabase client code.</p>
+    </div>
+    <div class="open-q">
+      <div class="open-q-marker">DECIDE</div>
+      <p><strong>Event queue schema:</strong> pgmq messages need a correlation ID and parent event ID to support the event graph visibility in the operator API. The message envelope schema must be agreed before any handler emits events — retrofitting correlation IDs across all handlers after the fact is painful. Define the envelope shape first.</p>
+    </div>
+    <div class="open-q">
+      <div class="open-q-marker">CLARIFY</div>
+      <p><strong>Management API (L2) scope and timing:</strong> per-org self-service surface for domain registration, app deployment, user management. The operator API covers all of this for MVP. The L2 management API is needed for the multi-tenancy use case where orgs self-serve without operator involvement. Not needed for MVP — but the auth boundary and routing design should not make it hard to add later. The L2 in-world Keycloak realm already provides the right token issuer; the management API just needs to validate against it.</p>
+    </div>
+    <div class="open-q">
+      <div class="open-q-marker">CLARIFY</div>
+      <p><strong>Archetype extensibility points:</strong> where in the codebase do teaching lab and cyber range requirements plug in without rewriting core handlers? Candidates: AND profile definitions (extensible by design), org app catalog (extensible), gateway_handler rule generation (needs explicit extension point for non-standard profiles). Identify these before MVP code is written, even if the extension points themselves are stubs.</p>
+    </div>
+    <div class="open-q">
+      <div class="open-q-marker">FUTURE</div>
+      <p><strong>VyOS gateway migration path:</strong> when the BGP fabric module comes in scope, the gateway needs to migrate from Alpine+nftables to VyOS. The AND handler should abstract the gateway interaction behind <code>gateway_handler</code> so the migration is a handler swap, not a refactor of every phase that touches the gateway. The interface contract — <code>generate_rules(profile)</code>, <code>apply_rules()</code>, <code>reload()</code> — should be defined now even if only the nftables implementation ships.</p>
+    </div>
+    <div class="open-q">
+      <div class="open-q-marker">FUTURE</div>
+      <p><strong>DNSSEC key rotation:</strong> the spec enables DNSSEC with KSK/ZSK rotation schedules. The rotation calendar management — generating new keys, rolling signatures, retiring old keys — is unaddressed. In ephemeral mode this doesn't matter (new keys at spinup). In persistent mode it's a non-trivial operational concern that needs to live in a scheduled job backed by Supabase, with expiry-runway SLOs surfaced in the operator API.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>NetEngines · Technical Architecture v1.1 · Companion to Project Briefing v1</p>
+  </div>
+</footer>
+
+</body>
+</html>

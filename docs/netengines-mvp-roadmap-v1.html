@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetEngines — MVP Roadmap v1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f10; --surface: #1a1a1d; --surface-2: #212125; --surface-3: #262629;
+    --border: #2a2a2d; --border-2: #333337;
+    --text: #ffffff; --text-2: #a0a0a0; --text-3: #555;
+    --accent: #D97757; --accent-muted: rgba(217,119,87,0.10); --accent-border: rgba(217,119,87,0.28);
+    --green: #4ade80; --green-muted: rgba(74,222,128,0.09); --green-border: rgba(74,222,128,0.25);
+    --blue: #60a5fa; --blue-muted: rgba(96,165,250,0.09); --blue-border: rgba(96,165,250,0.25);
+    --purple: #a78bfa; --purple-muted: rgba(167,139,250,0.09); --purple-border: rgba(167,139,250,0.25);
+    --yellow: #fbbf24; --yellow-muted: rgba(251,191,36,0.09);
+    --red: #f87171; --red-muted: rgba(248,113,113,0.09);
+    --teal: #2dd4bf; --teal-muted: rgba(45,212,191,0.09); --teal-border: rgba(45,212,191,0.25);
+    --radius: 12px; --radius-sm: 8px; --radius-xs: 5px;
+    --font: 'Inter', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  html { scroll-behavior: smooth; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 15px; line-height: 1.65; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1020px; margin: 0 auto; padding: 0 24px; }
+
+  nav { position: sticky; top: 0; z-index: 100; background: rgba(15,15,16,0.9); backdrop-filter: blur(14px); border-bottom: 1px solid var(--border); padding: 13px 0; }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; }
+  .nav-logo { font-weight: 700; font-size: 15px; letter-spacing: -0.3px; }
+  .nav-logo span { color: var(--accent); }
+  .nav-badge { font-size: 11px; font-weight: 600; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-3); padding: 2px 8px; border-radius: 4px; margin-left: 10px; vertical-align: middle; }
+  .nav-links { display: flex; gap: 20px; flex-wrap: wrap; }
+  .nav-links a { color: var(--text-2); text-decoration: none; font-size: 13px; transition: color .15s; }
+  .nav-links a:hover { color: var(--text); }
+
+  .hero { padding: 72px 0 56px; text-align: center; border-bottom: 1px solid var(--border); }
+  .hero-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-3); border-radius: 100px; padding: 4px 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; margin-bottom: 22px; }
+  .hero h1 { font-size: clamp(26px,4.5vw,44px); font-weight: 700; letter-spacing: -1px; line-height: 1.15; margin-bottom: 14px; }
+  .hero h1 em { color: var(--accent); font-style: normal; }
+  .hero-sub { font-size: 15px; color: var(--text-2); max-width: 580px; margin: 0 auto; line-height: 1.7; }
+
+  section { padding: 64px 0; border-top: 1px solid var(--border); }
+  .section-label { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
+  .section-title { font-size: clamp(18px,3vw,26px); font-weight: 700; letter-spacing: -0.4px; line-height: 1.25; margin-bottom: 10px; }
+  .section-desc { color: var(--text-2); max-width: 640px; line-height: 1.7; margin-bottom: 32px; }
+
+  /* CALLOUTS */
+  .callout { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 14px 18px; margin: 18px 0; border: 1px solid; border-left-width: 3px; }
+  .callout p { font-size: 13px; line-height: 1.65; }
+  .callout strong { color: var(--text); }
+  .callout-accent { background: var(--accent-muted); border-color: var(--accent-border); border-left-color: var(--accent); }
+  .callout-accent p { color: var(--text-2); }
+  .callout-blue { background: var(--blue-muted); border-color: var(--blue-border); border-left-color: var(--blue); }
+  .callout-blue p { color: var(--text-2); }
+  .callout-green { background: var(--green-muted); border-color: var(--green-border); border-left-color: var(--green); }
+  .callout-green p { color: var(--text-2); }
+  .callout-purple { background: var(--purple-muted); border-color: var(--purple-border); border-left-color: var(--purple); }
+  .callout-purple p { color: var(--text-2); }
+  .callout-teal { background: var(--teal-muted); border-color: var(--teal-border); border-left-color: var(--teal); }
+  .callout-teal p { color: var(--text-2); }
+  .callout-red { background: var(--red-muted); border-color: rgba(248,113,113,0.25); border-left-color: var(--red); }
+  .callout-red p { color: var(--text-2); }
+
+  pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px 18px; font-family: var(--mono); font-size: 12px; line-height: 1.75; overflow-x: auto; color: #c9d1d9; margin: 14px 0; }
+  code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px; color: var(--text-2); }
+
+  /* MILESTONE CARDS */
+  .milestone { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; overflow: hidden; }
+  .milestone-header { display: flex; align-items: flex-start; gap: 16px; padding: 20px 22px 16px; }
+  .ms-num { font-family: var(--mono); font-size: 11px; font-weight: 500; padding: 4px 9px; border-radius: var(--radius-xs); white-space: nowrap; flex-shrink: 0; margin-top: 2px; }
+  .ms-num.phase-infra { background: var(--blue-muted); color: var(--blue); border: 1px solid var(--blue-border); }
+  .ms-num.phase-pki { background: var(--yellow-muted); color: var(--yellow); border: 1px solid rgba(251,191,36,0.25); }
+  .ms-num.phase-identity { background: var(--purple-muted); color: var(--purple); border: 1px solid var(--purple-border); }
+  .ms-num.phase-registry { background: var(--teal-muted); color: var(--teal); border: 1px solid var(--teal-border); }
+  .ms-num.phase-and { background: var(--accent-muted); color: var(--accent); border: 1px solid var(--accent-border); }
+  .ms-num.phase-services { background: var(--green-muted); color: var(--green); border: 1px solid var(--green-border); }
+  .ms-num.phase-api { background: var(--surface-3); color: var(--text-2); border: 1px solid var(--border-2); }
+  .ms-num.phase-foundation { background: var(--surface-3); color: var(--text-3); border: 1px solid var(--border); }
+  .milestone-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .milestone-phases { font-size: 12px; color: var(--text-3); font-family: var(--mono); margin-bottom: 6px; }
+  .milestone-desc { font-size: 13px; color: var(--text-2); line-height: 1.6; }
+  .milestone-body { padding: 0 22px 20px; border-top: 1px solid var(--border); margin-top: 2px; }
+
+  .ms-col-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding-top: 18px; }
+  .ms-col h4 { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-3); margin-bottom: 10px; }
+  .ms-item { font-size: 12px; color: var(--text-2); padding: 4px 0; border-bottom: 1px solid var(--border); line-height: 1.5; }
+  .ms-item:last-child { border-bottom: none; }
+  .ms-item::before { content: "· "; color: var(--text-3); }
+
+  .ms-dod { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .ms-dod h4 { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--green); margin-bottom: 8px; }
+  .ms-dod-item { font-size: 12px; color: var(--text-2); padding: 3px 0; line-height: 1.5; }
+  .ms-dod-item::before { content: "✓ "; color: var(--green); }
+
+  .ms-defer { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .ms-defer h4 { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-3); margin-bottom: 8px; }
+  .ms-defer-item { font-size: 12px; color: var(--text-3); padding: 3px 0; line-height: 1.5; }
+  .ms-defer-item::before { content: "✕ "; color: var(--text-3); opacity: 0.5; }
+
+  /* PILL */
+  .pill { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 3px; font-family: var(--mono); white-space: nowrap; }
+  .pill-green { background: var(--green-muted); color: var(--green); border: 1px solid var(--green-border); }
+  .pill-blue { background: var(--blue-muted); color: var(--blue); border: 1px solid var(--blue-border); }
+  .pill-accent { background: var(--accent-muted); color: var(--accent); border: 1px solid var(--accent-border); }
+  .pill-purple { background: var(--purple-muted); color: var(--purple); border: 1px solid var(--purple-border); }
+  .pill-red { background: var(--red-muted); color: var(--red); border: 1px solid rgba(248,113,113,0.3); }
+  .pill-gray { background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border); }
+  .pill-yellow { background: var(--yellow-muted); color: var(--yellow); border: 1px solid rgba(251,191,36,0.25); }
+  .pill-teal { background: var(--teal-muted); color: var(--teal); border: 1px solid var(--teal-border); }
+
+  /* DECISION TABLE */
+  .dtable { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+  .dtable th { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-3); text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .dtable td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-2); vertical-align: top; line-height: 1.55; }
+  .dtable tr:last-child td { border-bottom: none; }
+
+  /* CRITICAL PATH */
+  .cpath { display: flex; flex-direction: column; gap: 2px; margin: 18px 0; }
+  .cp-row { display: flex; align-items: center; gap: 10px; }
+  .cp-box { font-family: var(--mono); font-size: 11px; font-weight: 500; padding: 5px 10px; border-radius: var(--radius-xs); white-space: nowrap; }
+  .cp-arrow { color: var(--text-3); font-size: 12px; }
+  .cp-m0 { background: var(--surface-3); color: var(--text-3); border: 1px solid var(--border); }
+  .cp-m1 { background: var(--blue-muted); color: var(--blue); border: 1px solid var(--blue-border); }
+  .cp-m2 { background: var(--yellow-muted); color: var(--yellow); border: 1px solid rgba(251,191,36,0.25); }
+  .cp-m3 { background: var(--purple-muted); color: var(--purple); border: 1px solid var(--purple-border); }
+  .cp-m4 { background: var(--teal-muted); color: var(--teal); border: 1px solid var(--teal-border); }
+  .cp-m5 { background: var(--purple-muted); color: var(--purple); border: 1px solid var(--purple-border); }
+  .cp-m6 { background: var(--accent-muted); color: var(--accent); border: 1px solid var(--accent-border); }
+  .cp-m7 { background: var(--green-muted); color: var(--green); border: 1px solid var(--green-border); }
+  .cp-m8 { background: var(--surface-3); color: var(--text-2); border: 1px solid var(--border-2); }
+
+  /* OPEN Q */
+  .open-q { background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius-sm); padding: 14px 16px; margin: 8px 0; display: flex; gap: 12px; align-items: flex-start; }
+  .oq-marker { font-size: 10px; font-weight: 700; border-radius: 3px; padding: 2px 6px; white-space: nowrap; margin-top: 2px; flex-shrink: 0; }
+  .oq-marker.decide { background: var(--red-muted); color: var(--red); border: 1px solid rgba(248,113,113,0.3); }
+  .oq-marker.lock { background: var(--yellow-muted); color: var(--yellow); border: 1px solid rgba(251,191,36,0.25); }
+  .oq-marker.now { background: var(--green-muted); color: var(--green); border: 1px solid var(--green-border); }
+  .open-q p { font-size: 13px; color: var(--text-2); line-height: 1.55; }
+
+  /* SCOPE DEFINITION */
+  .scope-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0; }
+  .scope-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 18px; }
+  .scope-card.in { border-color: var(--green-border); }
+  .scope-card.out { border-color: var(--border); }
+  .scope-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; }
+  .scope-card.in .scope-label { color: var(--green); }
+  .scope-card.out .scope-label { color: var(--text-3); }
+  .scope-item { font-size: 12px; color: var(--text-2); padding: 4px 0; border-bottom: 1px solid var(--border); line-height: 1.5; }
+  .scope-item:last-child { border-bottom: none; }
+  .scope-card.in .scope-item::before { content: "✓ "; color: var(--green); }
+  .scope-card.out .scope-item::before { content: "✕ "; color: var(--text-3); opacity: 0.5; }
+
+  footer { border-top: 1px solid var(--border); padding: 36px 0; text-align: center; }
+  footer p { font-size: 12px; color: var(--text-3); }
+
+  @media (max-width: 680px) {
+    .ms-col-wrap, .scope-grid { grid-template-columns: 1fr; }
+    .nav-links { display: none; }
+    .cp-row { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="nav-logo">Net<span>Engines</span> <span class="nav-badge">MVP Roadmap v1</span></div>
+    <div class="nav-links">
+      <a href="#scope">MVP scope</a>
+      <a href="#pre-decisions">Pre-decisions</a>
+      <a href="#critical-path">Critical path</a>
+      <a href="#milestones">Milestones</a>
+      <a href="#mvp-complete">MVP complete</a>
+    </div>
+  </div>
+</nav>
+
+<div class="hero">
+  <div class="wrap">
+    <div class="hero-badge">🗺 Planning · Implementation Roadmap</div>
+    <h1>MVP Roadmap<br><em>dev sandbox → working world</em></h1>
+    <p class="hero-sub">Nine milestones, a single world, one archetype. Everything else is explicitly deferred. The goal: a fully bootstrapped ephemeral internetwork you can spin up in one command.</p>
+  </div>
+</div>
+
+
+<!-- SCOPE -->
+<section id="scope">
+  <div class="wrap">
+    <div class="section-label">MVP scope</div>
+    <h2 class="section-title">One archetype, one lifecycle, one world</h2>
+    <p class="section-desc">The technical document is honest: NetEngines bundles four product archetypes with conflicting requirements. MVP optimises for exactly one — the dev sandbox — and builds toward that without closing off the others at their extension points.</p>
+
+    <div class="scope-grid">
+      <div class="scope-card in">
+        <div class="scope-label">In MVP</div>
+        <div class="scope-item">Dev sandbox archetype (explicitly optimised)</div>
+        <div class="scope-item">Ephemeral lifecycle only</div>
+        <div class="scope-item">Single world, multi-org capable</div>
+        <div class="scope-item">Phases 0–8 all bootstrapped</div>
+        <div class="scope-item">Operator API — L1 surface only</div>
+        <div class="scope-item">Alpine + nftables gateway</div>
+        <div class="scope-item">Mailpit as mail sink (no real SMTP delivery)</div>
+        <div class="scope-item">CoreDNS reload plugin (not docker exec SIGHUP)</div>
+        <div class="scope-item">Cloud Supabase (self-hosted deferred)</div>
+        <div class="scope-item">Gitea as first working org app</div>
+        <div class="scope-item">Gateway modes: isolated and mirrored</div>
+        <div class="scope-item">DLQ visibility in operator API</div>
+        <div class="scope-item">Bootstrap secret auth (pre-Phase 4 only)</div>
+        <div class="scope-item">Example specs: minimal, single-org, dev-sandbox</div>
+      </div>
+      <div class="scope-card out">
+        <div class="scope-label">Deferred (not MVP)</div>
+        <div class="scope-item">Persistent lifecycle — HA, durable PKI, rotation</div>
+        <div class="scope-item">VyOS gateway / BGP fabric</div>
+        <div class="scope-item">L2 Management API (per-org self-service)</div>
+        <div class="scope-item">Cross-world peered / federated modes</div>
+        <div class="scope-item">Self-hosted Supabase</div>
+        <div class="scope-item">Real Postfix SMTP delivery</div>
+        <div class="scope-item">DNSSEC key rotation calendar</div>
+        <div class="scope-item">Intermediate CA</div>
+        <div class="scope-item">RDAP (WHOIS replacement)</div>
+        <div class="scope-item">Teaching lab / cyber range archetypes</div>
+        <div class="scope-item">Multi-world management surface</div>
+        <div class="scope-item">Gateway modes: shadowed, exposed, custom</div>
+        <div class="scope-item">BGP / AS instances / IXP fabric</div>
+        <div class="scope-item">Cellular / radio emulation</div>
+        <div class="scope-item">CRL / OCSP</div>
+      </div>
+    </div>
+
+    <div class="callout callout-accent">
+      <p><strong>What MVP delivers:</strong> <code>netengines up</code> against a minimal spec produces a fully bootstrapped world — root DNS resolving, ACME issuing real certs, two Keycloak realms (platform + in-world), address-allocated ANDs with nftables policy, Mailpit capturing mail, MinIO live, and a Gitea instance inside <code>acme.internal</code> that has a real TLS cert and working SSO. The whole thing tears down cleanly. That is the bar.</p>
+    </div>
+  </div>
+</section>
+
+
+<!-- PRE-DECISIONS -->
+<section id="pre-decisions">
+  <div class="wrap">
+    <div class="section-label">Pre-decisions</div>
+    <h2 class="section-title">Lock these before writing a line of code</h2>
+    <p class="section-desc">Three decisions that propagate everywhere. Getting them wrong at M0 means expensive refactoring at M4–M5. They are not architectural preferences — they affect schema, connection config, handler interfaces, and test fixtures from day one.</p>
+
+    <div class="open-q">
+      <div class="oq-marker decide">DECIDE</div>
+      <p><strong>Supabase: cloud vs self-hosted for MVP.</strong> Cloud is faster to start. Self-hosted is the correct posture for authority-autonomous claim. For dev sandbox MVP, cloud is acceptable — the governance data leaves the world, but that tension only matters for the alternative-internet-substrate archetype. Decision: <strong>cloud for MVP</strong>, self-hosted in persistent mode scope. This affects the Supabase client connection config, secrets management in <code>.env</code>, and CI fixture setup. Pick before writing any Supabase client code.</p>
+    </div>
+
+    <div class="open-q">
+      <div class="oq-marker lock">LOCK</div>
+      <p><strong>pgmq event envelope schema.</strong> Every handler that emits events must agree on this shape before M4. Retrofitting correlation IDs and parent event IDs across all handlers after the fact is painful. Minimum required fields:</p>
+    </div>
+    <pre>{
+  "event_id":       "uuid-v4",         // this event
+  "correlation_id": "uuid-v4",         // root of the causal chain (same as event_id for root events)
+  "parent_event_id": "uuid-v4 | null", // direct parent in the causal chain
+  "event_type":     "domain_registered | dns_update_required | dkim_keys_generated | ...",
+  "emitted_by":     "domain_registry_handler",
+  "emitted_at":     "ISO-8601",
+  "payload":        { /* event-specific data */ },
+  "retry_count":    0
+}</pre>
+    <div class="callout callout-blue">
+      <p>Every queue that crosses a handler boundary needs a corresponding DLQ. Name convention: <code>{queue_name}_dlq</code>. After N retries (default 3), the message moves to the DLQ and the operator API must surface it. Decide N and the retry backoff strategy at M4 before any queue is written.</p>
+    </div>
+
+    <div class="open-q">
+      <div class="oq-marker lock">LOCK</div>
+      <p><strong>Gateway handler interface contract.</strong> The AND handler calls the gateway handler. When VyOS replaces Alpine+nftables for the BGP scope, that swap must be a handler implementation change, not a call-site refactor. Define the interface now, even though only the nftables implementation ships:</p>
+    </div>
+    <pre>class BaseGatewayHandler(ABC):
+    async def generate_rules(self, and_name: str, profile: str, cidr: str) -> str:
+        """Generate ruleset string for this AND's profile."""
+
+    async def apply_rules(self, and_name: str, rules: str) -> None:
+        """Write rules to gateway and reload atomically."""
+
+    async def remove_and(self, and_name: str) -> None:
+        """Remove all rules for a deprovisioned AND."""
+
+    async def reload(self) -> None:
+        """Full ruleset reload (e.g. after gateway restart)."""</pre>
+  </div>
+</section>
+
+
+<!-- CRITICAL PATH -->
+<section id="critical-path">
+  <div class="wrap">
+    <div class="section-label">Critical path</div>
+    <h2 class="section-title">Dependency order — milestones are sequential</h2>
+    <p class="section-desc">Each milestone has hard pre-requisites from the one before it. The bootstrap dependency graph is real — phases cannot be parallelised when earlier phase outputs are runtime facts the next phase consumes.</p>
+
+    <div class="cpath">
+      <div class="cp-row">
+        <div class="cp-box cp-m0">M0 Foundation</div>
+        <div class="cp-arrow">→</div>
+        <div class="cp-box cp-m1">M1 Substrate + DNS</div>
+        <div class="cp-arrow">→</div>
+        <div class="cp-box cp-m2">M2 PKI</div>
+        <div class="cp-arrow">→</div>
+        <div class="cp-box cp-m3">M3 Platform identity</div>
+      </div>
+      <div class="cp-row" style="padding-left: 200px; color: var(--text-3); font-size: 12px;">↓</div>
+      <div class="cp-row">
+        <div style="min-width:200px"></div>
+        <div class="cp-box cp-m4">M4 Registries</div>
+        <div class="cp-arrow">→</div>
+        <div class="cp-box cp-m5">M5 In-world identity</div>
+        <div class="cp-arrow">→</div>
+        <div class="cp-box cp-m6">M6 ANDs</div>
+      </div>
+      <div class="cp-row" style="padding-left: 468px; color: var(--text-3); font-size: 12px;">↓</div>
+      <div class="cp-row">
+        <div style="min-width:468px"></div>
+        <div class="cp-box cp-m7">M7 Services + apps</div>
+        <div class="cp-arrow">→</div>
+        <div class="cp-box cp-m8">M8 Operator API + reload</div>
+      </div>
+    </div>
+
+    <div class="callout callout-red">
+      <p><strong>There is no parallel track.</strong> DNS must resolve before PKI bootstraps. PKI must issue before Keycloak can get a cert. Keycloak platform realm must exist before the operator API can validate tokens. World Registry must be seeded before in-world identity has realms to provision. The sequence is the implementation. Do not attempt to work multiple milestones in parallel during initial build — you will spend more time on integration than you save on calendar time.</p>
+    </div>
+
+    <div class="callout callout-teal">
+      <p><strong>Testing strategy per milestone:</strong> each milestone ends when a working integration test passes end-to-end for that milestone's scope. Don't accumulate untested milestones. The bootstrap is a causal chain — a broken Phase 1 DNS output breaks every healthcheck downstream silently. Test before proceeding.</p>
+    </div>
+  </div>
+</section>
+
+
+<!-- MILESTONES -->
+<section id="milestones">
+  <div class="wrap">
+    <div class="section-label">Milestones</div>
+    <h2 class="section-title">M0 → M8: what ships in each</h2>
+    <p class="section-desc">Each milestone targets a specific phase boundary and defines exactly what must be working before moving forward. Definition of done (DoD) is a runnable test, not a code review.</p>
+
+    <!-- M0 -->
+    <div class="milestone">
+      <div class="milestone-header">
+        <div class="ms-num phase-foundation">M0</div>
+        <div>
+          <div class="milestone-title">Project foundation</div>
+          <div class="milestone-phases">No runtime phases — tooling and interfaces only</div>
+          <div class="milestone-desc">Everything that must exist before a single container is started. Spec parsing, base interfaces, test scaffold, CI. This milestone is the substrate the rest is built on — a bad foundation here means the cost compounds across every subsequent milestone.</div>
+        </div>
+      </div>
+      <div class="milestone-body">
+        <div class="ms-col-wrap">
+          <div class="ms-col">
+            <h4>Deliverables</h4>
+            <div class="ms-item"><code>pyproject.toml</code> — Poetry, all runtime deps pinned</div>
+            <div class="ms-item"><code>BasePhaseHandler</code> ABC with <code>execute()</code>, <code>run()</code>, <code>healthcheck()</code>, <code>should_skip()</code></div>
+            <div class="ms-item"><code>RuntimeState</code> dataclass — all phase output fields stubbed</div>
+            <div class="ms-item"><code>PhaseContext</code> dataclass — all handler injection points</div>
+            <div class="ms-item">Pydantic spec models for entire <code>netengines-spec-v1.yaml</code> schema</div>
+            <div class="ms-item">Spec validation — parse + validate example specs without error</div>
+            <div class="ms-item">Immutability enforcement at parse time (not handler time)</div>
+            <div class="ms-item">pytest scaffold — fixtures, conftest, mock Docker factory</div>
+            <div class="ms-item">GitHub Actions CI — black, isort, flake8, mypy, pytest</div>
+            <div class="ms-item"><code>docker-compose.dev.yaml</code> — local dev environment</div>
+            <div class="ms-item">Pre-commit hooks — <code>.pre-commit-config.yaml</code></div>
+            <div class="ms-item"><code>Makefile</code> — <code>make test</code>, <code>make lint</code>, <code>make clean</code></div>
+          </div>
+          <div class="ms-col">
+            <h4>Key design choices at M0</h4>
+            <div class="ms-item">Handler DI pattern: <code>PhaseContext</code> injected — not global state, not singleton</div>
+            <div class="ms-item">Async throughout — all phase handlers are <code>async def</code></div>
+            <div class="ms-item">Structured logging from day one — not print statements</div>
+            <div class="ms-item">Lock pgmq envelope schema (see pre-decisions)</div>
+            <div class="ms-item">Lock <code>BaseGatewayHandler</code> interface (see pre-decisions)</div>
+            <div class="ms-item">Decide Supabase cloud vs self-hosted (see pre-decisions)</div>
+            <div class="ms-item">Example specs: <code>minimal.yaml</code> and <code>single-org.yaml</code> parseable</div>
+          </div>
+        </div>
+        <div class="ms-dod">
+          <h4>Definition of done</h4>
+          <div class="ms-dod-item"><code>pytest tests/test_spec_parsing.py</code> — all three example specs parse and validate</div>
+          <div class="ms-dod-item">CI passes clean — mypy strict, flake8, black, isort all green</div>
+          <div class="ms-dod-item">All pre-decisions documented and merged to <code>docs/decisions.md</code></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M1 -->
+    <div class="milestone">
+      <div class="milestone-header">
+        <div class="ms-num phase-infra">M1</div>
+        <div>
+          <div class="milestone-title">Substrate + DNS hierarchy</div>
+          <div class="milestone-phases">Phases 0 + 1 + 2</div>
+          <div class="milestone-desc">The L0 substrate and the naming stack. After M1: Docker bridges exist, the gateway stub is running, and in-world DNS resolves end-to-end — root → TLD → authoritative. Nothing with a hostname or cert can start before this is solid.</div>
+        </div>
+      </div>
+      <div class="milestone-body">
+        <div class="ms-col-wrap">
+          <div class="ms-col">
+            <h4>Phase 0 — substrate</h4>
+            <div class="ms-item">Docker bridge networks from spec: <code>platform</code> (172.20.0.0/16) and <code>core</code> (10.0.0.0/8)</div>
+            <div class="ms-item">NTP check — validate clock sync before proceeding (persistent mode blocker; ephemeral mode warning)</div>
+            <div class="ms-item">Alpine + nftables gateway container — multi-homed, IP forwarding enabled</div>
+            <div class="ms-item"><code>network_handler</code> — Docker SDK bridge creation, subnet allocation from spec</div>
+            <div class="ms-item">Gateway stub — no policy yet, routing only; policy applied at Phase 7</div>
+            <h4 style="margin-top:12px;">Phase 1+2 — DNS</h4>
+            <div class="ms-item">CoreDNS root on hardcoded <code>10.0.0.2</code> — root zone generated from spec</div>
+            <div class="ms-item">Platform zone CoreDNS on <code>10.0.0.3</code> — <code>platform.internal</code> authoritative</div>
+            <div class="ms-item">TLD servers from spec — <code>.internal</code> on <code>10.0.0.4</code>, <code>.localnet</code> on <code>10.0.0.5</code></div>
+            <div class="ms-item">Root zone delegates to TLD servers via NS records</div>
+            <div class="ms-item">CoreDNS <code>reload</code> plugin with <code>auto</code> directive — no <code>docker exec SIGHUP</code></div>
+            <div class="ms-item"><code>dns_handler</code> — zone file generation, config volume write, zone update events</div>
+            <div class="ms-item">Jinja templates: <code>root_zone.jinja</code>, <code>coredns_config.jinja</code></div>
+          </div>
+          <div class="ms-col">
+            <h4>Healthchecks required</h4>
+            <div class="ms-item">Phase 0: Docker networks exist with correct subnets; gateway container running</div>
+            <div class="ms-item">Phase 1: <code>dig . NS @10.0.0.2</code> resolves root zone</div>
+            <div class="ms-item">Phase 2: <code>dig platform.internal NS @10.0.0.2</code> returns TLD delegation; <code>dig anything.internal @10.0.0.4</code> resolves</div>
+            <h4 style="margin-top:12px;">Tests to write</h4>
+            <div class="ms-item"><code>test_phase_0.py</code> — mock Docker, assert network creates + gateway starts</div>
+            <div class="ms-item"><code>test_phase_1.py</code> — zone file generation, CoreDNS config structure</div>
+            <div class="ms-item"><code>test_dns_handler.py</code> — zone record add/update/delete, reload event</div>
+            <div class="ms-item"><code>test_full_bootstrap.py</code> (start) — phases 0–2 only, ephemeral spec</div>
+          </div>
+        </div>
+        <div class="ms-dod">
+          <h4>Definition of done</h4>
+          <div class="ms-dod-item">Integration test: <code>make up</code> against <code>minimal.yaml</code>, <code>dig anything.internal @10.0.0.4</code> resolves NXDOMAIN (not SERVFAIL)</div>
+          <div class="ms-dod-item">Zone file update test: add a record via <code>dns_handler.add_zone_record()</code>, wait ≤ reload interval, resolve it</div>
+          <div class="ms-dod-item">All three CoreDNS containers running with correct IPs and healthcheck passing</div>
+        </div>
+        <div class="ms-defer">
+          <h4>Explicitly not in M1</h4>
+          <div class="ms-defer-item">DNSSEC signing (enabled in spec but deferred; CoreDNS supports it — wire in M2 after CA is available)</div>
+          <div class="ms-defer-item">Split-horizon DNS</div>
+          <div class="ms-defer-item">k3s as orchestrator (Docker Compose only for MVP)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M2 -->
+    <div class="milestone">
+      <div class="milestone-header">
+        <div class="ms-num phase-pki">M2</div>
+        <div>
+          <div class="milestone-title">PKI + ACME</div>
+          <div class="milestone-phases">Phase 3</div>
+          <div class="milestone-desc">Root CA key generation, step-ca startup on hardcoded IP, self-issuance to break the bootstrap circularity, DNS registration for <code>ca.platform.internal</code>. After M2: any service can get a real TLS cert via ACME. This is the most subtle milestone — the circularity break is the engineering trick that makes everything else possible.</div>
+        </div>
+      </div>
+      <div class="milestone-body">
+        <div class="ms-col-wrap">
+          <div class="ms-col">
+            <h4>Deliverables</h4>
+            <div class="ms-item"><code>pki_handler</code> — root CA generation, step-ca REST API client, cert issuance</div>
+            <div class="ms-item">CA root key material generated and written to ephemeral volume</div>
+            <div class="ms-item">step-ca container started on hardcoded <code>10.0.0.6</code></div>
+            <div class="ms-item">CA bootstraps itself — issues its own TLS cert using root CA key material</div>
+            <div class="ms-item">Healthcheck: ACME directory reachable at <code>https://10.0.0.6/acme/acme/directory</code> (IP, not DNS)</div>
+            <div class="ms-item">DNS A record <code>ca.platform.internal → 10.0.0.6</code> added to platform zone via <code>dns_handler</code></div>
+            <div class="ms-item">ACME provisioner configured for automatic cert issuance</div>
+            <div class="ms-item">Jinja template: <code>ca_config.jinja</code> for step-ca provisioner config</div>
+          </div>
+          <div class="ms-col">
+            <h4>The circularity break — what actually happens</h4>
+            <div class="ms-item">Phase 2 provides DNS. But step-ca needs TLS to serve ACME. And ACME issues TLS certs. Neither can start without the other.</div>
+            <div class="ms-item">Resolution: step-ca starts on a <em>hardcoded IP</em>, not a DNS name. It uses the root CA private key to sign its own TLS cert directly — no ACME request needed.</div>
+            <div class="ms-item">From this point: ACME directory is at <code>https://10.0.0.6/acme/acme/directory</code>. Any client that trusts the CA cert (installed in trust store) can request a cert.</div>
+            <div class="ms-item">The IP is only needed for bootstrap. After <code>ca.platform.internal</code> is registered in DNS, all downstream consumers use the hostname.</div>
+            <div class="ms-item">Org app cert issuance: the app requests certs on containers' behalf via step-ca admin API and injects via volume mount — containers do not run their own ACME client.</div>
+          </div>
+        </div>
+        <div class="ms-dod">
+          <h4>Definition of done</h4>
+          <div class="ms-dod-item">Integration test: request a cert from step-ca via ACME at <code>https://10.0.0.6/acme/acme/directory</code> for a test domain; cert issued, verifiable against root CA</div>
+          <div class="ms-dod-item"><code>ca.platform.internal</code> resolves to <code>10.0.0.6</code> inside the world; ACME directory reachable by DNS name</div>
+          <div class="ms-dod-item"><code>test_phase_3_pki.py</code> — mock step-ca API, assert CA key gen and container config</div>
+        </div>
+        <div class="ms-defer">
+          <h4>Explicitly not in M2</h4>
+          <div class="ms-defer-item">Intermediate CA (persistent mode only)</div>
+          <div class="ms-defer-item">CRL / OCSP</div>
+          <div class="ms-defer-item">DNSSEC key signing (deferred until operator API can manage rotation calendar)</div>
+          <div class="ms-defer-item">Persistent key ceremony — ephemeral CA only; keys discarded on teardown</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M3 -->
+    <div class="milestone">
+      <div class="milestone-header">
+        <div class="ms-num phase-identity">M3</div>
+        <div>
+          <div class="milestone-title">Supabase + Platform identity</div>
+          <div class="milestone-phases">Phase 4 + Supabase setup</div>
+          <div class="milestone-desc">Supabase initialised with runtime state schema. Keycloak platform realm bootstrapped. Operator API skeleton live with bootstrap secret auth. After M3: the operator can authenticate, the runtime state is persistent in Postgres, and Phase 4 is complete. Keycloak's Admin REST API is the most brittle thing in the system — budget more time here than the phase count implies.</div>
+        </div>
+      </div>
+      <div class="milestone-body">
+        <div class="ms-col-wrap">
+          <div class="ms-col">
+            <h4>Supabase setup</h4>
+            <div class="ms-item">Supabase client configured — connection string from <code>.env</code>, not hardcoded</div>
+            <div class="ms-item">Schema migration: <code>runtime_state</code>, <code>world_registry</code>, <code>address_pools</code>, <code>address_leases</code>, <code>domain_records</code>, <code>operator_log</code></div>
+            <div class="ms-item">pgmq queues initialised — one per handler boundary, plus corresponding DLQs</div>
+            <div class="ms-item">Phase completion and handler outputs written to <code>runtime_state</code> at each phase</div>
+            <h4 style="margin-top:12px;">Phase 4 — platform identity</h4>
+            <div class="ms-item">Keycloak container on <code>10.0.0.7</code> with TLS cert from step-ca (Phase 3)</div>
+            <div class="ms-item">Platform realm <code>platform</code> created via Admin REST API</div>
+            <div class="ms-item">Admin user seeded with ephemeral-generated password (logged at spinup)</div>
+            <div class="ms-item">OIDC scopes: <code>netengines:read</code>, <code>netengines:write</code>, <code>netengines:admin</code></div>
+            <div class="ms-item"><code>oidc_handler</code> — Keycloak Admin REST API client, realm/user/client provisioning</div>
+          </div>
+          <div class="ms-col">
+            <h4>Operator API skeleton</h4>
+            <div class="ms-item">FastAPI app wired — <code>fastapi_app.py</code>, structured logging middleware, error handling</div>
+            <div class="ms-item">Bootstrap secret auth — generated at first run, written to <code>.env</code>, validates pre-Phase-4 API calls</div>
+            <div class="ms-item">OIDC token validation middleware — switches from bootstrap secret to Keycloak tokens post-Phase-4</div>
+            <div class="ms-item"><code>GET /api/v1/world</code> — returns current spec + runtime state from Supabase</div>
+            <div class="ms-item"><code>GET /api/v1/services</code> — running containers + phase status</div>
+            <div class="ms-item"><code>GET /api/v1/health</code> — phase healthcheck statuses</div>
+            <div class="ms-item">Operator audit log — every API call written to <code>operator_log</code></div>
+            <h4 style="margin-top:12px;">Keycloak risk mitigation</h4>
+            <div class="ms-item">Pin Keycloak image version in compose — do not allow auto-update</div>
+            <div class="ms-item">Log full request + response body on any Admin API error (not just status code)</div>
+            <div class="ms-item">Integration tests for every Admin API call the <code>oidc_handler</code> makes</div>
+          </div>
+        </div>
+        <div class="ms-dod">
+          <h4>Definition of done</h4>
+          <div class="ms-dod-item">Keycloak platform realm responding at <code>https://auth.platform.internal</code> with valid cert</div>
+          <div class="ms-dod-item">Operator can authenticate via OIDC and call <code>GET /api/v1/world</code> with a valid token</div>
+          <div class="ms-dod-item">Phase state written to and readable from Supabase <code>runtime_state</code></div>
+          <div class="ms-dod-item">All pgmq queues and DLQs initialised; <code>GET /api/v1/queues</code> returns queue state</div>
+        </div>
+        <div class="ms-defer">
+          <h4>Explicitly not in M3</h4>
+          <div class="ms-defer-item">In-world Keycloak realm (M5)</div>
+          <div class="ms-defer-item">L2 Management API</div>
+          <div class="ms-defer-item">Supabase Realtime / WebSocket push to CLI clients</div>
+          <div class="ms-defer-item">Supabase Auth as alternative to Keycloak — decision already closed in favour of Keycloak</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M4 -->
+    <div class="milestone">
+      <div class="milestone-header">
+        <div class="ms-num phase-registry">M4</div>
+        <div>
+          <div class="milestone-title">Registries + event wiring</div>
+          <div class="milestone-phases">Phase 5</div>
+          <div class="milestone-desc">World Registry and Domain Registry seeded from spec into Supabase. WHOIS listener live on port 43. Address pools initialised. pgmq event chain wired end-to-end — domain registration triggers DNS update, DNS update triggers DKIM injection if mail-enabled. The pgmq event graph must be observable by the operator.</div>
+        </div>
+      </div>
+      <div class="milestone-body">
+        <div class="ms-col-wrap">
+          <div class="ms-col">
+            <h4>World Registry</h4>
+            <div class="ms-item">Orgs seeded from <code>world_registry.organizations</code> spec into Supabase <code>world_registry</code> table</div>
+            <div class="ms-item">Capability grants persisted per org</div>
+            <div class="ms-item">AND profile assignments persisted</div>
+            <div class="ms-item">Operator records seeded</div>
+            <div class="ms-item"><code>world_registry_handler</code> — org admission, capability grant, profile assign</div>
+            <div class="ms-item">Emits pgmq → <code>oidc_handler</code> (realm create at M5) and <code>and_handler</code> (profile assign at M6)</div>
+            <h4 style="margin-top:12px;">Domain Registry</h4>
+            <div class="ms-item">Address pools seeded from <code>domain_registry.address_space</code> spec</div>
+            <div class="ms-item">TLD delegations recorded</div>
+            <div class="ms-item">Registrar service wired — org can register a domain via operator API</div>
+            <div class="ms-item">Domain registration → pgmq → <code>dns_handler</code> zone update → CoreDNS reload</div>
+          </div>
+          <div class="ms-col">
+            <h4>WHOIS + event observability</h4>
+            <div class="ms-item">WHOIS container on <code>10.0.0.9:43</code> — thin TCP server, RFC 3912, ~80 lines Python</div>
+            <div class="ms-item">WHOIS queries Supabase <code>domain_records</code> + <code>world_registry</code> via internal API</div>
+            <div class="ms-item"><code>GET /api/v1/queues</code> — DLQ state, message counts, stuck events, replay endpoint</div>
+            <div class="ms-item"><code>GET /api/v1/events/{correlation_id}</code> — full causal chain, state per step</div>
+            <div class="ms-item">Dead-letter queue handling: after 3 retries, message to DLQ; operator alerted via API</div>
+            <div class="ms-item">DNS handoff sequence tested end-to-end: register domain → zone update → CoreDNS resolves</div>
+            <div class="ms-item"><code>GET /api/v1/registry/domains</code> and <code>/api/v1/registry/addresses</code> live</div>
+          </div>
+        </div>
+        <div class="ms-dod">
+          <h4>Definition of done</h4>
+          <div class="ms-dod-item">Register <code>acme.internal</code> via operator API; within CoreDNS reload window it resolves inside the world</div>
+          <div class="ms-dod-item"><code>whois acme.internal</code> on port 43 returns registration record</div>
+          <div class="ms-dod-item">Address pools seeded; <code>GET /api/v1/registry/addresses</code> returns allocation state</div>
+          <div class="ms-dod-item">Correlation ID chain visible in <code>GET /api/v1/events/{correlation_id}</code> for a domain registration</div>
+        </div>
+        <div class="ms-defer">
+          <h4>Explicitly not in M4</h4>
+          <div class="ms-defer-item">RDAP (WHOIS successor)</div>
+          <div class="ms-defer-item">EPP protocol for registrar</div>
+          <div class="ms-defer-item">Dynamic DNS registration by in-world inhabitants (post-MVP, L2 management API)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M5 -->
+    <div class="milestone">
+      <div class="milestone-header">
+        <div class="ms-num phase-identity">M5</div>
+        <div>
+          <div class="milestone-title">In-world identity</div>
+          <div class="milestone-phases">Phase 6</div>
+          <div class="milestone-desc">Second Keycloak instance — separate realm, separate trust root, separate issuer URL, routable from in-world. Realms and users seeded from World Registry org list. Platform identity (L1) and in-world identity (L2) must never share tokens. The two-realm posture is the trust boundary that makes multi-party federation possible later.</div>
+        </div>
+      </div>
+      <div class="milestone-body">
+        <div class="ms-col-wrap">
+          <div class="ms-col">
+            <h4>Deliverables</h4>
+            <div class="ms-item">Keycloak in-world container on <code>10.0.0.12</code> — different container from platform Keycloak on <code>10.0.0.7</code></div>
+            <div class="ms-item">In-world realm <code>inworld</code> — different issuer URL: <code>https://auth.internal/realms/inworld</code></div>
+            <div class="ms-item">Separate signing key from platform realm — never shared</div>
+            <div class="ms-item">TLS cert from step-ca for <code>auth.internal</code> via ACME</div>
+            <div class="ms-item">Org realms/clients created for each org from <code>world_registry</code> via <code>oidc_handler</code></div>
+            <div class="ms-item">Users provisioned from <code>identity_inworld.org_users</code> spec</div>
+            <div class="ms-item">OIDC scopes: <code>profile</code>, <code>email</code>, <code>openid</code></div>
+          </div>
+          <div class="ms-col">
+            <h4>Seeding from World Registry</h4>
+            <div class="ms-item">Phase 5 emitted pgmq event <code>org_admitted</code> consumed here by <code>oidc_handler</code></div>
+            <div class="ms-item">Each org in <code>world_registry</code> gets an OIDC client in the <code>inworld</code> realm</div>
+            <div class="ms-item">Users from <code>identity_inworld.org_users</code> provisioned per org</div>
+            <div class="ms-item">New org admission post-bootstrap: <code>POST /api/v1/orgs</code> triggers pgmq → <code>oidc_handler</code> → realm/client create</div>
+            <div class="ms-item"><code>GET /api/v1/identity/realms</code> returns provisioned realms + user counts</div>
+          </div>
+        </div>
+        <div class="ms-dod">
+          <h4>Definition of done</h4>
+          <div class="ms-dod-item"><code>alice@acme.internal</code> can log in at <code>https://auth.internal/realms/inworld</code> and receive a valid OIDC token</div>
+          <div class="ms-dod-item">Token issuer is <code>https://auth.internal/realms/inworld</code> — verifiably different from <code>https://auth.platform.internal/realms/platform</code></div>
+          <div class="ms-dod-item">New org admitted via <code>POST /api/v1/orgs</code> gets OIDC client created automatically in the in-world realm</div>
+        </div>
+        <div class="ms-defer">
+          <h4>Explicitly not in M5</h4>
+          <div class="ms-defer-item">OIDC federation between worlds (cross-world M+ scope)</div>
+          <div class="ms-defer-item">SAML support</div>
+          <div class="ms-defer-item">Per-org isolated Keycloak realms (single shared in-world realm is MVP)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M6 -->
+    <div class="milestone">
+      <div class="milestone-header">
+        <div class="ms-num phase-and">M6</div>
+        <div>
+          <div class="milestone-title">ANDs — Administrative Network Domains</div>
+          <div class="milestone-phases">Phase 7</div>
+          <div class="milestone-desc">Per-org isolated Docker bridges, address allocation from Domain Registry pools, nftables policy rules generated from AND profiles and applied atomically to the gateway. After M6: network segmentation is structural, not rule-based — acme-corp cannot reach bob-home-net at L2, and the residential AND truly has NAT blocking inbound. This is the most operationally complex milestone.</div>
+        </div>
+      </div>
+      <div class="milestone-body">
+        <div class="ms-col-wrap">
+          <div class="ms-col">
+            <h4>AND provisioning sequence</h4>
+            <div class="ms-item">Create isolated Docker bridge per AND — <code>--internal</code> flag prevents Docker NAT attachment</div>
+            <div class="ms-item">Address sub-range acquired from Supabase <code>address_pools</code> via row-level lock</div>
+            <div class="ms-item">Lease written to <code>address_leases</code> — idempotent (same AND always gets same allocation)</div>
+            <div class="ms-item">Gateway container attached to the new bridge — <code>docker network connect</code> with specific IP</div>
+            <div class="ms-item">nftables rules generated from AND profile via <code>gateway_handler.generate_rules()</code></div>
+            <div class="ms-item">Rules applied atomically via <code>docker exec nft -f /etc/nftables/rules.nft</code></div>
+            <div class="ms-item">DNS suffix zone registered via pgmq → <code>dns_handler</code></div>
+            <div class="ms-item"><code>and_handler</code> — coordinates docker, gateway, dns, Supabase in correct order</div>
+          </div>
+          <div class="ms-col">
+            <h4>nftables rules per profile</h4>
+            <div class="ms-item">Residential: NAT masquerade outbound, drop unsolicited inbound, no reverse DNS</div>
+            <div class="ms-item">Business: stateful accept inbound, reverse DNS, no lateral movement between ANDs</div>
+            <div class="ms-item">Datacenter: full inbound, no NAT, optional BGP stub (nftables passthrough)</div>
+            <div class="ms-item">Air-gapped: drop-all on gateway interface — no inbound, no outbound</div>
+            <div class="ms-item">Rule correctness test: generate rules → parse with <code>nft --check</code> → assert semantic intent</div>
+            <div class="ms-item">Rule reload test: change AND profile via operator API, verify new rules loaded without connection loss</div>
+            <div class="ms-item"><code>gateway_handler</code> implements <code>BaseGatewayHandler</code> ABC (locked at M0) — nftables impl only</div>
+          </div>
+        </div>
+        <div class="ms-dod">
+          <h4>Definition of done</h4>
+          <div class="ms-dod-item">Container in <code>acme-corp-net</code> can reach <code>core</code> bridge (business profile); container in <code>bob-home-net</code> cannot receive unsolicited inbound (residential profile — verify with nft counters)</div>
+          <div class="ms-dod-item"><code>acme.internal</code> DNS suffix resolves from inside <code>acme-corp-net</code></div>
+          <div class="ms-dod-item">Address allocation is deterministic — tearing down and re-running assigns the same CIDR to the same AND</div>
+          <div class="ms-dod-item">Profile change via operator API applies new nftables rules within 5s without disrupting existing connections</div>
+        </div>
+        <div class="ms-defer">
+          <h4>Explicitly not in M6</h4>
+          <div class="ms-defer-item">VyOS / BGP — nftables only</div>
+          <div class="ms-defer-item">Multiple ANDs per org</div>
+          <div class="ms-defer-item">DHCP server per AND (spec has <code>dhcp: true</code> in profiles — defer real DHCP daemon; static allocation is sufficient for MVP)</div>
+          <div class="ms-defer-item">Cross-AND routing policy beyond gateway choke point</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M7 -->
+    <div class="milestone">
+      <div class="milestone-header">
+        <div class="ms-num phase-services">M7</div>
+        <div>
+          <div class="milestone-title">World services + org app deployment</div>
+          <div class="milestone-phases">Phase 8</div>
+          <div class="milestone-desc">Mailpit (dev mail sink), MinIO (object storage), and the four-step org app deployment sequence — container → DNS → cert → OIDC — proven with Gitea as the first working catalog app. After M7: the world is fully inhabited and usable. An operator can deploy Gitea inside <code>acme.internal</code>, it has a real TLS cert and SSO login.</div>
+        </div>
+      </div>
+      <div class="milestone-body">
+        <div class="ms-col-wrap">
+          <div class="ms-col">
+            <h4>World services</h4>
+            <div class="ms-item">Mailpit container on <code>10.0.0.13</code> — captures all outbound SMTP, no real delivery</div>
+            <div class="ms-item">Mailpit DNS: <code>mail.internal → 10.0.0.13</code>; MX records for all in-world domains</div>
+            <div class="ms-item">MinIO on <code>10.0.0.14</code> — TLS cert from step-ca, <code>storage.platform.internal</code></div>
+            <div class="ms-item">Platform bucket created automatically; access key generated and stored in Supabase</div>
+            <div class="ms-item"><code>mail_handler</code> — Mailpit config, MX record injection via pgmq → <code>dns_handler</code></div>
+            <div class="ms-item"><code>storage_handler</code> — MinIO bucket provisioning, access key management</div>
+            <div class="ms-item">Mailbox auto-provisioning from org users in <code>identity_inworld</code></div>
+          </div>
+          <div class="ms-col">
+            <h4>Org app deployment — 4-step sequence</h4>
+            <div class="ms-item">Step 1: Start container inside org's AND bridge network (isolated)</div>
+            <div class="ms-item">Step 2: Register DNS via pgmq → <code>dns_handler</code> (e.g. <code>gitea.acme.internal</code>)</div>
+            <div class="ms-item">Step 3: Request cert from step-ca via <code>pki_handler</code> admin API; inject via volume mount</div>
+            <div class="ms-item">Step 4: Create OIDC client in org's in-world Keycloak realm via <code>oidc_handler</code></div>
+            <div class="ms-item">Partial failure logged to operator audit; each step individually retryable</div>
+            <div class="ms-item">Gitea proven: <code>POST /api/v1/orgs/acme-corp/apps</code> with <code>{"app": "gitea"}</code> deploys fully</div>
+            <div class="ms-item"><code>app_handler</code> — coordinates docker, dns, pki, oidc in correct order</div>
+          </div>
+        </div>
+        <div class="ms-dod">
+          <h4>Definition of done</h4>
+          <div class="ms-dod-item">Deploy Gitea via operator API; <code>https://gitea.acme.internal</code> loads in a browser (host-mounted DNS pointed at <code>10.0.0.4</code>), cert is valid, SSO login works with <code>alice@acme.internal</code> via in-world Keycloak</div>
+          <div class="ms-dod-item">Mailpit Web UI at <code>https://mail.internal</code> shows captured mail sent from <code>alice@acme.internal</code></div>
+          <div class="ms-dod-item">MinIO console accessible at <code>https://storage.platform.internal</code> with generated credentials</div>
+        </div>
+        <div class="ms-defer">
+          <h4>Explicitly not in M7</h4>
+          <div class="ms-defer-item">Real Postfix SMTP delivery (persistent mode only; Mailpit is the dev sink)</div>
+          <div class="ms-defer-item">OpenDKIM / DMARC enforcement (Mailpit doesn't need it; deferred to persistent mode mail_handler)</div>
+          <div class="ms-defer-item">Nextcloud, WordPress in catalog (Gitea proves the pattern; add others post-MVP)</div>
+          <div class="ms-defer-item">Org bucket allocation via operator API (platform bucket sufficient for MVP)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M8 -->
+    <div class="milestone">
+      <div class="milestone-header">
+        <div class="ms-num phase-api">M8</div>
+        <div>
+          <div class="milestone-title">Operator API + diff / reload</div>
+          <div class="milestone-phases">Cross-cutting — all phases</div>
+          <div class="milestone-desc">Full FastAPI route coverage, spec diff engine, live apply in dependency order, DLQ visibility, healthcheck endpoint, and the structured phase logs that make the system operable. This milestone hardens the operator experience — a world you cannot inspect is a world you cannot operate. Built progressively across M3–M7, completed here.</div>
+        </div>
+      </div>
+      <div class="milestone-body">
+        <div class="ms-col-wrap">
+          <div class="ms-col">
+            <h4>Full route coverage</h4>
+            <div class="ms-item"><code>GET  /api/v1/world</code> — spec + full runtime state</div>
+            <div class="ms-item"><code>POST /api/v1/reload</code> — diff + apply; returns change list + errors</div>
+            <div class="ms-item"><code>DELETE /api/v1/world</code> — ephemeral teardown; persistent requires confirm token</div>
+            <div class="ms-item"><code>GET  /api/v1/health</code> — per-phase healthcheck status, last check timestamp</div>
+            <div class="ms-item"><code>GET  /api/v1/services</code> — running containers + phase status</div>
+            <div class="ms-item"><code>POST /api/v1/orgs</code> — admit org to world_registry, trigger pgmq chain</div>
+            <div class="ms-item"><code>POST /api/v1/orgs/{org}/apps</code> — deploy org app (4-step sequence)</div>
+            <div class="ms-item"><code>GET  /api/v1/registry/domains</code>, <code>/registry/addresses</code></div>
+            <div class="ms-item"><code>GET  /api/v1/dns/{domain}</code> — live DNS query proxy</div>
+            <div class="ms-item"><code>GET  /api/v1/pki/certs</code> — issued certs, expiry, renewal status</div>
+            <div class="ms-item"><code>GET  /api/v1/queues</code> — DLQ state, stuck events, replay</div>
+            <div class="ms-item"><code>GET  /api/v1/events/{correlation_id}</code> — causal chain graph</div>
+            <div class="ms-item"><code>GET/POST /api/v1/export /import</code></div>
+          </div>
+          <div class="ms-col">
+            <h4>Diff / reload engine</h4>
+            <div class="ms-item">Immutability guard runs first — reject entire reload if any immutable field changed</div>
+            <div class="ms-item">Diff: old spec vs new spec → added / removed / updated per section</div>
+            <div class="ms-item">Apply in dependency order — topological sort of change set</div>
+            <div class="ms-item">Ephemeral: apply immediately, no safety guards</div>
+            <div class="ms-item">Partial failure: halt at failing step, log completed + failed; re-POST is safe (idempotent handlers)</div>
+            <div class="ms-item">Handler idempotency: create network that exists → return existing; zone record exists → update not duplicate</div>
+            <h4 style="margin-top:12px;">Observability</h4>
+            <div class="ms-item">Structured phase logs queryable by phase number and timestamp via API</div>
+            <div class="ms-item">Phase logs streamed to CLI via Supabase Realtime during bootstrap</div>
+            <div class="ms-item">CLI: <code>netengines up</code>, <code>netengines reload</code>, <code>netengines status</code>, <code>netengines down</code></div>
+            <div class="ms-item">Pretty-print phase progress in CLI — phase status, healthcheck results, errors</div>
+          </div>
+        </div>
+        <div class="ms-dod">
+          <h4>Definition of done — MVP complete</h4>
+          <div class="ms-dod-item"><code>netengines up single-org.yaml</code> completes all 9 phases with all healthchecks green</div>
+          <div class="ms-dod-item">Add an org to the spec, <code>netengines reload</code> — new org admitted, AND provisioned, in-world identity created, no world reset required</div>
+          <div class="ms-dod-item">Break something deliberately (wrong DNS record), verify operator can see the stuck event in DLQ via <code>GET /api/v1/queues</code>, replay it, and the world self-heals</div>
+          <div class="ms-dod-item"><code>netengines down</code> cleans up all containers, networks, volumes with zero leftovers</div>
+          <div class="ms-dod-item">Integration test suite: <code>test_full_bootstrap.py</code>, <code>test_multi_org.py</code> both passing</div>
+          <div class="ms-dod-item">All three example specs (<code>minimal.yaml</code>, <code>single-org.yaml</code>, <code>dev-sandbox.yaml</code>) bootable end-to-end</div>
+        </div>
+        <div class="ms-defer">
+          <h4>Explicitly not in M8</h4>
+          <div class="ms-defer-item">Persistent lifecycle safety guards in reload (refuse PKI reconfig, refuse org removal)</div>
+          <div class="ms-defer-item"><code>GET/POST /api/v1/gateway/peers</code> (cross-world — future scope)</div>
+          <div class="ms-defer-item">Web UI for operator API (CLI + raw HTTP is sufficient for MVP)</div>
+          <div class="ms-defer-item">Supabase Realtime WebSocket for operator dashboard</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- MVP COMPLETE -->
+<section id="mvp-complete">
+  <div class="wrap">
+    <div class="section-label">MVP complete</div>
+    <h2 class="section-title">What the world looks like when M8 ships</h2>
+    <p class="section-desc">A concrete picture — not a feature list. This is the validation scenario that proves MVP is done.</p>
+
+    <pre><span style="color:#555"># Boot a dev sandbox world from scratch</span>
+$ netengines up examples/dev-sandbox.yaml
+
+<span style="color:#4a5568">Phase 0  Substrate .................. ✓  networks: 2  gateway: running</span>
+<span style="color:#4a5568">Phase 1  DNS Root ................... ✓  10.0.0.2 → root zone serving</span>
+<span style="color:#4a5568">Phase 2  DNS Hierarchy .............. ✓  .internal .localnet delegated</span>
+<span style="color:#4a5568">Phase 3  PKI + ACME ................. ✓  CA ready  ACME: https://ca.platform.internal</span>
+<span style="color:#4a5568">Phase 4  Platform identity .......... ✓  https://auth.platform.internal</span>
+<span style="color:#4a5568">Phase 5  Registries ................. ✓  2 orgs admitted  WHOIS: :43</span>
+<span style="color:#4a5568">Phase 6  In-world identity .......... ✓  https://auth.internal  4 users seeded</span>
+<span style="color:#4a5568">Phase 7  ANDs ....................... ✓  acme-corp-net (business)  bob-home-net (residential)</span>
+<span style="color:#4a5568">Phase 8  Services ................... ✓  mail.internal  storage.platform.internal</span>
+
+<span style="color:#86efac">World bootstrapped in 47s. Operator API: https://api.platform.internal</span>
+<span style="color:#86efac">Admin token: eyJ... (valid 1h)  Bootstrap secret retired.</span>
+
+<span style="color:#555"># Deploy Gitea inside acme-corp's AND</span>
+$ curl -X POST https://api.platform.internal/api/v1/orgs/acme-corp/apps \
+  -H "Authorization: Bearer eyJ..." \
+  -d '{"app": "gitea", "subdomain": "git"}'
+
+<span style="color:#4a5568">→ container: netengines_acme_corp_gitea  (bridge: netengines_and_acme_corp_net)</span>
+<span style="color:#4a5568">→ DNS: git.acme.internal → 192.168.1.10</span>
+<span style="color:#4a5568">→ cert: issued for git.acme.internal (valid 90d, auto-renews)</span>
+<span style="color:#4a5568">→ OIDC: client gitea-acme-corp registered in realm inworld</span>
+
+<span style="color:#86efac">https://git.acme.internal — ready. alice@acme.internal can log in.</span>
+
+<span style="color:#555"># Tear down cleanly</span>
+$ netengines down
+<span style="color:#86efac">World destroyed. All containers, networks, volumes removed.</span></pre>
+
+    <div class="callout callout-green">
+      <p><strong>The test that proves MVP:</strong> a developer who has never seen the codebase clones the repo, runs <code>make up</code> against <code>dev-sandbox.yaml</code>, deploys Gitea, logs in as Alice, pushes a git repo, and tears it all down — in under 5 minutes, with no manual steps. Everything else is progressive enhancement.</p>
+    </div>
+
+    <h2 class="section-title" style="margin-top: 40px;">Immediate post-MVP targets</h2>
+    <p class="section-desc">Not in MVP. Not deferred indefinitely. The natural next milestones once the dev sandbox is solid.</p>
+
+    <table class="dtable">
+      <thead>
+        <tr><th>Target</th><th>What it unlocks</th><th>Key new work</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Persistent lifecycle</strong></td>
+          <td>Long-lived shared testbed; multi-developer; survives host restart</td>
+          <td>Durable volumes, PKI key ceremony, reload safety guards, HA Keycloak, k3s evaluation</td>
+        </tr>
+        <tr>
+          <td><strong>Real mail (Postfix)</strong></td>
+          <td>Teaching lab protocol fidelity; real SMTP delivery mechanics; DKIM/SPF/DMARC observable</td>
+          <td><code>mail_handler</code> Postfix branch, OpenDKIM, DMARC reporting, persistent <code>lifecycle</code> gate</td>
+        </tr>
+        <tr>
+          <td><strong>Self-hosted Supabase</strong></td>
+          <td>Authority-autonomous claim fully holds; alternative internet substrate archetype viable</td>
+          <td>Supabase compose stack, connection config abstraction, operational runbook</td>
+        </tr>
+        <tr>
+          <td><strong>Gateway: mirrored mode</strong></td>
+          <td>Integration testing against fake real-internet services (GitHub, S3 etc.) without real internet</td>
+          <td><code>service_mirrors</code> DNS + routing rules, gateway_handler mirror rule generation</td>
+        </tr>
+        <tr>
+          <td><strong>Cross-world peered</strong></td>
+          <td>Multi-world test environments; federated mail between worlds</td>
+          <td>Gateway cross_world peer routing, DNS cross-delegation, world export/import</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>NetEngines · MVP Roadmap v1 · Companion to Briefing v1 and Technical Architecture v1</p>
+  </div>
+</footer>
+
+</body>
+</html>
