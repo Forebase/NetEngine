@@ -4,6 +4,7 @@ import stat
 import types
 
 from netengine.core.state import RuntimeState
+from netengine.security.redaction import redact_for_api, redact_for_support_bundle
 
 
 def test_runtime_state_uses_env_path(tmp_path, monkeypatch):
@@ -84,3 +85,29 @@ async def test_sync_to_supabase_returns_task_and_logs_async_failure(monkeypatch)
     await asyncio.sleep(0)
     assert task.done()
     assert debug_messages == ["State DB sync skipped: boom"]
+
+
+def test_redact_for_api_masks_secret_fields():
+    value = {
+        "admin_password": "super-secret",
+        "nested": {"platform_client_secret": "client-secret", "public": "ok"},
+    }
+
+    assert redact_for_api(value) == {
+        "admin_password": "[REDACTED]",
+        "nested": {"platform_client_secret": "[REDACTED]", "public": "ok"},
+    }
+    assert redact_for_api(value, include_secrets=True) == value
+
+
+def test_redact_for_support_bundle_drops_secret_fields_and_private_pems():
+    value = {
+        "admin_password": "super-secret",
+        "nested": {
+            "platform_client_secret": "client-secret",
+            "public": "ok",
+            "private_key_pem": "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
+        },
+    }
+
+    assert redact_for_support_bundle(value) == {"nested": {"public": "ok"}}

@@ -9,18 +9,20 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from dataclasses import asdict
 from typing import Any
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from netengine.api.auth import require_admin, require_auth
+from netengine.api.auth import _extract_roles, require_admin, require_auth
 from netengine.core.reload import ReloadResult, apply_reload, check_immutability, compute_diff
 from netengine.core.state import RUNTIME_STATE_SCHEMA_VERSION, RuntimeState
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
+from netengine.security.redaction import redact_for_api, redact_for_support_bundle
 from netengine.spec.loader import SpecLoadError, load_spec
 from netengine.spec.models import SPEC_SCHEMA_VERSION, NetEngineSpec
 
@@ -105,11 +107,19 @@ async def health() -> dict[str, Any]:
 
 
 @router.get("/world")
-async def get_world(user: dict = Depends(require_auth)) -> dict[str, Any]:
-    """Return current spec and runtime state."""
+async def get_world(
+    include_secrets: bool = False, user: dict = Depends(require_auth)
+) -> dict[str, Any]:
+    """Return current spec and runtime state with secrets redacted by default."""
+    roles = _extract_roles(user)
+    if include_secrets and not ({"admin", "netengine-admin", "operator-admin"} & roles):
+        raise HTTPException(status_code=403, detail="Admin role required to include secrets")
+
     state = RuntimeState.load()
+    runtime_state = asdict(state)
     return {
-        "spec": state.world_spec,
+        "spec": redact_for_api(state.world_spec, include_secrets=include_secrets),
+        "runtime_state": redact_for_api(runtime_state, include_secrets=include_secrets),
         "phase_completed": state.phase_completed,
         "started_at": state.started_at.isoformat() if state.started_at else None,
         "completed_at": state.completed_at.isoformat() if state.completed_at else None,
@@ -917,43 +927,10 @@ async def get_event_chain(
         return {"correlation_id": correlation_id, "events": [], "error": str(exc)}
 
 
-_SECRET_FIELD_NAMES = {
-    "password",
-    "secret",
-    "token",
-    "api_key",
-    "apikey",
-    "private_key",
-    "private_key_pem",
-    "key_pem",
-    "tls_key",
-    "client_secret",
-}
-
-
-def _is_secret_field(name: str) -> bool:
-    normalized = name.lower().replace("-", "_")
-    return normalized in _SECRET_FIELD_NAMES or normalized.endswith(
-        ("_secret", "_password", "_token")
-    )
-
-
-def _contains_private_pem(value: str) -> bool:
-    return "-----BEGIN " in value and "PRIVATE KEY-----" in value
-
-
 def _sanitize_export_value(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {
-            key: _sanitize_export_value(child)
-            for key, child in value.items()
-            if not _is_secret_field(str(key))
-        }
-    if isinstance(value, list):
-        return [_sanitize_export_value(child) for child in value]
-    if isinstance(value, str) and _contains_private_pem(value):
-        return None
-    return value
+    """Sanitize values for support bundles using redactable when available."""
+
+    return redact_for_support_bundle(value)
 
 
 # ─────────────────────────────────────────────
