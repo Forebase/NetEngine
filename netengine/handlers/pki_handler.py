@@ -4,7 +4,7 @@ import os
 import ssl
 import subprocess
 import tempfile
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -341,19 +341,30 @@ class PKIHandler:
         zone: str,
         ksk_lifetime_days: int = 365,
         zsk_lifetime_days: int = 30,
+        keys_host_dir: Optional[str] = None,
     ) -> dict:
         """Generate DNSSEC KSK and ZSK keys for *zone* using BIND's dnssec-keygen.
 
-        Keys are stored in the ``netengines_dnssec_keys`` Docker volume so that
-        CoreDNS can mount them and activate the ``dnssec`` plugin.  Returns a
-        dict of key metadata that the caller should persist in state for later
-        rotation.
+        When *keys_host_dir* is given (the DNS phase's ``<zone_dir>/keys`` path),
+        keys are written there so the already-running CoreDNS container — which
+        binds ``<zone_dir>`` at ``/etc/coredns`` — can reference them at
+        ``/etc/coredns/keys`` for online signing without a restart. Otherwise
+        they are stored in the ``netengines_dnssec_keys`` Docker volume.
+
+        Returns a dict of key metadata (including ``generated_at`` so the
+        rotation worker can age KSK/ZSK against their configured lifetimes).
         """
         dnssec_volume = "netengines_dnssec_keys"
-        await self.docker.ensure_volume(dnssec_volume)
+        if keys_host_dir is not None:
+            os.makedirs(keys_host_dir, exist_ok=True)
+            volumes = {keys_host_dir: {"bind": "/keys", "mode": "rw"}}
+            keys_location = keys_host_dir
+        else:
+            await self.docker.ensure_volume(dnssec_volume)
+            volumes = {dnssec_volume: {"bind": "/keys", "mode": "rw"}}
+            keys_location = dnssec_volume
 
         bind_image = "internetsystemsconsortium/bind9:9.18"
-        volumes = {dnssec_volume: {"bind": "/keys", "mode": "rw"}}
 
         # KSK — signs only the DNSKEY RRset
         ksk_result = await self.docker.run_container_one_off(
@@ -400,9 +411,11 @@ class PKIHandler:
             "ksk_name": ksk_name,
             "zsk_name": zsk_name,
             "volume": dnssec_volume,
+            "keys_location": keys_location,
             "algorithm": "ECDSAP256SHA256",
             "ksk_lifetime_days": ksk_lifetime_days,
             "zsk_lifetime_days": zsk_lifetime_days,
+            "generated_at": datetime.now(UTC).isoformat(),
         }
 
     def extract_cert_expiry(self, cert_pem: str) -> datetime:

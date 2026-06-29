@@ -19,21 +19,31 @@ class FeatureStateEntry:
 FEATURE_STATE_REGISTRY: tuple[FeatureStateEntry, ...] = (
     FeatureStateEntry(
         path="pki.dnssec_enabled",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="DNSSEC key generation is not integrated with zone signing",
+        reason=(
+            "DNSSEC key generation is wired into CoreDNS online signing with "
+            "KSK/ZSK rotation; end-to-end signed-zone validation is still being "
+            "hardened in CI e2e"
+        ),
     ),
     FeatureStateEntry(
         path="pki.crl_enabled",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="CRL publication and distribution points are not implemented",
+        reason=(
+            "step-ca CRL generation is enabled and the distribution URL is "
+            "published; client-validation coverage is still being hardened in CI e2e"
+        ),
     ),
     FeatureStateEntry(
         path="pki.ocsp_enabled",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="OCSP responder deployment is not implemented",
+        reason=(
+            "step-ca OCSP config is injected and the responder URL is published; "
+            "responder lifecycle/verification is still being hardened in CI e2e"
+        ),
     ),
     FeatureStateEntry(
         path="gateway_portal.real_internet.mode",

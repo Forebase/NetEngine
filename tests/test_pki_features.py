@@ -456,6 +456,208 @@ class TestPKICertRotationWorkerReloadAware:
 
 
 # ─────────────────────────────────────────────
+# DNSSEC end-to-end wiring (WS-A)
+# ─────────────────────────────────────────────
+
+
+class TestDNSSECKeyHostDir:
+    """setup_dnssec can target a host keys dir and records rotation metadata."""
+
+    async def test_keys_host_dir_binds_host_path_not_named_volume(
+        self, pki_handler, mock_docker, tmp_path
+    ):
+        mock_docker.run_container_one_off = AsyncMock(
+            side_effect=[
+                {"exit_code": 0, "logs": "Kinternal.+013+01234"},
+                {"exit_code": 0, "logs": "Kinternal.+013+05678"},
+            ]
+        )
+        keys_dir = str(tmp_path / "keys")
+        result = await pki_handler.setup_dnssec("internal", keys_host_dir=keys_dir)
+
+        # Named volume is NOT created when a host dir is supplied.
+        mock_docker.ensure_volume.assert_not_called()
+        assert result["keys_location"] == keys_dir
+        assert "generated_at" in result
+        # The keygen container bound the host keys dir at /keys.
+        first_call = mock_docker.run_container_one_off.call_args_list[0].kwargs
+        assert keys_dir in first_call["volumes"]
+
+
+class TestCorefileDNSSECInjection:
+    """_inject_dnssec_into_corefile is a pure, idempotent Corefile transform."""
+
+    def _corefile(self) -> str:
+        from netengine.handlers.dns import DNSHandler
+
+        return DNSHandler._generate_corefile(
+            DNSHandler(),
+            zone_files={"internal": "", "platform.internal": ""},
+            root_zone={},
+            platform_zone={},
+            tlds={},
+        )
+
+    def test_injects_dnssec_block_into_target_zone(self):
+        from netengine.handlers.dns import DNSHandler
+
+        out = DNSHandler._inject_dnssec_into_corefile(
+            self._corefile(), "internal", ["Kinternal.+013+01234", "Kinternal.+013+05678"]
+        )
+        assert "dnssec {" in out
+        assert "/etc/coredns/keys/Kinternal.+013+01234" in out
+        assert "/etc/coredns/keys/Kinternal.+013+05678" in out
+
+    def test_only_target_zone_gets_dnssec(self):
+        from netengine.handlers.dns import DNSHandler
+
+        out = DNSHandler._inject_dnssec_into_corefile(
+            self._corefile(), "internal", ["Kinternal.+013+01234"]
+        )
+        # The platform.internal stanza must remain unsigned.
+        platform_stanza = next(
+            s for s in out.split("\n\n") if s.lstrip().startswith("platform.internal {")
+        )
+        assert "dnssec {" not in platform_stanza
+
+    def test_injection_is_idempotent(self):
+        from netengine.handlers.dns import DNSHandler
+
+        once = DNSHandler._inject_dnssec_into_corefile(
+            self._corefile(), "internal", ["Kinternal.+013+01234"]
+        )
+        twice = DNSHandler._inject_dnssec_into_corefile(once, "internal", ["Kinternal.+013+01234"])
+        assert once == twice
+
+    def test_unknown_zone_leaves_corefile_unchanged(self):
+        from netengine.handlers.dns import DNSHandler
+
+        corefile = self._corefile()
+        out = DNSHandler._inject_dnssec_into_corefile(corefile, "nonexistent", ["Kx.+013+1"])
+        assert out == corefile
+
+
+class TestEnableDNSSEC:
+    """DNSHandler.enable_dnssec rewrites the Corefile on disk and reloads."""
+
+    async def test_enable_dnssec_writes_block_and_reloads(self, tmp_path):
+        from netengine.handlers.dns import DNSHandler
+
+        zone_dir = tmp_path
+        corefile = zone_dir / "Corefile"
+        corefile.write_text(
+            DNSHandler._generate_corefile(DNSHandler(), {"internal": ""}, {}, {}, {})
+        )
+
+        ctx = MagicMock()
+        ctx.mock_mode = False
+        ctx.docker_client = MagicMock()
+        ctx.zone_dir = str(zone_dir)
+        ctx.logger = MagicMock()
+
+        handler = DNSHandler()
+        with patch.object(handler, "_reload_coredns", new=AsyncMock()) as reload_mock:
+            changed = await handler.enable_dnssec(
+                ctx, "internal", ["Kinternal.+013+01234", "Kinternal.+013+05678"]
+            )
+
+        assert changed is True
+        assert "dnssec {" in corefile.read_text()
+        reload_mock.assert_awaited_once()
+
+    async def test_enable_dnssec_noop_in_mock_mode(self, tmp_path):
+        from netengine.handlers.dns import DNSHandler
+
+        ctx = MagicMock()
+        ctx.mock_mode = True
+        ctx.docker_client = None
+        ctx.zone_dir = str(tmp_path)
+        ctx.logger = MagicMock()
+
+        changed = await DNSHandler().enable_dnssec(ctx, "internal", ["Kx.+013+1"])
+        assert changed is False
+
+
+class TestDNSSECRotation:
+    """The rotation worker ages DNSSEC keys against their configured lifetimes."""
+
+    def _make_worker(self, pki_handler=None):
+        from netengine.workers.pki_cert_rotation_worker import PKICertRotationWorker
+
+        return PKICertRotationWorker(
+            pki_handler=pki_handler or MagicMock(),
+            pgmq=MagicMock(),
+            cert_type_configs=[],
+        )
+
+    def test_key_expiry_check(self):
+        from datetime import UTC, datetime, timedelta
+
+        from netengine.workers.pki_cert_rotation_worker import PKICertRotationWorker
+
+        now = datetime(2026, 1, 31, tzinfo=UTC)
+        fresh = (now - timedelta(days=10)).isoformat()
+        old = (now - timedelta(days=40)).isoformat()
+        assert PKICertRotationWorker._dnssec_key_is_expired(fresh, 30, now) is False
+        assert PKICertRotationWorker._dnssec_key_is_expired(old, 30, now) is True
+        # Missing/garbage generated_at is treated as expired.
+        assert PKICertRotationWorker._dnssec_key_is_expired(None, 30, now) is True
+
+    async def test_rotation_regenerates_keys_when_zsk_due(self):
+        from datetime import UTC, datetime, timedelta
+
+        pki = MagicMock()
+        pki.setup_dnssec = AsyncMock(
+            return_value={"zone": "internal", "ksk_name": "Knew.ksk", "zsk_name": "Knew.zsk"}
+        )
+        worker = self._make_worker(pki)
+        worker._emit_rotation_event = AsyncMock()
+
+        state = RuntimeState()
+        old = (datetime.now(UTC) - timedelta(days=40)).isoformat()
+        state.dnssec_output = {
+            "zone": "internal",
+            "ksk_lifetime_days": 365,
+            "zsk_lifetime_days": 30,
+            "generated_at": old,
+            "keys_location": "/data/zones/keys",
+        }
+
+        await worker._check_and_rotate_dnssec(state)
+
+        pki.setup_dnssec.assert_awaited_once()
+        assert state.dnssec_output["ksk_name"] == "Knew.ksk"
+        worker._emit_rotation_event.assert_awaited_once()
+
+    async def test_no_rotation_when_keys_fresh(self):
+        from datetime import UTC, datetime, timedelta
+
+        pki = MagicMock()
+        pki.setup_dnssec = AsyncMock()
+        worker = self._make_worker(pki)
+
+        state = RuntimeState()
+        state.dnssec_output = {
+            "zone": "internal",
+            "ksk_lifetime_days": 365,
+            "zsk_lifetime_days": 30,
+            "generated_at": datetime.now(UTC).isoformat(),
+        }
+
+        await worker._check_and_rotate_dnssec(state)
+        pki.setup_dnssec.assert_not_awaited()
+
+    async def test_no_dnssec_output_is_noop(self):
+        pki = MagicMock()
+        pki.setup_dnssec = AsyncMock()
+        worker = self._make_worker(pki)
+        state = RuntimeState()
+        state.dnssec_output = None
+        await worker._check_and_rotate_dnssec(state)
+        pki.setup_dnssec.assert_not_awaited()
+
+
+# ─────────────────────────────────────────────
 # Intermediate CA — Phase output + API endpoint
 # ─────────────────────────────────────────────
 
