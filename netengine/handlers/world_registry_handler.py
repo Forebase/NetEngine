@@ -1,15 +1,16 @@
-from typing import Any, List
+from typing import Any, List, cast
 
 from netengine.core.pgmq_client import PGMQClient
-from netengine.events.schema import EventEnvelope
+from netengine.events import factory as event_factory
+from netengine.events.queues import Queue
 
 
 class WorldRegistryHandler:
-    def __init__(self):
+    def __init__(self) -> None:
         self._db = None
         self.pgmq = PGMQClient()
 
-    async def _get_db(self):
+    async def _get_db(self) -> Any:
         if self._db is None:
             from netengine.core.supabase_client import get_db
 
@@ -31,13 +32,11 @@ class WorldRegistryHandler:
         db = await self._get_db()
         data = {"org_name": name, "capabilities": capabilities, "and_profile": and_profile}
         await db.table("world_registry").upsert(data).execute()
-        event = EventEnvelope.create(
-            event_type="org.admitted",
-            emitted_by="world_registry_handler",
-            payload={"org_name": name, "capabilities": capabilities, "and_profile": and_profile},
+        event = event_factory.org_admitted(
+            org_name=name, capabilities=capabilities, and_profile=and_profile
         )
-        await self.pgmq.send("oidc_provisioning", event)
-        await self.pgmq.send("and_provisioning", event)
+        await self.pgmq.send(Queue.OIDC_PROVISIONING, event)
+        await self.pgmq.send(Queue.AND_PROVISIONING, event)
 
     async def list_orgs(self) -> List[Any]:
         """Return all orgs in the world registry."""
@@ -57,13 +56,11 @@ class WorldRegistryHandler:
         await db.table("world_registry").update(
             {"capabilities": capabilities, "and_profile": and_profile}
         ).eq("org_name", name).execute()
-        event = EventEnvelope.create(
-            event_type="org.updated",
-            emitted_by="world_registry_handler",
-            payload={"org_name": name, "capabilities": capabilities, "and_profile": and_profile},
+        event = event_factory.org_updated(
+            org_name=name, capabilities=capabilities, and_profile=and_profile
         )
-        await self.pgmq.send("oidc_provisioning", event)
-        await self.pgmq.send("and_provisioning", event)
+        await self.pgmq.send(Queue.OIDC_PROVISIONING, event)
+        await self.pgmq.send(Queue.AND_PROVISIONING, event)
 
     async def remove_org(self, name: str) -> bool:
         """Remove an org from the world registry. Returns True if it existed."""
@@ -72,11 +69,7 @@ class WorldRegistryHandler:
         if not existing:
             return False
         await db.table("world_registry").delete().eq("org_name", name).execute()
-        event = EventEnvelope.create(
-            event_type="org.removed",
-            emitted_by="world_registry_handler",
-            payload={"org_name": name},
-        )
-        await self.pgmq.send("oidc_provisioning", event)
-        await self.pgmq.send("and_provisioning", event)
+        event = event_factory.org_removed(org_name=name)
+        await self.pgmq.send(Queue.OIDC_PROVISIONING, event)
+        await self.pgmq.send(Queue.AND_PROVISIONING, event)
         return True

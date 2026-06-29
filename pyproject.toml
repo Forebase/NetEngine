@@ -24,7 +24,7 @@ supabase = "^2.0"
 fastapi = ">=0.115"
 omegaconf = "^2.3"
 prometheus-client = "^0.25.0"
-cryptography = "^49.0.0"
+cryptography = ">=44,<49"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4"
@@ -45,20 +45,16 @@ exclude = [
     "netengine/api/",
     "netengine/cli/",
     "netengine/phases/",
-    "netengine/core/pgmq_client\\.py",
     "netengine/handlers/substrate\\.py",
     "netengine/handlers/dns\\.py",
     "netengine/handlers/pki_handler\\.py",
     "netengine/handlers/phase_pki\\.py",
     "netengine/handlers/oidc_handler\\.py",
-    "netengine/handlers/docker_handler\\.py",
     "netengine/handlers/and_handler\\.py",
-    "netengine/handlers/domain_registry_handler\\.py",
     "netengine/handlers/mail_handler\\.py",
     "netengine/handlers/minio_handler\\.py",
     "netengine/handlers/app_handler\\.py",
     "netengine/handlers/whois_server\\.py",
-    "netengine/handlers/world_registry_handler\\.py",
     "netengine/logging/middleware\\.py",
     "netengine/logging/sinks\\.py",
 ]

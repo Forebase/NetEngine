@@ -9,11 +9,11 @@ Responsibilities:
 """
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from netengine.errors import SubstrateError
-from netengine.events.queues import queue_for_event_type
-from netengine.events.schema import EventEnvelope
+from netengine.events.emitter import emit_event
+from netengine.core.state import SubstrateOutput
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 
@@ -83,7 +83,7 @@ class SubstrateHandler(BasePhaseHandler):
 
             substrate_output["deployed_at"] = datetime.now(UTC).isoformat()
 
-            context.runtime_state.substrate_output = substrate_output
+            context.runtime_state.substrate_output = cast(SubstrateOutput, substrate_output)
             context.runtime_state.completed_at = datetime.now(UTC)
 
             logger.info("Phase 0: Substrate initialization complete")
@@ -477,23 +477,6 @@ class SubstrateHandler(BasePhaseHandler):
             event_type: Type of event (e.g., "substrate.initialized")
             payload: Event payload dict
         """
-        event = EventEnvelope.create(
-            event_type=event_type,
-            emitted_by="substrate_handler",
-            payload=payload,
-            correlation_id=context.runtime_state.correlation_id,
-            parent_event_id=context.runtime_state.parent_event_id,
+        await emit_event(
+            context, event_type=event_type, emitted_by="substrate_handler", payload=payload
         )
-
-        context.logger.info(
-            f"Event emitted: {event_type} "
-            f"(event_id={event.event_id}, correlation_id={event.correlation_id})"
-        )
-        if context.pgmq_client is not None:
-            try:
-                await context.pgmq_client.send(queue_for_event_type(event_type), event)
-                context.logger.debug(f"Event queued to pgmq: {event_type}")
-            except Exception as e:
-                context.logger.warning(f"Failed to queue event to pgmq: {e}")
-        else:
-            context.logger.debug("pgmq_client not available; event logged only")

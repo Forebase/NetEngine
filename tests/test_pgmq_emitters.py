@@ -51,3 +51,24 @@ async def test_emitters_send_queue_name_and_event(
     assert queue_name == expected_queue
     assert event.event_type == event_type
     assert event.payload == payload
+
+
+async def test_emitters_record_structured_send_failure(context_with_pgmq: PhaseContext) -> None:
+    context_with_pgmq.runtime_state.dns_output = {"healthy": True}
+    context_with_pgmq.pgmq_client.send.side_effect = RuntimeError("pgmq down")
+
+    await DNSHandler()._emit_event(
+        context_with_pgmq,
+        event_type="dns.zones_ready",
+        payload={"zones": ["root.internal"]},
+    )
+
+    failures = context_with_pgmq.runtime_state.event_send_failures
+    assert len(failures) == 1
+    assert failures[0]["event_type"] == "dns.zones_ready"
+    assert failures[0]["queue"] == Queue.DNS_UPDATES
+    assert failures[0]["emitted_by"] == "dns_handler"
+    assert failures[0]["exception"] == "pgmq down"
+    assert failures[0]["event_id"]
+    assert failures[0]["correlation_id"] == "correlation-123"
+    assert context_with_pgmq.runtime_state.dns_output["event_send_failures"] == failures

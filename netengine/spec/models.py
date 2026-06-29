@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from netengine.spec.types import (
     ANDProfile,
@@ -23,6 +23,57 @@ class SpecModel(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+class FeatureState(str, Enum):
+    """Implementation maturity for spec fields.
+
+    Values are serialized into JSON Schema so validators, tooling, and
+    future documentation generators can discover whether a field is stable,
+    experimental, reserved for future use, or currently unsupported.
+    """
+
+    STABLE = "stable"
+    EXPERIMENTAL = "experimental"
+    RESERVED = "reserved"
+    UNSUPPORTED = "unsupported"
+
+
+FEATURE_STATE_JSON_SCHEMA_KEY = "feature_state"
+SPEC_SCHEMA_VERSION = "netengine.spec.v1"
+SUPPORTED_SPEC_SCHEMA_VERSIONS = {SPEC_SCHEMA_VERSION}
+
+
+def feature_state_extra(feature_state: FeatureState) -> dict[str, str]:
+    """Return JSON Schema metadata for a field's feature state."""
+
+    return {FEATURE_STATE_JSON_SCHEMA_KEY: feature_state.value}
+
+
+def feature_state_field(
+    default: Any = ...,
+    *,
+    feature_state: FeatureState,
+    json_schema_extra: Optional[dict[str, Any]] = None,
+    **kwargs: Any,
+) -> Any:
+    """Create a Pydantic field with discoverable feature-state metadata."""
+
+    extra: dict[str, Any] = feature_state_extra(feature_state)
+    if json_schema_extra:
+        extra.update(json_schema_extra)
+    return Field(default, json_schema_extra=extra, **kwargs)
+
+
+PKI_FEATURE_STATES: dict[str, FeatureState] = {
+    "pki.intermediate_ca_enabled": FeatureState.RESERVED,
+    "pki.dnssec_enabled": FeatureState.UNSUPPORTED,
+    "pki.dnssec_ksk_lifetime_days": FeatureState.UNSUPPORTED,
+    "pki.dnssec_zsk_lifetime_days": FeatureState.UNSUPPORTED,
+    "pki.crl_enabled": FeatureState.UNSUPPORTED,
+    "pki.ocsp_enabled": FeatureState.UNSUPPORTED,
+    "pki.rotation_policy": FeatureState.EXPERIMENTAL,
+}
+
+
 # ─────────────────────────────────────────────
 # METADATA
 # ─────────────────────────────────────────────
@@ -30,6 +81,22 @@ class SpecModel(BaseModel):
 
 class SpecMetadata(SpecModel):
     """Top-level spec metadata."""
+
+    schema_version: str = Field(
+        default=SPEC_SCHEMA_VERSION,
+        description="NetEngine spec schema/version identifier used for compatibility checks",
+    )
+
+    @field_validator("schema_version")
+    @classmethod
+    def validate_schema_version(cls, value: str) -> str:
+        """Reject unsupported spec schemas before boot/import."""
+        if value not in SUPPORTED_SPEC_SCHEMA_VERSIONS:
+            supported = ", ".join(sorted(SUPPORTED_SPEC_SCHEMA_VERSIONS))
+            raise ValueError(
+                f"unsupported spec schema_version {value!r}; supported versions: {supported}"
+            )
+        return value
 
     name: str = Field(..., description="World name")
     version: str = Field(default="1.0", description="Spec version")
@@ -219,13 +286,28 @@ class PKIPhase(SpecModel):
 
     root_ca: RootCAConfig = Field(default_factory=RootCAConfig)
     acme: ACMEConfig = Field(default_factory=ACMEConfig)
-    intermediate_ca_enabled: bool = Field(default=False)
-    dnssec_enabled: bool = Field(default=True)
-    dnssec_ksk_lifetime_days: int = Field(default=365)
-    dnssec_zsk_lifetime_days: int = Field(default=30)
-    crl_enabled: bool = Field(default=False)
-    ocsp_enabled: bool = Field(default=False)
-    rotation_policy: PKIRotationPolicy = Field(default_factory=PKIRotationPolicy)
+    intermediate_ca_enabled: bool = feature_state_field(
+        default=False, feature_state=PKI_FEATURE_STATES["pki.intermediate_ca_enabled"]
+    )
+    dnssec_enabled: bool = feature_state_field(
+        default=False, feature_state=PKI_FEATURE_STATES["pki.dnssec_enabled"]
+    )
+    dnssec_ksk_lifetime_days: int = feature_state_field(
+        default=365, feature_state=PKI_FEATURE_STATES["pki.dnssec_ksk_lifetime_days"]
+    )
+    dnssec_zsk_lifetime_days: int = feature_state_field(
+        default=30, feature_state=PKI_FEATURE_STATES["pki.dnssec_zsk_lifetime_days"]
+    )
+    crl_enabled: bool = feature_state_field(
+        default=False, feature_state=PKI_FEATURE_STATES["pki.crl_enabled"]
+    )
+    ocsp_enabled: bool = feature_state_field(
+        default=False, feature_state=PKI_FEATURE_STATES["pki.ocsp_enabled"]
+    )
+    rotation_policy: PKIRotationPolicy = feature_state_field(
+        default_factory=PKIRotationPolicy,
+        feature_state=PKI_FEATURE_STATES["pki.rotation_policy"],
+    )
 
 
 # ─────────────────────────────────────────────

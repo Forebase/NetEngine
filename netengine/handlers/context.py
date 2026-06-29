@@ -5,11 +5,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+from netengine.handlers.protocols import DockerAdapterProtocol
+
 from netengine.core.state import RuntimeState
 from netengine.spec.models import NetEngineSpec
 
 if TYPE_CHECKING:
-    import docker as docker_sdk
     from loguru import Logger
     from supabase import AsyncClient as SupabaseClient
 
@@ -40,7 +41,7 @@ class PhaseContext:
     logger: "Logger"
 
     # Service clients (None until the relevant phase wires them up)
-    docker_client: Optional["docker_sdk.DockerClient"] = None
+    docker_client: Optional[DockerAdapterProtocol] = None
     kubernetes_client: Any = None
     supabase_client: Optional["SupabaseClient"] = None
     pgmq_client: Optional["PGMQClient"] = None

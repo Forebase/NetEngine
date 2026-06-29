@@ -14,11 +14,11 @@ Responsibilities:
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from netengine.core.state import DNSOutput
 from netengine.errors import DNSError
-from netengine.events.queues import queue_for_event_type
-from netengine.events.schema import EventEnvelope
+from netengine.events.emitter import emit_event
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 
@@ -119,7 +119,7 @@ class DNSHandler(BasePhaseHandler):
 
             dns_output["deployed_at"] = datetime.now(UTC).isoformat()
 
-            context.runtime_state.dns_output = dns_output
+            context.runtime_state.dns_output = cast(DNSOutput, dns_output)
             context.runtime_state.phase_completed["1"] = True
             context.runtime_state.phase_completed["2"] = True
             context.runtime_state.completed_at = datetime.now(UTC)
@@ -744,28 +744,7 @@ class DNSHandler(BasePhaseHandler):
             event_type: Type of event (e.g., "dns.zones_ready")
             payload: Event payload dict
         """
-        event = EventEnvelope.create(
-            event_type=event_type,
-            emitted_by="dns_handler",
-            payload=payload,
-            correlation_id=context.runtime_state.correlation_id,
-            parent_event_id=context.runtime_state.parent_event_id,
-        )
-
-        context.logger.info(
-            f"Event emitted: {event_type} "
-            f"(event_id={event.event_id}, correlation_id={event.correlation_id})"
-        )
-
-        # Queue to pgmq for M4+ event processing
-        if context.pgmq_client is not None:
-            try:
-                await context.pgmq_client.send(queue_for_event_type(event_type), event)
-                context.logger.debug(f"Event queued to pgmq: {event_type}")
-            except Exception as e:
-                context.logger.warning(f"Failed to queue event to pgmq: {e}")
-        else:
-            context.logger.debug("pgmq_client not available (M1-M3 testing); event logged only")
+        await emit_event(context, event_type=event_type, emitted_by="dns_handler", payload=payload)
 
     async def add_zone_record(
         self,

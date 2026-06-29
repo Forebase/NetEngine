@@ -3,15 +3,15 @@
 ╚═══════════════════════════════════════════════════════════════════════════╝
 
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ 🔴 CRITICAL GAPS (Spec Declared But Not Implemented)                    │
+│ 🔴 CRITICAL GAPS (Spec Gated, Partial, Or Not Implemented)              │
 └─────────────────────────────────────────────────────────────────────────┘
 
 1. PKI FEATURES (netengine/spec/models.py:201-228)
-   ❌ DNSSEC Support (dnssec_enabled, ksk/zsk lifetimes)
-   ❌ CRL (Certificate Revocation List) - crl_enabled
-   ❌ OCSP (Online Certificate Status Protocol) - ocsp_enabled
-   ❌ Intermediate CA - intermediate_ca_enabled
-   ⚠️  PKI Rotation Policy - declared but not wired from spec
+   ⚠️  DNSSEC Support (dnssec_enabled, ksk/zsk lifetimes) - key generation wired; zone signing/rotation incomplete
+   ⚠️  CRL (Certificate Revocation List) - crl_enabled read by handler; publication/distribution incomplete
+   ⚠️  OCSP (Online Certificate Status Protocol) - ocsp_enabled read by handler; responder lifecycle incomplete
+   ⚠️  Intermediate CA - intermediate_ca_enabled read and exposed; alpha semantics stabilizing
+   ⚠️  PKI Rotation Policy - wired from spec/API; experimental
 
 2. GATEWAY FEATURES (netengine/spec/models.py:521-551)
    ❌ Real Internet Mode (service_mirrors, upstream_resolver)
@@ -31,17 +31,14 @@
 └─────────────────────────────────────────────────────────────────────────┘
 
 5. EVENT QUEUE MISMATCHES (netengine/events/queues.py:27-33)
-   ❌ Queue "and_admissions" referenced but not defined
-   ❌ Queue "pki_cert_rotation_events" referenced but not defined
-   ❌ Queue "drift_events" referenced but not defined
-   ❌ Queue "world_health" referenced but not defined
-   → RUNTIME RISK: Will fail when trying to emit to undefined queues
+   ✅ Queue registry now defines and_admissions, pki_cert_rotation_events, drift_events, and world_health
+   ⚠️  Remaining risk is consumer coverage/operational handling, not missing queue constants
 
 6. MISSING API ENDPOINTS (netengine/api/routes.py)
    ❌ PUT /ands/{and_name}/profile (to update AND config)
    ❌ PUT /gateway (to modify gateway configuration)
    ❌ PUT /services/{name} (to enable/disable services)
-   ❌ PUT /pki/rotation-policy (to update rotation settings)
+   ✅ PUT /pki/rotation-policy (to update rotation settings)
 
 7. INCOMPLETE PHASE LOGIC (netengine/core/)
    ❌ Phase 9 missing prerequisite for world_services_output
@@ -68,10 +65,10 @@
 10. SILENT GRACEFUL DEGRADATION
     • pgmq unavailability → events disabled without warning
     • Queue creation deferral → potential runtime failures
-    • Handler field validation missing → unsupported configs allowed
+    • Feature-state validation exists; keep docs and registry synchronized
 
 11. TEST COVERAGE GAPS
-    • No tests for: DNSSEC, OCSP, CRL, intermediate CA, real internet,
+    • Partial tests for PKI DNSSEC/OCSP/CRL/intermediate CA; still lacking real internet,
       cross-world, service mirrors, BGP, AND dynamic IP, AND reverse DNS
 
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -80,7 +77,7 @@
 
 Total Gaps Identified:     30+
 Declared But Unimplemented: 14+ fields
-Missing Event Consumers:    4 queues
+Event Follow-up Items:      4 queues
 Missing API Endpoints:      4+ endpoints
 Test Coverage Gaps:         8+ features
 
@@ -88,10 +85,10 @@ Test Coverage Gaps:         8+ features
 │ ⚡ QUICK FIXES (High ROI)                                               │
 └─────────────────────────────────────────────────────────────────────────┘
 
-P0 (1-2 hours):  Add warnings when users enable unsupported fields
-P1 (2-4 hours):  Fix queue registration mismatch
-P1 (4 hours):    Implement Intermediate CA support
-P1 (2 hours):    Wire PKI rotation policy from spec config
+P0 (1-2 hours):  Keep alpha support matrix synchronized with feature-state registry
+P1 (2-4 hours):  Verify event consumer coverage
+P1 (2-4 hours):  Stabilize Intermediate CA support
+P1 (2 hours):    Harden PKI rotation policy behavior
 P1 (1 hour):     Add Phase 9 prerequisites
 P2 (3 hours):    Clean up deprecated state fields
 P2 (4 hours):    Add test coverage for declared features

@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Any, Optional
 
 from netengine.core.orchestrator import Orchestrator
+from netengine.events import factory as event_factory
 from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
@@ -106,11 +107,11 @@ class DriftDetectionController:
                         phase_num,
                         handler.__class__.__name__,
                         "drift.detected",
-                        {
-                            "phase": phase_num,
-                            "handler": handler.__class__.__name__,
-                            "detected_at": datetime.now(UTC).isoformat(),
-                        },
+                        event_factory.drift_detected(
+                            phase=phase_num,
+                            handler=handler.__class__.__name__,
+                            detected_at=datetime.now(UTC).isoformat(),
+                        ),
                     )
 
             if drift_this_round and self.auto_heal:
@@ -126,10 +127,9 @@ class DriftDetectionController:
                 -1,
                 "drift_controller",
                 "drift.loop_error",
-                {
-                    "error": str(e),
-                    "error_at": datetime.now(UTC).isoformat(),
-                },
+                event_factory.drift_loop_error(
+                    error=str(e), error_at=datetime.now(UTC).isoformat()
+                ),
             )
 
     async def _check_phase_health(self, phase_num: int, handler: BasePhaseHandler) -> bool:
@@ -145,7 +145,7 @@ class DriftDetectionController:
         try:
             is_healthy = await handler.healthcheck(self.orchestrator.context)
             self._update_drift_state(phase_num, handler.__class__.__name__, is_healthy)
-            return is_healthy
+            return bool(is_healthy)
         except Exception as e:
             logger.error(f"Phase {phase_num} healthcheck error: {e}")
             self._update_drift_state(phase_num, handler.__class__.__name__, False)
@@ -241,10 +241,9 @@ class DriftDetectionController:
                 phase_num,
                 handler.__class__.__name__,
                 "drift.self_healed",
-                {
-                    "phase": phase_num,
-                    "healed_at": datetime.now(UTC).isoformat(),
-                },
+                event_factory.drift_self_healed(
+                    phase=phase_num, healed_at=datetime.now(UTC).isoformat()
+                ),
             )
 
             if drift_state:
@@ -261,11 +260,9 @@ class DriftDetectionController:
                 phase_num,
                 handler.__class__.__name__,
                 "drift.self_heal_failed",
-                {
-                    "phase": phase_num,
-                    "error": str(e),
-                    "failed_at": datetime.now(UTC).isoformat(),
-                },
+                event_factory.drift_self_heal_failed(
+                    phase=phase_num, error=str(e), failed_at=datetime.now(UTC).isoformat()
+                ),
             )
 
             if drift_state:
@@ -290,9 +287,12 @@ class DriftDetectionController:
             if phase_num in healed_phases:
                 continue
 
-            phase_key = str(changed_phase_num)
+            # Only re-heal phases that come after the changed phase and are completed
+            if phase_num <= changed_phase_num:
+                continue
 
-            if not self.orchestrator.runtime_state.phase_completed.get(phase_key):
+            candidate_key = str(phase_num)
+            if not self.orchestrator.runtime_state.phase_completed.get(candidate_key):
                 continue
 
             handler = handler_class()
@@ -311,7 +311,8 @@ class DriftDetectionController:
         phase_num: int,
         handler_name: str,
         event_type: str,
-        payload: dict[str, Any],
+        event: EventEnvelope | None = None,
+        payload: dict[str, Any] | None = None,
     ) -> None:
         """Emit a drift event.
 
@@ -326,11 +327,12 @@ class DriftDetectionController:
             return
 
         try:
-            event = EventEnvelope.create(
-                event_type=event_type,
-                emitted_by="drift_controller",
-                payload=payload,
-            )
+            if event is None:
+                event = event_factory.phase_event(
+                    event_type=event_type,
+                    emitted_by="drift_controller",
+                    payload=payload or {},
+                )
             await self.orchestrator.context.pgmq_client.send(Queue.DRIFT_EVENTS, event)
             logger.debug(f"Drift event emitted: {event_type}")
         except Exception as e:

@@ -2,11 +2,10 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from netengine.events.queues import queue_for_event_type
-from netengine.events.schema import EventEnvelope
+from netengine.events.emitter import emit_event
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
-from netengine.handlers.docker_handler import DockerHandler
+from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.handlers.pki_handler import PKIHandler
 from netengine.logging import get_logger
 from netengine.workers.pki_cert_rotation_worker import CertTypeRotationConfig, PKICertRotationWorker
@@ -44,8 +43,11 @@ class PKIPhaseHandler(BasePhaseHandler):
             )
             return
 
-        # Use docker_client from context, falling back to a new DockerHandler
-        docker = context.docker_client if context.docker_client is not None else DockerHandler()
+        if context.docker_client is None:
+            raise RuntimeError(
+                "PKI phase requires context.docker_client when mock_mode is disabled"
+            )
+        docker = context.docker_client
         pki = PKIHandler(docker, context.runtime_state, spec)
 
         # 1. Bootstrap CA (generate + start server)
@@ -124,7 +126,9 @@ class PKIPhaseHandler(BasePhaseHandler):
         if context.mock_mode:
             return context.runtime_state.pki_output is not None
         try:
-            docker = context.docker_client if context.docker_client is not None else DockerHandler()
+            if context.docker_client is None:
+                return False
+            docker = context.docker_client
             pki = PKIHandler(docker, context.runtime_state, context.spec)
             return await pki.healthcheck()
         except Exception as exc:
@@ -198,16 +202,4 @@ class PKIPhaseHandler(BasePhaseHandler):
         )
 
     async def _emit_event(self, context, event_type, payload):
-        event = EventEnvelope.create(
-            event_type=event_type,
-            emitted_by="pki_phase",
-            payload=payload,
-            correlation_id=getattr(context.runtime_state, "correlation_id", None),
-            parent_event_id=getattr(context.runtime_state, "parent_event_id", None),
-        )
-        context.logger.info(f"Event emitted: {event_type}")
-        if context.pgmq_client is not None:
-            try:
-                await context.pgmq_client.send(queue_for_event_type(event_type), event)
-            except Exception as exc:
-                context.logger.warning(f"Failed to queue pki event: {exc}")
+        await emit_event(context, event_type=event_type, emitted_by="pki_phase", payload=payload)

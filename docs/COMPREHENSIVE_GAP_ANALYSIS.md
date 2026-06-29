@@ -9,46 +9,45 @@ NetEngine exhibits **15+ categories of gaps** across the codebase, ranging from 
 
 | Severity | Category | Count | Examples |
 |----------|----------|-------|----------|
-| 🔴 **HIGH** | Unused Spec Fields (feature declared but never used) | 14+ | DNSSEC, CRL, OCSP, intermediate CA, service mirrors, cross-world peering |
-| 🟡 **MEDIUM** | Missing Event Infrastructure | 4 | Event queues undefined, consumers not registered |
+| 🔴 **HIGH** | Feature-State / Unsupported Spec Fields | 14+ | DNSSEC end-to-end signing, CRL publication, OCSP lifecycle, service mirrors, cross-world peering |
+| 🟡 **MEDIUM** | Event Infrastructure Follow-up | 4 | Queue constants present; consumer coverage/registration still needs verification |
 | 🟡 **MEDIUM** | API Gaps | 4+ | No endpoint for AND profile updates, gateway config, service toggles |
 | 🟡 **MEDIUM** | Phase Prerequisites | 1 | Phase 9 missing prerequisite declaration |
 | 🟢 **LOW** | Test Coverage Gaps | 8+ | No tests for declared features |
 | 🟢 **LOW** | State/Schema Debt | 7 | Deprecated fields still accumulated |
 
-**Total Impact**: ~30+ features partially or completely unimplemented, but declared in spec. Users can enable them in YAML configs with zero effect.
+**Total Impact**: ~30+ features are partially implemented, gated by feature-state validation, or completely unimplemented. Some previously declared fields are now wired, but several remain alpha-unsupported or incomplete end-to-end.
 
 ---
 
-## 1. 🔴 CRITICAL: UNUSED SPEC FIELDS (HIGH SEVERITY)
+## 1. 🔴 CRITICAL: FEATURE-STATE / UNSUPPORTED SPEC FIELDS (HIGH SEVERITY)
 
 ### 1.1 PKI Configuration Gaps
 **File**: `netengine/spec/models.py:201-228` (PKIPhase class)
 
-These fields are declared in the spec but **completely absent from handler logic**:
+These fields are declared in the spec and should be read through the alpha support matrix before use. Verification shows several are now wired into handler logic, but some remain unsupported because the implementation is not complete end-to-end:
 
 | Field | Type | Default | Purpose | Files | Status |
 |-------|------|---------|---------|-------|--------|
-| `intermediate_ca_enabled` | bool | False | Enable cert hierarchy | models.py:222 | ❌ Never read |
-| `dnssec_enabled` | bool | True | DNSSEC support | models.py:223 | ❌ Never read |
-| `dnssec_ksk_lifetime_days` | int | 365 | KSK rotation lifetime | models.py:224 | ❌ Never read |
-| `dnssec_zsk_lifetime_days` | int | 30 | ZSK rotation lifetime | models.py:225 | ❌ Never read |
-| `crl_enabled` | bool | False | Certificate revocation list | models.py:226 | ❌ Never read |
-| `ocsp_enabled` | bool | False | Online cert status protocol | models.py:227 | ❌ Never read |
+| `intermediate_ca_enabled` | bool | False | Enable cert hierarchy | models.py:271 | ⚠️ Read/wired; alpha stabilizing |
+| `dnssec_enabled` | bool | True | DNSSEC support | models.py:274 | ⚠️ Read/wired for key generation; zone signing not integrated |
+| `dnssec_ksk_lifetime_days` | int | 365 | KSK rotation lifetime | models.py:277 | ⚠️ Read as metadata; no automatic DNSSEC rotation |
+| `dnssec_zsk_lifetime_days` | int | 30 | ZSK rotation lifetime | models.py:280 | ⚠️ Read as metadata; no automatic DNSSEC rotation |
+| `crl_enabled` | bool | False | Certificate revocation list | models.py:283 | ⚠️ Read/wired for step-ca config; publication incomplete |
+| `ocsp_enabled` | bool | False | Online cert status protocol | models.py:286 | ⚠️ Read/wired for step-ca config; responder lifecycle incomplete |
+| `rotation_policy` | PKIRotationPolicy | enabled/defaults | Certificate rotation policy | models.py:289 | ⚠️ Read/wired; experimental |
 
 **Evidence:**
 ```bash
-$ grep -r "dnssec_enabled\|crl_enabled\|ocsp_enabled\|intermediate_ca_enabled" netengine/handlers/
-# Returns: (nothing)
-$ grep -r "dnssec_enabled\|crl_enabled\|ocsp_enabled\|intermediate_ca_enabled" netengine/phases/
-# Returns: (nothing)
+$ rg -n "dnssec_enabled|crl_enabled|ocsp_enabled|intermediate_ca_enabled|rotation_policy" netengine/handlers netengine/workers netengine/api tests
+# Returns handler, worker, API, and tests coverage for the wired PKI paths.
 ```
 
-**Handler Only Implements**: Root CA generation via `step ca init` (netengine/handlers/pki_handler.py:80-96)
+**Handler Coverage**: `PKIHandler.bootstrap()` reads CRL, OCSP, and intermediate-CA flags; `PKIPhaseHandler.execute()` reads CRL, OCSP, intermediate CA, and DNSSEC fields; `_register_rotation_worker()` reads `rotation_policy`; the worker live-reloads `rotation_policy` from `world_spec`.
 
-**Impact**: Users can set `pki: {dnssec_enabled: true, crl_enabled: true, intermediate_ca_enabled: true}` in their spec, but these settings have **zero effect**. The handlers don't check them, don't warn about them, don't implement them.
+**Impact**: Users should consult `docs/spec-alpha-support.md`. Active unsupported feature values are validated by the spec loader, while experimental fields may work but remain subject to alpha changes.
 
-**Root Cause**: step-ca (the underlying tool) supports these features, but NetEngine's Phase 3 handler never wires them up.
+**Root Cause**: step-ca supports parts of these features, and NetEngine now wires several alpha paths. The remaining gap is end-to-end support: signed DNS zone publication/rotation, CRL distribution, OCSP lifecycle management, and stable trust-chain semantics are not complete.
 
 ---
 
@@ -150,43 +149,48 @@ ands:
 
 ## 2. 🟡 MEDIUM: EVENT INFRASTRUCTURE GAPS
 
-### 2.1 Queue Registration Mismatch
-**File**: `netengine/events/queues.py:27-33` (PRIMARY_QUEUES definition)
+### 2.1 Queue Registration Baseline
+**File**: `netengine/events/queues.py` (`PRIMARY_QUEUES` definition)
 
-**Declared Queues in Code**:
+`netengine/events/queues.py::PRIMARY_QUEUES` is the source of truth for the
+operator-facing pgmq queue set. The current baseline is 11 primary queues plus
+11 matching dead-letter queues (`*_dlq`):
+
 ```python
-PRIMARY_QUEUES = {
-    "dns_updates",
-    "oidc_provisioning", 
-    "and_provisioning",
-    "inworld_admissions",
-    "services_admissions",
-}
-```
-
-**Queues Referenced But Not in PRIMARY_QUEUES**:
-
-| Queue Name | Emitted By | Line | Status |
-|---|---|---|---|
-| `and_admissions` | phase_ands.py | 342 | ❌ Queue doesn't exist; will fail at runtime |
-| `pki_cert_rotation_events` | pki_cert_rotation_worker.py | 16 | ❌ Queue undefined |
-| `drift_events` | drift_controller.py | 315 | ❌ Queue undefined |
-| `world_health` | monitoring/service.py | 75 | ❌ Queue undefined |
-
-**Impact**: 
-- When drift controller tries to emit: `await context.pgmq_client.send_to_queue("drift_events", ...)` → **fails because queue doesn't exist**
-- Health monitoring events are lost
-- Queue metrics endpoint (`/api/v1/queues`) doesn't report these queues
-- Event replay CLI can't restore lost events from these queues
-
-**Evidence**:
-```python
-# netengine/phases/phase_ands.py:342
-await context.pgmq_client.send_to_queue(
-    "and_admissions",  # This queue is never created!
-    EventEnvelope(...)
+PRIMARY_QUEUES = (
+    Queue.DNS_UPDATES,
+    Queue.OIDC_PROVISIONING,
+    Queue.AND_PROVISIONING,
+    Queue.INWORLD_ADMISSIONS,
+    Queue.SERVICES_ADMISSIONS,
+    Queue.AND_ADMISSIONS,
+    Queue.PKI_CERT_ROTATION_EVENTS,
+    Queue.DRIFT_EVENTS,
+    Queue.WORLD_HEALTH,
+    Queue.GATEWAY_PORTAL_EVENTS,
+    Queue.PHASE_EVENTS,
 )
 ```
+
+**Registered Primary Queues**:
+
+| Queue Name | Purpose |
+|---|---|
+| `dns_updates` | DNS zone updates |
+| `oidc_provisioning` | Identity setup |
+| `and_provisioning` | Network isolation setup |
+| `inworld_admissions` | In-world admission events |
+| `services_admissions` | Service admission events |
+| `and_admissions` | AND admission events |
+| `pki_cert_rotation_events` | Certificate rotation events |
+| `drift_events` | Drift detection and remediation events |
+| `world_health` | Health check events |
+| `gateway_portal_events` | Gateway portal lifecycle events |
+| `phase_events` | Phase lifecycle events |
+
+**Operator note**: Queue metrics, replay tooling, and DLQ checks should derive
+their queue inventory from `PRIMARY_QUEUES` rather than copying a hard-coded
+count or list into runbooks.
 
 ---
 
@@ -334,10 +338,10 @@ if queue_already_exists:
 | Cross-World Peering | GatewayPortal | (none) | 0% |
 | Service Mirrors | RealInternetConfig | (none) | 0% |
 | BGP Fabric | ANDsPhase | (none) | 0% |
-| DNSSEC | PKIPhase | (none) | 0% |
-| OCSP | PKIPhase | (none) | 0% |
-| CRL | PKIPhase | (none) | 0% |
-| Intermediate CA | PKIPhase | (none) | 0% |
+| DNSSEC | PKIPhase | tests/test_pki_features.py | Partial: key generation and metadata |
+| OCSP | PKIPhase | tests/test_pki_features.py | Partial: config injection |
+| CRL | PKIPhase | tests/test_pki_features.py | Partial: config injection |
+| Intermediate CA | PKIPhase | tests/test_pki_features.py | Partial: state/API/output coverage |
 | AND Dynamic IP | ANDProfileDef | (none) | 0% |
 | AND Reverse DNS | ANDProfileDef | (none) | 0% |
 | DMARC Policy | MailConfig | (none) | 0% |
@@ -397,9 +401,9 @@ old_spec = NetEngineSpec(**state.world_spec)  # Uses stale snapshot
    - **Benefit**: Manages expectations
 
 ### 🟡 P1: High Value Gaps (3-5 Hours Each)
-3. **Fix Queue Registration Mismatch**
-   - Add missing queues to PRIMARY_QUEUES
-   - Update queue creation logic in ConsumerSupervisor
+3. **Maintain Queue Registration Baseline**
+   - Keep `PRIMARY_QUEUES` as the source of truth for the 11 primary queues
+   - Ensure ConsumerSupervisor creates each primary queue and its matching DLQ
    - **Files**: events/queues.py, core/consumer_supervisor.py
    - **Effort**: 2 hours
 
@@ -409,19 +413,18 @@ old_spec = NetEngineSpec(**state.world_spec)  # Uses stale snapshot
    - **Files**: core/phase_graph.py, handlers/app_handler.py
    - **Effort**: 1 hour
 
-5. **Implement Intermediate CA Support**
-   - Wire `intermediate_ca_enabled` to step-ca init
-   - Add tests
-   - **Files**: handlers/pki_handler.py, handlers/phase_pki.py, tests/
-   - **Effort**: 4 hours
-   - **Benefit**: Enables proper cert hierarchy
+5. **Stabilize Intermediate CA Support**
+   - Keep `intermediate_ca_enabled` documented as alpha/stabilizing
+   - Verify trust-chain distribution semantics before marking stable
+   - **Files**: handlers/pki_handler.py, handlers/phase_pki.py, api/routes.py, tests/
+   - **Effort**: 2-4 hours
+   - **Benefit**: Enables predictable cert hierarchy operations
 
-6. **Wire PKI Rotation Policy from Spec**
-   - Parse `spec.pki.rotation_policy` in phase_pki.py
-   - Pass cert-type configs to worker registration
-   - **Files**: handlers/phase_pki.py, spec/models.py
+6. **Harden PKI Rotation Policy**
+   - Rotation policy is wired; add operational guarantees around cert-type coverage and graceful cutover
+   - **Files**: handlers/phase_pki.py, workers/pki_cert_rotation_worker.py, spec/models.py
    - **Effort**: 2-3 hours
-   - **Benefit**: Users control rotation via YAML
+   - **Benefit**: Users can rely on YAML/API-driven rotation during alpha
 
 7. **Update world_spec on Reload**
    - Sync `state.world_spec` after successful reload
@@ -457,7 +460,7 @@ old_spec = NetEngineSpec(**state.world_spec)  # Uses stale snapshot
 | Category | Count | Most Critical | Easy Win |
 |----------|-------|---|---|
 | **Spec Fields (Declared, Not Implemented)** | 14+ | DNSSEC, CRL, OCSP, intermediate CA | Add warnings |
-| **Event Infrastructure** | 4 | Queue mismatch | Fix PRIMARY_QUEUES |
+| **Event Infrastructure** | 4 | Queue/DLQ inventory drift | Keep docs and tooling sourced from PRIMARY_QUEUES |
 | **API Gaps** | 4+ | Service toggle endpoint | Add PUT endpoints |
 | **Phase Logic** | 2 | Phase 9 prerequisites, Phase 2 explicit | Update graph, decompose handler |
 | **State Debt** | 7 | Container ID fields | Clean up deprecated fields |
@@ -478,8 +481,8 @@ old_spec = NetEngineSpec(**state.world_spec)  # Uses stale snapshot
 3. Document supported vs. planned features (P0)
 
 **If Feature-Driven (user needs):**
-1. Implement intermediate CA (P1, high user value)
-2. Wire PKI rotation policy (P1, improves ops)
+1. Stabilize intermediate CA semantics (P1, high user value)
+2. Harden PKI rotation policy behavior (P1, improves ops)
 3. Add gateway config API endpoints (P1, enables hybrid worlds)
 
 ---
@@ -492,8 +495,8 @@ old_spec = NetEngineSpec(**state.world_spec)  # Uses stale snapshot
 | netengine/core/phase_graph.py | 39-46 | Add Phase 9 prerequisite |
 | netengine/spec/models.py | 201-228 | Add deprecation notes or implement |
 | netengine/api/routes.py | 1-800 | Add missing PUT endpoints |
-| netengine/handlers/pki_handler.py | 62-96 | Wire intermediate_ca_enabled |
-| netengine/handlers/phase_pki.py | 127-133 | Wire rotation_policy config |
+| netengine/handlers/pki_handler.py | 62-120, 253-263 | Intermediate CA is read when enabled; stabilize semantics |
+| netengine/handlers/phase_pki.py | 127-190 | Rotation policy is wired; harden operational behavior |
 | netengine/core/state.py | 51-72 | Remove deprecated fields |
 | tests/integration/ | Various | Add test cases for declared features |
 
@@ -504,12 +507,12 @@ old_spec = NetEngineSpec(**state.world_spec)  # Uses stale snapshot
 NetEngine has **30+ declared features that are partially or completely unimplemented**, with **four major infrastructure gaps**:
 
 1. **Spec-Implementation Mismatch** (PKI, gateway, AND profiles)
-2. **Event Infrastructure Inconsistency** (undefined queues, missing consumers)
+2. **Event Infrastructure Follow-up** (queue constants present; consumer coverage/registration still needs verification)
 3. **API Endpoint Gaps** (no service/gateway config endpoints)
 4. **State/Phase Logic Debt** (deprecated fields, implicit Phase 2 handling)
 
-**Most important fix**: Add warnings when users enable unsupported features (1-2 hours, prevents confusion).
+**Most important fix**: Keep feature-state validation and `docs/spec-alpha-support.md` synchronized so unsupported and experimental features are visible before operators enable them.
 
-**Highest ROI fix**: Implement intermediate CA support (4 hours, enables enterprise use cases).
+**Highest ROI fix**: Stabilize intermediate CA support and PKI rotation policy semantics so wired alpha features can graduate safely.
 
-**Biggest risk**: Queue registration mismatch could cause runtime failures in persistent mode (2 hours to fix, critical to do).
+**Biggest risk**: Event consumer coverage and operational handling still need verification for persistent mode.

@@ -9,15 +9,29 @@ from typing import Any
 import click
 import yaml
 
+from netengine.cli.doctor import doctor
+from netengine.core.migrations import MigrationService, MigrationStatus
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
-from netengine.events.queues import PRIMARY_QUEUES, Queue
+from netengine.db.migrations import (
+    MIGRATIONS_DIR,
+    MigrationRunResult,
+    migration_status,
+    run_migrations,
+)
+from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
-from netengine.spec.loader import load_spec, load_spec_with_composition, load_spec_with_environment
+from netengine.spec.loader import (
+    SpecLoadError,
+    _is_active_feature_value,
+    _resolve_feature_state_paths,
+    load_spec,
+    load_spec_with_composition,
+    load_spec_with_environment,
+)
 
 logger = get_logger(__name__)
-MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations"
 
 
 def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
@@ -53,29 +67,198 @@ def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
     return overrides
 
 
-async def _run_migrations(db_url: str) -> None:
-    """Run all SQL migration files in order against the given Postgres URL."""
-    import asyncpg  # type: ignore[import]
+def _load_spec_for_cli(
+    spec_file: str,
+    *,
+    environment: str | None = None,
+    set_values: tuple[str, ...] = (),
+):
+    """Load a spec using the same composition semantics as ``up``."""
+    overrides = _parse_set_overrides(set_values)
+    if environment:
+        return load_spec_with_environment(
+            spec_file, environment=environment, overrides=overrides or None
+        )
+    if overrides:
+        return load_spec_with_composition(spec_file, overrides=overrides)
+    return load_spec(spec_file)
 
-    migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
-    if not migration_files:
-        logger.info("No migration files found")
-        return
 
-    conn = await asyncpg.connect(db_url)
-    try:
-        for migration_path in migration_files:
-            sql = migration_path.read_text()
-            logger.info(f"Running migration: {migration_path.name}")
-            await conn.execute(sql)
-        logger.info(f"Applied {len(migration_files)} migration(s)")
-    finally:
-        await conn.close()
+def _feature_state_explanations(spec: Any) -> list[str]:
+    """Return noteworthy active feature-state lines for ``validate --explain``."""
+    lines: list[str] = []
+    for entry, path, value, default_value in _resolve_feature_state_paths(spec):
+        if not _is_active_feature_value(value, default_value):
+            continue
+        value_text = getattr(value, "value", value)
+        lines.append(
+            f"{path}: {entry.state} ({entry.stage}) - {entry.reason}; value={value_text!r}"
+        )
+    return lines
+
+
+async def _run_migrations(db_url: str) -> MigrationRunResult:
+    """Run SQL migrations using the shared migration service."""
+    result = await run_migrations(db_url)
+    for migration in result.results:
+        if migration.status == "applied":
+            logger.info(
+                f"Applied migration: {migration.filename} " f"({migration.duration_seconds:.3f}s)"
+            )
+        elif migration.status == "skipped":
+            logger.info(f"Skipped migration: {migration.filename} (already applied)")
+    logger.info(
+        f"Migrations complete: {result.applied_count} applied, "
+        f"{result.skipped_count} skipped, {result.failed_count} failed"
+    )
+    return result
+
+
+def _db_url_from_env() -> str | None:
+    """Return the database URL used by CLI migration operations."""
+    return os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+
+
+def _print_migration_status(status: MigrationStatus) -> None:
+    click.echo("Migration status")
+    click.echo(f"  Applied: {len(status.applied)}")
+    for record in status.applied:
+        applied_at = record.applied_at.isoformat() if record.applied_at else "unknown time"
+        click.echo(f"    ✓ {record.version} {record.name} ({applied_at})")
+
+    click.echo(f"  Pending: {len(status.pending)}")
+    for migration in status.pending:
+        click.echo(f"    • {migration.version} {migration.name} ({migration.path.name})")
+
+    click.echo(f"  Failed: {len(status.failed)}")
+    for record in status.failed:
+        detail = f": {record.error}" if record.error else ""
+        click.echo(f"    ✗ {record.version} {record.name}{detail}")
+
+    click.echo(f"  Checksum drift: {len(status.checksum_drifted)}")
+    for migration, record in status.checksum_drifted:
+        click.echo(
+            f"    ! {migration.version} {migration.name}: "
+            f"database={record.checksum or 'unknown'} file={migration.checksum}"
+        )
+
+    click.echo("  pgmq prerequisites:")
+    click.echo(f"    Extension available: {'yes' if status.pgmq_available else 'no'}")
+    click.echo(f"    Extension installed: {'yes' if status.pgmq_installed else 'no'}")
+    if status.missing_queues:
+        click.echo(f"    Missing queues: {', '.join(status.missing_queues)}")
+    else:
+        click.echo("    Missing queues: none")
 
 
 @click.group()
 def cli() -> None:
     """NetEngine — spin up, reload, and tear down authority-autonomous worlds."""
+
+
+cli.add_command(doctor)
+
+
+@cli.group()
+def migrate() -> None:
+    """Manage NetEngine database migrations."""
+
+
+@migrate.command("up")
+def migrate_up() -> None:
+    """Apply pending database migrations."""
+    asyncio.run(_migrate_up())
+
+
+async def _migrate_up() -> None:
+    db_url = _require_db_url()
+    service = MigrationService(db_url, MIGRATIONS_DIR)
+    click.echo(f"Applying migrations from {MIGRATIONS_DIR}...")
+    try:
+        applied = await service.apply_pending()
+    except Exception as exc:
+        click.echo(f"Migration failed: {exc}", err=True)
+        sys.exit(1)
+    if applied:
+        click.echo(f"Applied {len(applied)} migration(s):")
+        for record in applied:
+            click.echo(f"  ✓ {record.version} {record.name}")
+    else:
+        click.echo("No pending migrations.")
+
+
+@migrate.command("status")
+def migrate_status() -> None:
+    """Print applied, pending, failed, and drifted migrations."""
+    asyncio.run(_migrate_status(exit_on_unhealthy=False))
+
+
+@migrate.command("check")
+def migrate_check() -> None:
+    """Validate migrations and pgmq prerequisites for CI."""
+    asyncio.run(_migrate_status(exit_on_unhealthy=True))
+
+
+async def _migrate_status(*, exit_on_unhealthy: bool) -> None:
+    db_url = _require_db_url()
+    service = MigrationService(db_url, MIGRATIONS_DIR)
+    try:
+        status = await service.status()
+    except Exception as exc:
+        click.echo(f"Unable to inspect migrations: {exc}", err=True)
+        sys.exit(1)
+    _print_migration_status(status)
+    if exit_on_unhealthy:
+        if status.ok:
+            click.echo("Migration check passed.")
+        else:
+            click.echo("Migration check failed.", err=True)
+            sys.exit(1)
+
+
+@cli.command()
+@click.argument("spec_file", type=click.Path(exists=True))
+@click.option(
+    "--explain",
+    is_flag=True,
+    default=False,
+    help="Print active experimental, reserved, unsupported, or otherwise noteworthy fields.",
+)
+@click.option(
+    "--env",
+    "environment",
+    help="Merge spec.{ENV}.yaml next to SPEC_FILE before validating.",
+)
+@click.option(
+    "--set",
+    "set_values",
+    multiple=True,
+    metavar="KEY=VALUE",
+    help="Override a spec value; repeat for multiple dotted keys.",
+)
+def validate(
+    spec_file: str,
+    explain: bool,
+    environment: str | None,
+    set_values: tuple[str, ...],
+) -> None:
+    """Validate SPEC_FILE without booting a world."""
+    try:
+        spec = _load_spec_for_cli(spec_file, environment=environment, set_values=set_values)
+    except SpecLoadError as exc:
+        click.echo(f"Spec validation failed: {exc}", err=True)
+        sys.exit(1)
+
+    click.echo(f"Spec validation succeeded: {spec.metadata.name}")
+    if explain:
+        explanations = _feature_state_explanations(spec)
+        if explanations:
+            click.echo("Feature-state details:")
+            for line in explanations:
+                prefix = "WARNING: " if ": experimental " in line else ""
+                click.echo(f"  - {prefix}{line}")
+        else:
+            click.echo("Feature-state details: no active noteworthy fields.")
 
 
 @cli.command()
@@ -95,7 +278,15 @@ def cli() -> None:
     help="Skip running database migrations on startup.",
 )
 @click.option(
-    "--env", "environment", help="Merge spec.{ENV}.yaml next to SPEC_FILE before booting."
+    "--allow-migration-failure",
+    is_flag=True,
+    default=False,
+    help="Continue booting if database migrations fail (development escape hatch).",
+)
+@click.option(
+    "--env",
+    "environment",
+    help="Merge spec.{ENV}.yaml next to SPEC_FILE before booting.",
 )
 @click.option(
     "--set",
@@ -109,11 +300,22 @@ def up(
     up_to: int,
     mock: bool,
     skip_migrations: bool,
+    allow_migration_failure: bool,
     environment: str | None,
     set_values: tuple[str, ...],
 ) -> None:
     """Boot a world from SPEC_FILE."""
-    asyncio.run(_up(spec_file, up_to, mock, skip_migrations, environment, set_values))
+    asyncio.run(
+        _up(
+            spec_file,
+            up_to,
+            mock,
+            skip_migrations,
+            allow_migration_failure,
+            environment,
+            set_values,
+        )
+    )
 
 
 async def _up(
@@ -121,29 +323,28 @@ async def _up(
     up_to: int,
     mock: bool,
     skip_migrations: bool,
+    allow_migration_failure: bool = False,
     environment: str | None = None,
     set_values: tuple[str, ...] = (),
 ) -> None:
-    overrides = _parse_set_overrides(set_values)
-    if environment:
-        spec = load_spec_with_environment(
-            spec_file, environment=environment, overrides=overrides or None
-        )
-    elif overrides:
-        spec = load_spec_with_composition(spec_file, overrides=overrides)
-    else:
-        spec = load_spec(spec_file)
+    spec = _load_spec_for_cli(spec_file, environment=environment, set_values=set_values)
 
     if mock:
         click.echo("WARNING: running in mock mode — no real infrastructure will be created.")
 
     if not skip_migrations and not mock:
-        db_url = os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+        db_url = _db_url_from_env()
         if db_url:
             try:
                 await _run_migrations(db_url)
             except Exception as exc:
-                logger.warning(f"Migrations failed (continuing anyway): {exc}")
+                if allow_migration_failure:
+                    logger.warning(f"Migrations failed (continuing anyway): {exc}")
+                else:
+                    message = f"Migrations failed: {exc}"
+                    logger.error(message)
+                    click.echo(message, err=True)
+                    sys.exit(1)
 
     orchestrator = Orchestrator(spec, mock_mode=mock)
     click.echo(f"Booting world from {spec_file} (phases 0–{up_to})…")
@@ -167,6 +368,67 @@ async def _up(
         finally:
             await orchestrator.consumer_supervisor.stop_all()
             logger.info("Consumers stopped.")
+
+
+@cli.group()
+def migrate() -> None:
+    """Inspect and apply database migrations."""
+
+
+@migrate.command("run")
+def migrate_run() -> None:
+    """Apply pending database migrations."""
+    db_url = os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+    if not db_url:
+        click.echo("No database URL configured for migrations", err=True)
+        sys.exit(2)
+    try:
+        asyncio.run(_run_migrations(db_url))
+    except Exception as exc:
+        click.echo(f"Migrations failed: {exc}", err=True)
+        sys.exit(1)
+
+
+@migrate.command("status")
+def migrate_status() -> None:
+    """Show database migration status without applying migrations."""
+    db_url = os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+    if not db_url:
+        click.echo("No database URL configured for migrations", err=True)
+        sys.exit(2)
+    try:
+        report = asyncio.run(migration_status(db_url))
+    except Exception as exc:
+        click.echo(f"Migration status failed: {exc}", err=True)
+        sys.exit(1)
+    for migration in report.results:
+        click.echo(f"{migration.status}: {migration.filename}")
+    click.echo(
+        f"Migrations status: {report.applied_count} applied, "
+        f"{report.pending_count} pending, {report.failed_count} failed, "
+        f"{report.drifted_count} drifted"
+    )
+
+
+@migrate.command("check")
+def migrate_check() -> None:
+    """Exit non-zero when migrations are pending, failed, or drifted."""
+    db_url = os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+    if not db_url:
+        click.echo("No database URL configured for migrations", err=True)
+        sys.exit(2)
+    try:
+        report = asyncio.run(migration_status(db_url))
+    except Exception as exc:
+        click.echo(f"Migration check failed: {exc}", err=True)
+        sys.exit(1)
+    if report.pending_count or report.failed_count or report.drifted_count:
+        click.echo(
+            f"Migrations not current: {report.pending_count} pending, "
+            f"{report.failed_count} failed, {report.drifted_count} drifted"
+        )
+        sys.exit(1)
+    click.echo("Migrations current.")
 
 
 @cli.command()
@@ -228,20 +490,27 @@ _CONTAINER_PREFIXES = ("netengine_", "netengines_")
 
 
 @cli.command()
-@click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt for ephemeral worlds.")
+@click.option("--confirm", default=None, help="For persistent worlds, type the world name exactly.")
 @click.option("--dry-run", is_flag=True, help="Show what would be removed without removing it.")
-def down(yes: bool, dry_run: bool) -> None:
+def down(yes: bool, confirm: str | None, dry_run: bool) -> None:
     """Tear down the running world (containers, networks, volumes)."""
-    asyncio.run(_down(yes, dry_run))
+    asyncio.run(_down(yes, confirm, dry_run))
 
 
-async def _down(yes: bool, dry_run: bool) -> None:
+async def _down(yes: bool, confirm: str | None, dry_run: bool) -> None:
     state = RuntimeState.load()
     if state.world_spec and not dry_run:
         raw_lifecycle = (state.world_spec.get("metadata") or {}).get("lifecycle", "ephemeral")
-        if raw_lifecycle == "persistent" and not yes:
+        world_name = (state.world_spec.get("metadata") or {}).get("name", "")
+        if raw_lifecycle == "persistent" and confirm != world_name:
+            raise click.ClickException(
+                "Persistent world teardown requires typed confirmation. "
+                f"Re-run with --confirm {world_name!r}."
+            )
+        if raw_lifecycle != "persistent" and not yes:
             click.confirm(
-                "This is a PERSISTENT world — all durable state will be destroyed. Continue?",
+                "This world will be destroyed. Continue?",
                 abort=True,
             )
 
@@ -550,6 +819,101 @@ def drift_status() -> None:
         click.echo("\nDrift history: (no events)")
 
 
+@cli.command("export")
+@click.option(
+    "--out",
+    "out_path",
+    type=click.Path(dir_okay=False),
+    default="netengine-support-bundle.json",
+    show_default=True,
+)
+def export_support_bundle(out_path: str) -> None:
+    """Write a sanitized support bundle for backup/support/import."""
+    import datetime as _dt
+    import json as _json
+
+    from netengine.api.routes import (
+        IMPORT_SCHEMA_VERSION,
+        SUPPORT_BUNDLE_SCHEMA_VERSION,
+        _sanitize_export_value,
+    )
+    from netengine.core.state import RUNTIME_STATE_SCHEMA_VERSION, RuntimeState
+    from netengine.spec.models import SPEC_SCHEMA_VERSION
+
+    state = RuntimeState.load()
+    bundle = {
+        "schema_version": IMPORT_SCHEMA_VERSION,
+        "support_bundle_schema_version": SUPPORT_BUNDLE_SCHEMA_VERSION,
+        "bundle_kind": "netengine.support",
+        "exported_at": _dt.datetime.utcnow().isoformat(),
+        "runtime_state_schema_version": state.schema_version,
+        "supported_runtime_state_schema_version": RUNTIME_STATE_SCHEMA_VERSION,
+        "spec_schema_version": ((state.world_spec or {}).get("metadata") or {}).get(
+            "schema_version", SPEC_SCHEMA_VERSION
+        ),
+        "spec": state.world_spec,
+        "phase_completed": state.phase_completed,
+        "ca_cert_pem": state.ca_cert_pem,
+        "substrate_output": _sanitize_export_value(state.substrate_output),
+        "pki_output": _sanitize_export_value(state.pki_output),
+        "dns_output": _sanitize_export_value(state.dns_output),
+        "identity_platform_output": _sanitize_export_value(state.identity_platform_output),
+        "world_registry_output": _sanitize_export_value(state.world_registry_output),
+        "domain_registry_output": _sanitize_export_value(state.domain_registry_output),
+        "identity_inworld_output": _sanitize_export_value(state.identity_inworld_output),
+        "ands_output": _sanitize_export_value(state.ands_output),
+        "world_services_output": _sanitize_export_value(state.world_services_output),
+        "org_apps_output": _sanitize_export_value(state.org_apps_output),
+    }
+    path = Path(out_path)
+    path.write_text(_json.dumps(bundle, indent=2) + "\n")
+    os.chmod(path, 0o600)
+    click.echo(f"Wrote support bundle: {path}")
+
+
+@cli.command("import")
+@click.argument("bundle_file", type=click.Path(exists=True, dir_okay=False))
+def import_support_bundle(bundle_file: str) -> None:
+    """Validate and restore a compatible support bundle."""
+    import json as _json
+
+    from netengine.api.routes import SUPPORTED_IMPORT_SCHEMA_VERSIONS, _validate_import_phase_state
+    from netengine.core.state import RuntimeState
+    from netengine.spec.models import NetEngineSpec, SUPPORTED_SPEC_SCHEMA_VERSIONS
+
+    body = _json.loads(Path(bundle_file).read_text())
+    if body.get("schema_version") not in SUPPORTED_IMPORT_SCHEMA_VERSIONS:
+        raise click.ClickException(
+            f"Unsupported bundle schema_version: {body.get('schema_version')!r}"
+        )
+    spec_data = body.get("spec")
+    if not isinstance(spec_data, dict):
+        raise click.ClickException("Support bundle is missing a spec object")
+    spec_schema = (spec_data.get("metadata") or {}).get("schema_version")
+    if spec_schema is not None and spec_schema not in SUPPORTED_SPEC_SCHEMA_VERSIONS:
+        raise click.ClickException(f"Unsupported spec metadata.schema_version: {spec_schema!r}")
+    spec = NetEngineSpec.model_validate(spec_data)
+    imported_state = RuntimeState(
+        world_spec=spec.model_dump(mode="json"),
+        phase_completed=dict(body.get("phase_completed") or {}),
+        ca_cert_pem=body.get("ca_cert_pem"),
+        substrate_output=body.get("substrate_output"),
+        pki_output=body.get("pki_output"),
+        dns_output=body.get("dns_output"),
+        identity_platform_output=body.get("identity_platform_output"),
+        world_registry_output=body.get("world_registry_output"),
+        domain_registry_output=body.get("domain_registry_output"),
+        identity_inworld_output=body.get("identity_inworld_output"),
+        ands_output=body.get("ands_output"),
+        world_services_output=body.get("world_services_output"),
+        org_apps_output=body.get("org_apps_output"),
+        pki_bootstrapped=bool(body.get("ca_cert_pem") or body.get("pki_output")),
+    )
+    _validate_import_phase_state(imported_state)
+    imported_state.save()
+    click.echo(f"Imported support bundle for world: {spec.metadata.name}")
+
+
 @cli.command()
 @click.option(
     "--queue",
@@ -586,7 +950,7 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
         if dlq:
             click.echo("\nDead-letter queue contents:\n")
             for q in queues_to_check:
-                dlq_name = f"{q}_dlq"
+                dlq_name = dlq_for(Queue(q)).value
                 try:
                     rows = await conn.fetch(
                         "SELECT msg_id, message, enqueued_at, read_ct "
@@ -621,7 +985,7 @@ async def _events(queue: str | None, dlq: bool, limit: int) -> None:
         else:
             click.echo("\nEvent queue depths:\n")
             for q in queues_to_check:
-                dlq_name = f"{q}_dlq"
+                dlq_name = dlq_for(Queue(q)).value
                 try:
                     depth_row = await conn.fetchrow("SELECT count(*) AS depth FROM pgmq.q_$1", q)
                     dlq_row = await conn.fetchrow(
@@ -760,7 +1124,10 @@ def init(
         import os as _os
 
         _os.unlink(tmp_path)
-        click.echo(f"\nSpec validation failed — please report this as a bug:\n  {exc}", err=True)
+        click.echo(
+            f"\nSpec validation failed — please report this as a bug:\n  {exc}",
+            err=True,
+        )
         raise SystemExit(1) from exc
 
     import os as _os

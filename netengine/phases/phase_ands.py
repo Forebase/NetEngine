@@ -15,7 +15,8 @@ import json
 from datetime import UTC, datetime
 from typing import Any, Optional
 
-from netengine.events.queues import Queue, queue_for_event_type
+from netengine.events.queues import Queue
+from netengine.events.emitter import emit_event
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -410,24 +411,4 @@ class ANDsPhaseHandler(BasePhaseHandler):
         event_type: str,
         payload: dict[str, Any],
     ) -> None:
-        event = EventEnvelope.create(
-            event_type=event_type,
-            emitted_by="ands_handler",
-            payload=payload,
-            correlation_id=context.runtime_state.correlation_id,
-            parent_event_id=context.runtime_state.parent_event_id,
-        )
-
-        context.logger.info(
-            f"Event emitted: {event_type} "
-            f"(event_id={event.event_id}, correlation_id={event.correlation_id})"
-        )
-
-        if context.pgmq_client is not None:
-            try:
-                await context.pgmq_client.send(queue_for_event_type(event_type), event)
-                context.logger.debug(f"Event queued to pgmq: {event_type}")
-            except Exception as e:
-                context.logger.warning(f"Failed to queue event to pgmq: {e}")
-        else:
-            context.logger.debug("pgmq_client not available (M1-M6 testing); event logged only")
+        await emit_event(context, event_type=event_type, emitted_by="ands_handler", payload=payload)

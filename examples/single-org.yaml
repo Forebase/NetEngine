@@ -60,7 +60,8 @@ pki:
     enabled: true
     listen_ip: 10.0.0.6
     canonical_name: ca.platform.internal
-  dnssec_enabled: true
+  # DNSSEC is unsupported in alpha; leave disabled until key generation is integrated with zone signing.
+  dnssec_enabled: false
 
 identity_platform:
   oidc_provider: keycloak
@@ -134,7 +135,7 @@ ands:
       nat: false
       dynamic_ip: false
       inbound: allowed
-      reverse_dns: true
+      reverse_dns: false
   instances:
     - name: acme-corp-net
       org: acme-corp

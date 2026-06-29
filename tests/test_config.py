@@ -77,7 +77,7 @@ def _minimal_spec(name: str = "test-network") -> dict:
                 "listen_ip": "10.0.0.6",
                 "canonical_name": "ca.platform.internal",
             },
-            "dnssec_enabled": True,
+            "dnssec_enabled": False,
         },
         "identity_platform": {
             "oidc_provider": "keycloak",

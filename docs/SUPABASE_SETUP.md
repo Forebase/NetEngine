@@ -367,12 +367,19 @@ NetEngine creates these tables:
 - `domain_records` — Domain registry
 - `operator_log` — API audit log
 
-And these pgmq queues (if available):
+And these pgmq queues (if available), sourced from `netengine/events/queues.py::PRIMARY_QUEUES`. NetEngine currently creates 11 primary queues plus 11 matching dead-letter queues (`*_dlq`):
 
 - `dns_updates` → DNS zone updates
 - `oidc_provisioning` → Identity setup
 - `and_provisioning` → Network isolation setup
+- `inworld_admissions` → In-world admission events
+- `services_admissions` → Service admission events
+- `and_admissions` → AND admission events
+- `pki_cert_rotation_events` → Certificate rotation events
+- `drift_events` → Drift detection and remediation events
 - `world_health` → Health check events
+- `gateway_portal_events` → Gateway portal lifecycle events
+- `phase_events` → Phase lifecycle events
 
 ---
 
