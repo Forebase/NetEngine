@@ -40,7 +40,7 @@ services:
   # Phase 4 bootstraps realms and admin users via the admin API.
   # ────────────────────────────────────────────
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0.5
+    image: quay.io/keycloak/keycloak:26.6.4
     container_name: netengine_keycloak
     command: start-dev
     environment:
