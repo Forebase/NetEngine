@@ -107,7 +107,9 @@ PYTHON_DEPENDENCY_MODULES: tuple[tuple[str, str], ...] = (
 
 _DNS_PORT_HINT = (
     "Port 53 is commonly held by a local DNS resolver. Stop or reconfigure systemd-resolved, "
-    "dnsmasq, named/CoreDNS, or another DNS server, or change the NetEngine DNS bind port."
+    "dnsmasq, named/CoreDNS, or another DNS server. On macOS with Docker Desktop, "
+    "binding privileged host port 53 may require elevated privileges or a configurable "
+    "alternate DNS host port."
 )
 
 

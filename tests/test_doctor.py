@@ -258,6 +258,30 @@ def test_compose_inventory_includes_known_alpha_ports_and_resources() -> None:
     assert "postgres_data" in volumes
 
 
+def test_required_dns_ports_match_coredns_port_bindings() -> None:
+    from netengine.handlers.dns import COREDNS_PORT_BINDINGS
+
+    required_dns_ports = {
+        (port.port, port.proto)
+        for port in doctor_mod._preflight.KNOWN_LOCAL_PORTS
+        if port.label == "DNS"
+    }
+    coredns_host_bindings = {
+        (host_port, container_port.rsplit("/", 1)[1])
+        for container_port, (_host_ip, host_port) in COREDNS_PORT_BINDINGS.items()
+    }
+
+    assert required_dns_ports == coredns_host_bindings
+
+
+def test_port_53_hint_mentions_macos_docker_desktop_and_privileged_binding() -> None:
+    hint = doctor_mod._preflight._DNS_PORT_HINT
+
+    assert "macOS" in hint
+    assert "Docker Desktop" in hint
+    assert "privileged host port 53" in hint
+    assert "alternate DNS host port" in hint
+
 def test_dns_udp_bind_failure_has_local_resolver_hint(monkeypatch) -> None:
     def fake_can_bind(port: int, proto: str) -> bool:
         assert (port, proto) == (53, "udp")
