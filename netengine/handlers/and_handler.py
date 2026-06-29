@@ -7,9 +7,9 @@ from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
-from netengine.handlers.protocols import DockerAdapterProtocol, PGMQAdapterProtocol
 from netengine.handlers.domain_registry_handler import DomainRegistryHandler
 from netengine.handlers.gateway_handler import GatewayHandler
+from netengine.handlers.protocols import DockerAdapterProtocol, PGMQAdapterProtocol
 from netengine.logging import get_logger
 from netengine.spec.models import NetEngineSpec
 
