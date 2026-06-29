@@ -267,13 +267,141 @@ docs/           Architecture decisions, audit findings
 
 ## Operator API
 
-When a world is running, the operator API is available at `https://api.platform.internal:8080`. Authentication uses the platform OIDC realm — include a bearer token from Keycloak.
+When a world is running, the FastAPI operator API is available at `https://api.platform.internal:8080`. The supported alpha surface is versioned under `/api/v1`; unversioned `/health`, `/world`, and `/phases/{n}` examples are historical and should not be used by new clients. Interactive OpenAPI documentation is served by FastAPI at `/docs`, and the raw OpenAPI document is available at `/openapi.json`.
 
+### OpenAPI docs example
+
+Open the docs UI in a browser after boot:
+
+```text
+https://api.platform.internal:8080/docs
 ```
-GET  /health          Liveness check
-GET  /world           Current world spec + phase status
-GET  /phases/{n}      Individual phase status and output
+
+Or inspect the generated schema directly:
+
+```bash
+curl -sk https://api.platform.internal:8080/openapi.json \
+  | jq '.info, (.paths | keys)'
 ```
+
+Example excerpt from the generated schema:
+
+```json
+{
+  "info": {
+    "title": "NetEngine Operator API",
+    "version": "0.1"
+  },
+  "paths": {
+    "/api/v1/health": {},
+    "/api/v1/world": {},
+    "/api/v1/reload": {},
+    "/api/v1/queues/{queue_name}/dlq/replay": {},
+    "/api/v1/identity/realms": {}
+  }
+}
+```
+
+### Auth model and admin requirements
+
+Authentication uses the platform OIDC realm. Clients send an access token in the `Authorization: Bearer <token>` header. Read-only inspection routes require any authenticated platform operator. State-changing routes that mutate world infrastructure, runtime state, registries, queues, PKI policy, gateway policy, imports, or teardown require an admin role. Accepted admin role names are `admin`, `netengine-admin`, and `operator-admin`; roles may appear in top-level `roles`, `realm_access.roles`, or client `resource_access.*.roles` token claims.
+
+### `/api/v1` route surface
+
+| Method | Path | Purpose | Role |
+|---|---|---|---|
+| `GET` | `/api/v1/health` | Per-phase health status | unauthenticated liveness |
+| `GET` | `/api/v1/world` | Current spec and runtime state summary | authenticated |
+| `POST` | `/api/v1/reload` | Diff and apply a new world spec | admin |
+| `DELETE` | `/api/v1/world` | Tear down the running world | admin |
+| `GET` | `/api/v1/services` | Running containers and phase state | authenticated |
+| `PUT` | `/api/v1/services/{name}` | Enable/disable a service in runtime spec | admin |
+| `GET` | `/api/v1/orgs`, `/api/v1/orgs/{org}` | List or inspect world registry orgs | authenticated |
+| `POST`/`PUT`/`DELETE` | `/api/v1/orgs`, `/api/v1/orgs/{org}` | Admit, update, or remove orgs | admin |
+| `POST` | `/api/v1/orgs/{org}/apps` | Deploy an org app | admin |
+| `GET` | `/api/v1/ands` | List Administrative Network Domains | authenticated |
+| `POST`/`PUT`/`DELETE` | `/api/v1/ands`, `/api/v1/ands/{and_name}/profile`, `/api/v1/ands/{and_name}` | Provision, change, or remove ANDs | admin |
+| `GET` | `/api/v1/registry/domains`, `/api/v1/registry/addresses` | Registry state | authenticated |
+| `POST`/`DELETE` | `/api/v1/registry/domains`, `/api/v1/registry/domains/{domain}` | Register or remove domains | admin |
+| `GET` | `/api/v1/dns/{domain}` | DNS query proxy | authenticated |
+| `PUT` | `/api/v1/gateway` | Update gateway portal policy | admin |
+| `GET` | `/api/v1/pki/certs`, `/api/v1/pki/intermediate-ca-cert` | Certificate inventory and CA material | authenticated |
+| `PUT` | `/api/v1/pki/rotation-policy` | Update certificate rotation policy | admin |
+| `GET` | `/api/v1/identity/realms` | Platform and in-world realm summary | authenticated |
+| `GET` | `/api/v1/queues` | Queue depths and DLQ state | authenticated |
+| `POST` | `/api/v1/queues/{queue_name}/dlq/replay` | Replay a dead-letter queue | admin |
+| `GET` | `/api/v1/events/{correlation_id}` | Event causal chain | authenticated |
+| `GET` | `/api/v1/export` | Support bundle export | admin |
+| `POST` | `/api/v1/import` | Support bundle import/restore | admin |
+
+### Example curl commands
+
+Set a token once:
+
+```bash
+export NETENGINE_TOKEN='<platform-oidc-access-token>'
+export NETENGINE_API='https://api.platform.internal:8080'
+```
+
+Read-only calls:
+
+```bash
+curl -sk -H "Authorization: Bearer $NETENGINE_TOKEN" "$NETENGINE_API/api/v1/world"
+curl -sk -H "Authorization: Bearer $NETENGINE_TOKEN" "$NETENGINE_API/api/v1/queues"
+curl -sk -H "Authorization: Bearer $NETENGINE_TOKEN" "$NETENGINE_API/api/v1/identity/realms"
+curl -sk -H "Authorization: Bearer $NETENGINE_TOKEN" "$NETENGINE_API/api/v1/dns/acme.internal?record_type=A"
+```
+
+Admin calls:
+
+```bash
+curl -sk -X POST -H "Authorization: Bearer $NETENGINE_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d @<(jq -n --rawfile spec examples/dev-sandbox.yaml '{spec_yaml: $spec}') \
+  "$NETENGINE_API/api/v1/reload"
+
+curl -sk -X POST -H "Authorization: Bearer $NETENGINE_TOKEN" \
+  "$NETENGINE_API/api/v1/queues/dns_updates/dlq/replay"
+
+curl -sk -X DELETE -H "Authorization: Bearer $NETENGINE_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"confirm": true, "confirmation": "dev-sandbox"}' \
+  "$NETENGINE_API/api/v1/world"
+```
+
+### Error responses
+
+FastAPI errors use a JSON `detail` field. Examples:
+
+```json
+{ "detail": "Bearer token required" }
+```
+
+```json
+{ "detail": "Admin role required" }
+```
+
+```json
+{ "detail": "No world is currently running — use netengines up first" }
+```
+
+```json
+{
+  "detail": {
+    "success": false,
+    "applied": [],
+    "rejected": [],
+    "errors": ["persistent worlds cannot remove orgs during reload"],
+    "immutability_violations": ["metadata.name is immutable"]
+  }
+}
+```
+
+### API versioning and compatibility
+
+`/api/v1` is the alpha compatibility boundary. For alpha releases, existing `/api/v1` paths, request fields, response fields, and documented status semantics should remain backward compatible. Additive fields and additive endpoints may appear without a version bump. Breaking changes require a new prefix such as `/api/v2` or a documented alpha migration note before removal. Bug fixes may make validation stricter when the previous behavior could mutate infrastructure unsafely or return corrupt state.
+
+Compatibility guarantee for `/api/v1`: clients that use documented routes, send documented request fields, tolerate unknown response fields, and branch on HTTP status codes plus `detail` will continue to work throughout the alpha line.
 
 ---
 
