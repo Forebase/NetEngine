@@ -73,6 +73,16 @@ class KnownPort(NamedTuple):
     label: str
 
 
+class DockerPortBinding(NamedTuple):
+    """A Docker container binding published onto the local host."""
+
+    container: str
+    container_port: int
+    proto: str
+    host_port: int
+    host_ip: str | None
+
+
 # Inventory of alpha resources that are known even when compose metadata cannot be read.
 # Keep these in sync with docker-compose.yml and runtime-managed DNS resources.
 KNOWN_LOCAL_PORTS: tuple[KnownPort, ...] = (
@@ -399,6 +409,84 @@ def _can_bind(port: int, proto: str) -> bool:
     return True
 
 
+def _container_display_name(container: dict[str, Any]) -> str:
+    names = container.get("Name") or container.get("Names") or []
+    if isinstance(names, list) and names:
+        names = names[0]
+    if isinstance(names, str) and names:
+        return names.lstrip("/")
+    return str(container.get("Id") or container.get("ID") or "unknown")[:12]
+
+
+def _published_docker_ports() -> list[DockerPortBinding]:
+    """Return host ports published by running Docker containers.
+
+    The doctor uses this only after a bind probe fails, so Docker inspection is
+    best-effort: if Docker is unavailable, the original port failure remains the
+    actionable result.
+    """
+    try:
+        ps = _run(["docker", "ps", "-q"], timeout=2.0)
+    except Exception:
+        return []
+    if ps.returncode != 0 or not ps.stdout.strip():
+        return []
+
+    container_ids = ps.stdout.split()
+    try:
+        inspected = _run(["docker", "inspect", *container_ids], timeout=3.0)
+    except Exception:
+        return []
+    if inspected.returncode != 0 or not inspected.stdout.strip():
+        return []
+
+    try:
+        containers = json.loads(inspected.stdout)
+    except json.JSONDecodeError:
+        return []
+
+    bindings: list[DockerPortBinding] = []
+    for container in containers if isinstance(containers, list) else []:
+        if not isinstance(container, dict):
+            continue
+        name = _container_display_name(container)
+        ports = (container.get("NetworkSettings") or {}).get("Ports") or {}
+        for container_port, host_bindings in ports.items():
+            port_text, _, proto = str(container_port).partition("/")
+            if not port_text.isdigit() or not proto:
+                continue
+            for host_binding in host_bindings or []:
+                try:
+                    host_port = int(host_binding.get("HostPort"))
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                bindings.append(
+                    DockerPortBinding(
+                        name,
+                        int(port_text),
+                        proto.lower(),
+                        host_port,
+                        host_binding.get("HostIp"),
+                    )
+                )
+    return bindings
+
+
+def _docker_bindings_for_port(port: int, proto: str) -> list[DockerPortBinding]:
+    return [
+        binding
+        for binding in _published_docker_ports()
+        if binding.host_port == port and binding.proto == proto.lower()
+    ]
+
+
+def _is_expected_netengine_binding(binding: DockerPortBinding) -> bool:
+    return binding.container in KNOWN_DOCKER_CONTAINERS and (
+        binding.host_port,
+        binding.proto,
+    ) in {(p.port, p.proto) for p in KNOWN_LOCAL_PORTS}
+
+
 def _check_port(port: int, proto: str) -> DoctorCheckResult:
     name = f"port:{port}/{proto}"
     label = next(
@@ -426,6 +514,29 @@ def _check_port(port: int, proto: str) -> DoctorCheckResult:
             required=False,
         )
     except OSError as exc:
+        docker_bindings = _docker_bindings_for_port(port, proto)
+        expected_bindings = [b for b in docker_bindings if _is_expected_netengine_binding(b)]
+        if expected_bindings:
+            containers = ", ".join(sorted({b.container for b in expected_bindings}))
+            return DoctorCheckResult(
+                name,
+                DoctorStatus.OK,
+                f"already bound by {containers}{detail_suffix}",
+                group="ports",
+            )
+
+        if docker_bindings:
+            listeners = ", ".join(
+                sorted({f"{b.container} ({b.container_port}/{b.proto})" for b in docker_bindings})
+            )
+            return DoctorCheckResult(
+                name,
+                DoctorStatus.FAIL,
+                f"unavailable on 127.0.0.1{detail_suffix}: already bound by {listeners}",
+                f"Stop the container publishing {port}/{proto} or change the compose/spec port.",
+                "ports",
+            )
+
         hint = (
             _DNS_PORT_HINT
             if port == 53

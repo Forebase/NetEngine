@@ -275,6 +275,83 @@ def test_dns_udp_bind_failure_has_local_resolver_hint(monkeypatch) -> None:
     assert "dnsmasq" in result.hint
 
 
+def test_port_check_accepts_expected_netengine_container_listener(monkeypatch) -> None:
+    def fake_can_bind(port: int, proto: str) -> bool:
+        raise OSError("address already in use")
+
+    def fake_run(command: list[str], *, timeout: float = 8.0):
+        if command == ["docker", "ps", "-q"]:
+            return SimpleNamespace(returncode=0, stdout="abc123\n", stderr="")
+        if command == ["docker", "inspect", "abc123"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    '[{"Id":"abc123","Name":"/netengine_postgres",'
+                    '"NetworkSettings":{"Ports":{"5432/tcp":[{"HostIp":"0.0.0.0",'
+                    '"HostPort":"5432"}]}}}]'
+                ),
+                stderr="",
+            )
+        raise AssertionError(command)
+
+    monkeypatch.setattr(doctor_mod._preflight, "_can_bind", fake_can_bind)
+    monkeypatch.setattr(doctor_mod._preflight, "_run", fake_run)
+
+    result = doctor_mod._preflight._check_port(5432, "tcp")
+
+    assert result.status == DoctorStatus.OK
+    assert "already bound by netengine_postgres" in result.detail
+
+
+def test_port_check_fails_for_unexpected_docker_container_listener(monkeypatch) -> None:
+    def fake_can_bind(port: int, proto: str) -> bool:
+        raise OSError("address already in use")
+
+    def fake_run(command: list[str], *, timeout: float = 8.0):
+        if command == ["docker", "ps", "-q"]:
+            return SimpleNamespace(returncode=0, stdout="def456\n", stderr="")
+        if command == ["docker", "inspect", "def456"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    '[{"Id":"def456","Name":"/unrelated_postgres",'
+                    '"NetworkSettings":{"Ports":{"5432/tcp":[{"HostIp":"127.0.0.1",'
+                    '"HostPort":"5432"}]}}}]'
+                ),
+                stderr="",
+            )
+        raise AssertionError(command)
+
+    monkeypatch.setattr(doctor_mod._preflight, "_can_bind", fake_can_bind)
+    monkeypatch.setattr(doctor_mod._preflight, "_run", fake_run)
+
+    result = doctor_mod._preflight._check_port(5432, "tcp")
+
+    assert result.status == DoctorStatus.FAIL
+    assert "unrelated_postgres" in result.detail
+    assert "Stop the container publishing 5432/tcp" in (result.hint or "")
+
+
+def test_port_check_fails_for_unavailable_port_with_no_docker_listener(monkeypatch) -> None:
+    def fake_can_bind(port: int, proto: str) -> bool:
+        raise OSError("address already in use")
+
+    def fake_run(command: list[str], *, timeout: float = 8.0):
+        if command == ["docker", "ps", "-q"]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        raise AssertionError(command)
+
+    monkeypatch.setattr(doctor_mod._preflight, "_can_bind", fake_can_bind)
+    monkeypatch.setattr(doctor_mod._preflight, "_run", fake_run)
+
+    result = doctor_mod._preflight._check_port(5432, "tcp")
+
+    assert result.status == DoctorStatus.FAIL
+    assert "unavailable on 127.0.0.1" in result.detail
+    assert "Stop the process using 5432/tcp" in (result.hint or "")
+
+
+def test_docker_resource_conflicts_use_short_format_commands(monkeypatch, tmp_path: Path) -> None:
 def test_docker_resource_conflicts_use_short_format_commands(
     monkeypatch, tmp_path: Path
 ) -> None:
