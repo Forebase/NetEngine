@@ -60,7 +60,7 @@ class RegistriesPhaseHandler(BasePhaseHandler):
 
         # 5. Wire pgmq consumer for DNS updates through supervisor
         context.consumer_supervisor.register(  # type: ignore[union-attr]
-            Queue.DNS_UPDATES,
+            "dns_updates",
             lambda: self._consume_dns_updates(context),
         )
 

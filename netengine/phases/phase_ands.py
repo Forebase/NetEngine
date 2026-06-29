@@ -13,7 +13,7 @@ import asyncio
 import ipaddress
 import json
 from datetime import UTC, datetime
-from typing import Any, Optional
+from typing import Any
 
 from netengine.events.emitter import emit_event
 from netengine.events.queues import Queue
@@ -141,11 +141,17 @@ class ANDsPhaseHandler(BasePhaseHandler):
 
             # Register org-admission consumer through ConsumerSupervisor so
             # crashes are visible and the task is gracefully shut down.
-            if context.pgmq_client is not None:
-                context.consumer_supervisor.register(  # type: ignore[union-attr]
-                    "org_admission_events",
-                    lambda: self._consume_org_admission_events(context, docker, gateway, ands_spec),
-                )
+            if context.consumer_supervisor is not None:
+                if context.pgmq_client is not None:
+                    context.consumer_supervisor.register(
+                        "ands.org_admission",
+                        lambda: self._consume_org_admission_events(context, docker, gateway, ands_spec),
+                    )
+                else:
+                    context.consumer_supervisor.register_disabled(
+                        "ands.org_admission",
+                        "pgmq unavailable; new organization AND provisioning disabled",
+                    )
 
         except Exception as e:
             context.runtime_state.last_error = str(e)
@@ -273,8 +279,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
         # 6. Register DNS zone
         dns_suffix = and_instance.dns_suffix or f"{and_instance.org}.internal"
         try:
-            from netengine.handlers.dns import DNSHandler
-
+            
             dns = DNSHandler()
             await dns.add_zone_record(
                 context=context,

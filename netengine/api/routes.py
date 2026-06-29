@@ -12,7 +12,7 @@ from dataclasses import asdict
 from typing import Any
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from netengine.api.auth import _extract_roles, require_admin, require_auth
@@ -22,6 +22,7 @@ from netengine.core.state import RUNTIME_STATE_SCHEMA_VERSION, RuntimeState
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logs import get_logger
 from netengine.phase_labels import PHASE_LABELS
+from netengine.workers.registry import expected_worker_statuses
 from netengine.security.redaction import (
     _contains_private_pem,
     _is_secret_field,
@@ -110,10 +111,13 @@ async def health() -> dict[str, Any]:
         ),
     }
 
+    workers = expected_worker_statuses(state, pgmq_enabled=events_ok)
+
     return {
         "status": overall,
         "phases": phases,
         "events": events,
+        "workers": workers,
         "last_error_present": bool(state.last_error),
     }
 
