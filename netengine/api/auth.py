@@ -18,6 +18,9 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from netengine.core.state import RuntimeState
+from netengine.logging import get_logger
+
+logger = get_logger(__name__)
 
 KEYCLOAK_ISSUER = os.environ.get(
     "KEYCLOAK_PLATFORM_ISSUER",
@@ -25,12 +28,17 @@ KEYCLOAK_ISSUER = os.environ.get(
 )
 INSECURE_TLS_ENV = "NETENGINE_INSECURE_TLS"
 CA_BUNDLE_ENV = "NETENGINE_CA_BUNDLE"
+ADMIN_ROLES = {"admin", "netengine-admin", "operator-admin"}
 
 _bearer = HTTPBearer(auto_error=False)
 
 
 def _is_truthy(value: str | None) -> bool:
     return value is not None and value.lower() in {"1", "true", "yes", "on"}
+
+
+def _is_mutating_request(request: Request) -> bool:
+    return request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
 
 
 @contextmanager
@@ -44,6 +52,11 @@ def _keycloak_ssl_context(state: RuntimeState) -> Iterator[ssl.SSLContext | bool
     hatch.
     """
     if _is_truthy(os.environ.get(INSECURE_TLS_ENV)):
+        logger.warning(
+            "%s is enabled; Keycloak TLS certificate verification is disabled. "
+            "Use only in isolated development environments.",
+            INSECURE_TLS_ENV,
+        )
         yield False
         return
 
@@ -114,15 +127,38 @@ async def require_auth(
                     ssl=ssl_context,
                 ) as resp:
                     if resp.status != 200:
-                        raise HTTPException(status_code=401, detail="Token introspection failed")
+                        raise HTTPException(
+                            status_code=401,
+                            detail=(
+                                "Bearer token validation failed: Keycloak introspection "
+                                f"returned HTTP {resp.status}"
+                            ),
+                        )
                     data = await resp.json()
                     if not data.get("active"):
-                        raise HTTPException(status_code=401, detail="Token expired or inactive")
+                        raise HTTPException(
+                            status_code=401,
+                            detail="Bearer token validation failed: token is expired or inactive",
+                        )
+                    if _is_mutating_request(request) and not (ADMIN_ROLES & _extract_roles(data)):
+                        raise HTTPException(status_code=403, detail="Admin role required")
                     return data
     except HTTPException:
         raise
+    except (aiohttp.ClientConnectorCertificateError, ssl.SSLError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Bearer token validation failed: TLS verification failed while contacting "
+                f"the OIDC issuer. Configure {CA_BUNDLE_ENV} or the runtime CA bundle; "
+                f"set {INSECURE_TLS_ENV}=true only for explicit development opt-in. {exc}"
+            ),
+        )
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"Auth service unavailable: {exc}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Bearer token validation failed: auth service unavailable: {exc}",
+        )
 
 
 def _extract_roles(user: dict) -> set[str]:
@@ -148,6 +184,6 @@ def _extract_roles(user: dict) -> set[str]:
 async def require_admin(user: dict = Depends(require_auth)) -> dict:
     """Require an authenticated operator with an administrative role."""
     roles = _extract_roles(user)
-    if not ({"admin", "netengine-admin", "operator-admin"} & roles):
+    if not (ADMIN_ROLES & roles):
         raise HTTPException(status_code=403, detail="Admin role required")
     return user
