@@ -50,8 +50,8 @@ cd NetEngine
 # 2. Install dependencies
 poetry install
 
-# 3. Verify host prerequisites
-poetry run netengine doctor
+# 3. Verify host prerequisites and requested world subnets
+poetry run netengine doctor --spec examples/minimal.yaml
 
 # 4. Start local Postgres + pgmq (includes pgmq extension pre-installed)
 docker compose up -d postgres
@@ -63,7 +63,7 @@ poetry run python -m netengine.utils.run_migrations
 poetry run netengine up examples/minimal.yaml
 ```
 
-If you only want host/container checks before configuring Postgres, run `poetry run netengine doctor --skip-db`. Check status at any time:
+If you only want host/container checks before configuring Postgres, run `poetry run netengine doctor --skip-db`. Add `--spec examples/minimal.yaml` (or pass the spec as a positional argument) to include subnet-overlap checks for `spec.substrate.networks[*].subnet` before bootstrapping. Check status at any time:
 
 ```bash
 poetry run netengine status

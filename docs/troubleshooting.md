@@ -3,7 +3,7 @@
 Start with the commands below before changing state:
 
 ```bash
-poetry run netengine doctor
+poetry run netengine doctor --spec examples/minimal.yaml
 poetry run netengine status
 poetry run netengine diagnose <spec.yaml>
 poetry run netengine events
@@ -22,7 +22,7 @@ Do not manually mark phases complete. Fix the underlying dependency and re-run `
 
 ## Docker unavailable or stale resources
 
-If Docker is expected to be available, start Docker Desktop or the Docker daemon and rerun `doctor`. If you intentionally want no infrastructure side effects, set mock mode:
+If Docker is expected to be available, start Docker Desktop or the Docker daemon and rerun `doctor`. To catch Docker subnet conflicts before `up`, run `poetry run netengine doctor --spec <spec.yaml>`; if it reports that an existing Docker network reuses or overlaps a requested world subnet, remove the stale network with `docker network rm <name>` or choose a different subnet in the spec. If you intentionally want no infrastructure side effects, set mock mode:
 
 ```bash
 NETENGINE_MOCK=true poetry run netengine up examples/minimal.yaml
