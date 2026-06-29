@@ -12,7 +12,8 @@ import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
-from netengine.events.queues import Queue, queue_for_event_type
+from netengine.events.queues import Queue
+from netengine.events.emitter import emit_event
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
@@ -330,27 +331,6 @@ class ServicesPhaseHandler(BasePhaseHandler):
             event_type: Type of event (e.g., "services.ready")
             payload: Event payload dict
         """
-        from netengine.events.schema import EventEnvelope
-
-        event = EventEnvelope.create(
-            event_type=event_type,
-            emitted_by="services_handler",
-            payload=payload,
-            correlation_id=context.runtime_state.correlation_id,
-            parent_event_id=context.runtime_state.parent_event_id,
+        await emit_event(
+            context, event_type=event_type, emitted_by="services_handler", payload=payload
         )
-
-        context.logger.info(
-            f"Event emitted: {event_type} "
-            f"(event_id={event.event_id}, correlation_id={event.correlation_id})"
-        )
-
-        # Queue to pgmq for downstream processing
-        if context.pgmq_client is not None:
-            try:
-                await context.pgmq_client.send(queue_for_event_type(event_type), event)
-                context.logger.debug(f"Event queued to pgmq: {event_type}")
-            except Exception as e:
-                context.logger.warning(f"Failed to queue event to pgmq: {e}")
-        else:
-            context.logger.debug("pgmq_client not available (testing); event logged only")

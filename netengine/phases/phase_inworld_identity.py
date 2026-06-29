@@ -17,7 +17,8 @@ from typing import Any, Optional
 
 import aiohttp
 
-from netengine.events.queues import Queue, queue_for_event_type
+from netengine.events.queues import Queue
+from netengine.events.emitter import emit_event
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
@@ -542,25 +543,6 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
             event_type: Type of event (e.g., "inworld_identity.ready")
             payload: Event payload dict
         """
-        event = EventEnvelope.create(
-            event_type=event_type,
-            emitted_by="inworld_identity_handler",
-            payload=payload,
-            correlation_id=context.runtime_state.correlation_id,
-            parent_event_id=context.runtime_state.parent_event_id,
+        await emit_event(
+            context, event_type=event_type, emitted_by="inworld_identity_handler", payload=payload
         )
-
-        context.logger.info(
-            f"Event emitted: {event_type} "
-            f"(event_id={event.event_id}, correlation_id={event.correlation_id})"
-        )
-
-        # Queue to pgmq for downstream processing (M7+)
-        if context.pgmq_client is not None:
-            try:
-                await context.pgmq_client.send(queue_for_event_type(event_type), event)
-                context.logger.debug(f"Event queued to pgmq: {event_type}")
-            except Exception as e:
-                context.logger.warning(f"Failed to queue event to pgmq: {e}")
-        else:
-            context.logger.debug("pgmq_client not available (M1-M5 testing); event logged only")

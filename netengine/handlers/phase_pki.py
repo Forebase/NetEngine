@@ -2,8 +2,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from netengine.events.queues import queue_for_event_type
-from netengine.events.schema import EventEnvelope
+from netengine.events.emitter import emit_event
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.docker_handler import DockerHandler
@@ -198,16 +197,4 @@ class PKIPhaseHandler(BasePhaseHandler):
         )
 
     async def _emit_event(self, context, event_type, payload):
-        event = EventEnvelope.create(
-            event_type=event_type,
-            emitted_by="pki_phase",
-            payload=payload,
-            correlation_id=getattr(context.runtime_state, "correlation_id", None),
-            parent_event_id=getattr(context.runtime_state, "parent_event_id", None),
-        )
-        context.logger.info(f"Event emitted: {event_type}")
-        if context.pgmq_client is not None:
-            try:
-                await context.pgmq_client.send(queue_for_event_type(event_type), event)
-            except Exception as exc:
-                context.logger.warning(f"Failed to queue pki event: {exc}")
+        await emit_event(context, event_type=event_type, emitted_by="pki_phase", payload=payload)
