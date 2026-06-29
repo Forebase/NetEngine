@@ -1,4 +1,9 @@
-"""Diagnostic runner — orchestrates all probes concurrently."""
+"""Post-boot diagnostic runner — orchestrates world-health probes concurrently.
+
+These diagnostics require a loaded ``NetEngineSpec`` and validate a configured
+or running world. Host-readiness checks for ``netengine doctor`` live in
+:mod:`netengine.diagnostic.preflight` and run before any spec is loaded.
+"""
 
 import asyncio
 from dataclasses import dataclass
