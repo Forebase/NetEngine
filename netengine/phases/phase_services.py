@@ -9,11 +9,14 @@ Responsibilities:
 """
 
 import asyncio
+import json
+import secrets
 from datetime import UTC, datetime
 from typing import Any
 
 from netengine.events.emitter import emit_event
 from netengine.events.queues import Queue
+from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
@@ -88,7 +91,9 @@ class ServicesPhaseHandler(BasePhaseHandler):
             # Deploy Storage service (MinIO)
             if spec.world_services.storage.enabled:
                 logger.info("Deploying Storage service (MinIO)")
-                storage_handler = StorageHandler(context, docker, dns, pki, runtime_state)
+                storage_handler = StorageHandler(
+                    context, docker, dns, pki, runtime_state
+                )
                 storage_output = await storage_handler.deploy_minio()
                 services_output["storage"] = storage_output
                 logger.info("Storage deployment complete")
@@ -170,7 +175,9 @@ class ServicesPhaseHandler(BasePhaseHandler):
                 try:
                     container = docker.client.containers.get(container_id)
                     if container.status != "running":
-                        logger.warning(f"Mail container not running: {container.status}")
+                        logger.warning(
+                            f"Mail container not running: {container.status}"
+                        )
                         return False
                 except Exception as e:
                     logger.warning(f"Failed to check mail container: {e}")
@@ -190,7 +197,9 @@ class ServicesPhaseHandler(BasePhaseHandler):
                 try:
                     container = docker.client.containers.get(container_id)
                     if container.status != "running":
-                        logger.warning(f"Storage container not running: {container.status}")
+                        logger.warning(
+                            f"Storage container not running: {container.status}"
+                        )
                         return False
                 except Exception as e:
                     logger.warning(f"Failed to check storage container: {e}")
@@ -311,16 +320,251 @@ class ServicesPhaseHandler(BasePhaseHandler):
                     await asyncio.sleep(1)
                     continue
 
-                # Process org.admitted event
-                # (Implementation: create org-specific mail/storage if configured)
-                logger.debug("Processing org.admitted event for services provisioning")
+                try:
+                    envelope = EventEnvelope(**json.loads(msg["message"]))
 
-                # Mark message as processed
-                await context.pgmq_client.delete(Queue.SERVICES_ADMISSIONS, msg["msg_id"])
+                    if envelope.event_type != "org.admitted":
+                        await context.pgmq_client.delete(
+                            Queue.SERVICES_ADMISSIONS, msg["msg_id"]
+                        )
+                        continue
+
+                    payload = envelope.payload
+                    org_name = (
+                        payload.get("org_name")
+                        or payload.get("org")
+                        or payload.get("org_id")
+                    )
+                    if not org_name:
+                        logger.warning("org.admitted event missing org identifier")
+                        await context.pgmq_client.delete(
+                            Queue.SERVICES_ADMISSIONS, msg["msg_id"]
+                        )
+                        continue
+
+                    service_config = (
+                        payload.get("service_config")
+                        or payload.get("world_services")
+                        or payload.get("services")
+                        or {}
+                    )
+                    if not isinstance(service_config, dict):
+                        raise ValueError(
+                            "org.admitted service configuration must be an object"
+                        )
+
+                    logger.info(f"Auto-provisioning world services for org: {org_name}")
+                    result = await self._provision_org_services(
+                        context, docker, dns, str(org_name), service_config
+                    )
+                    await self._persist_org_service_provisioning(
+                        context, str(org_name), result
+                    )
+                    logger.info(f"Auto-provisioned world services for org {org_name}")
+
+                    await context.pgmq_client.delete(
+                        Queue.SERVICES_ADMISSIONS, msg["msg_id"]
+                    )
+
+                except Exception as e:
+                    logger.error(
+                        f"Failed to process org admission event for services: {e}"
+                    )
+                    try:
+                        await context.pgmq_client.archive_to_dlq(
+                            Queue.SERVICES_ADMISSIONS, msg["msg_id"], str(e)
+                        )
+                    except Exception as dlq_err:
+                        logger.error(f"Failed to archive to DLQ: {dlq_err}")
 
             except Exception as e:
                 logger.error(f"Org admission consumer error: {e}")
                 await asyncio.sleep(5)
+
+    async def _provision_org_services(
+        self,
+        context: PhaseContext,
+        docker: DockerHandler,
+        dns: DNSHandler,
+        org_name: str,
+        service_config: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Provision mail and storage resources for a newly admitted org."""
+        result: dict[str, Any] = {
+            "org_name": org_name,
+            "provisioned_at": datetime.now(UTC).isoformat(),
+        }
+        spec = context.spec
+
+        mail_enabled = self._service_enabled(
+            service_config, "mail", spec.world_services.mail.enabled
+        )
+        if mail_enabled:
+            mail_handler = MailHandler(context, docker, dns)
+            _private_key, public_key = await mail_handler._generate_dkim_keys()
+            mail_domain = await self._provision_org_mail_domain(
+                context, dns, mail_handler, org_name, public_key
+            )
+            result["mail"] = mail_domain
+
+        storage_enabled = self._service_enabled(
+            service_config, "storage", spec.world_services.storage.enabled
+        )
+        if storage_enabled:
+            pki = PKIHandler(docker, context.runtime_state, spec)
+            storage_handler = StorageHandler(
+                context, docker, dns, pki, context.runtime_state
+            )
+            storage_result = await self._provision_org_storage(
+                context, dns, storage_handler, org_name
+            )
+            result["storage"] = storage_result
+
+        if "mail" not in result and "storage" not in result:
+            result["skipped"] = "mail and storage disabled"
+
+        return result
+
+    @staticmethod
+    def _service_enabled(
+        service_config: dict[str, Any], service_name: str, default: bool
+    ) -> bool:
+        """Read per-service enabled overrides from org admission payloads."""
+        value = service_config.get(service_name)
+        if isinstance(value, dict):
+            return bool(value.get("enabled", default))
+        if value is None:
+            return default
+        return bool(value)
+
+    async def _provision_org_mail_domain(
+        self,
+        context: PhaseContext,
+        dns: DNSHandler,
+        mail_handler: MailHandler,
+        org_name: str,
+        dkim_public_pem: str,
+    ) -> dict[str, Any]:
+        """Create DNS records for an org-specific mail domain."""
+        org_domain = f"{org_name}.internal"
+        mail_config = context.spec.world_services.mail
+        records: list[dict[str, Any]] = []
+
+        async def add(record_type: str, name: str, value: str) -> None:
+            await dns.add_zone_record(
+                context, "internal", record_type, name, value, 300
+            )
+            records.append({"type": record_type, "name": name, "value": value})
+
+        await add("TXT", org_domain, mail_config.mailbox_policy.spf_default)
+        if mail_config.dkim.enabled:
+            await add(
+                "TXT",
+                f"_dkim._domainkey.{org_domain}",
+                mail_handler._dkim_txt_value(dkim_public_pem),
+            )
+        if mail_config.dmarc.enabled:
+            await add(
+                "TXT", f"_dmarc.{org_domain}", mail_config.mailbox_policy.dmarc_default
+            )
+        await add("MX", org_domain, f"10 {mail_config.canonical_name}.")
+
+        return {"domain": org_domain, "records": records}
+
+    async def _provision_org_storage(
+        self,
+        context: PhaseContext,
+        dns: DNSHandler,
+        storage_handler: StorageHandler,
+        org_name: str,
+    ) -> dict[str, Any]:
+        """Create an org storage bucket, credentials, DNS record, and certificate."""
+        bucket = f"{org_name}-data"
+        access_key = secrets.token_urlsafe(16)
+        secret_key = secrets.token_urlsafe(32)
+        service_name = f"storage-{org_name}"
+        fqdn = f"{service_name}.platform.internal"
+
+        cert, _key = await storage_handler.pki.issue_cert(fqdn, [])
+        expiry = storage_handler.pki.extract_cert_expiry(cert)
+        context.runtime_state.issued_certificates[fqdn] = {
+            "cert_type": "storage",
+            "issued_at": datetime.now(UTC).isoformat(),
+            "expires_at": expiry.isoformat(),
+            "sans": [],
+            "rotated_at": None,
+            "version": 1,
+        }
+
+        root_access = (
+            getattr(context.runtime_state, "minio_access_key", None) or access_key
+        )
+        root_secret = (
+            getattr(context.runtime_state, "minio_secret_key", None) or secret_key
+        )
+        await storage_handler._create_bucket(bucket, root_access, root_secret)
+        await dns.add_zone_record(
+            context,
+            "platform.internal",
+            "CNAME",
+            service_name,
+            context.spec.world_services.storage.canonical_name,
+            300,
+        )
+
+        return {
+            "bucket": bucket,
+            "access_key": access_key,
+            "secret_key": secret_key,
+            "dns": fqdn,
+            "certificate": {"common_name": fqdn, "expires_at": expiry.isoformat()},
+        }
+
+    async def _persist_org_service_provisioning(
+        self, context: PhaseContext, org_name: str, result: dict[str, Any]
+    ) -> None:
+        """Persist org service provisioning results in RuntimeState and Supabase tables."""
+        state = context.runtime_state
+        output = dict(state.world_services_output or {})
+        orgs = dict(output.get("orgs") or {})
+        orgs[org_name] = result
+        output["orgs"] = orgs
+        state.world_services_output = output
+        state.save()
+
+        try:
+            from netengine.core.supabase_client import get_db
+
+            db = await get_db()
+            if "mail" in result:
+                await (
+                    db.table("mail_domains")
+                    .upsert(
+                        {
+                            "org_name": org_name,
+                            **result["mail"],
+                            "created_at": result["provisioned_at"],
+                        }
+                    )
+                    .execute()
+                )
+            if "storage" in result:
+                await (
+                    db.table("storage_buckets")
+                    .upsert(
+                        {
+                            "org_name": org_name,
+                            **result["storage"],
+                            "created_at": result["provisioned_at"],
+                        }
+                    )
+                    .execute()
+                )
+            await db.table("service_provisioning").upsert(result).execute()
+        except Exception as e:
+            context.logger.warning(
+                f"Failed to persist org service provisioning to DB: {e}"
+            )
 
     async def _emit_event(
         self,
@@ -336,5 +580,8 @@ class ServicesPhaseHandler(BasePhaseHandler):
             payload: Event payload dict
         """
         await emit_event(
-            context, event_type=event_type, emitted_by="services_handler", payload=payload
+            context,
+            event_type=event_type,
+            emitted_by="services_handler",
+            payload=payload,
         )
