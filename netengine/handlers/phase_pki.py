@@ -6,7 +6,7 @@ from netengine.events.emitter import emit_event
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.pki_handler import PKIHandler
-from logs import get_logger
+from netengine.logs import get_logger
 from netengine.workers.pki_cert_rotation_worker import CertTypeRotationConfig, PKICertRotationWorker
 
 logger = get_logger(__name__)

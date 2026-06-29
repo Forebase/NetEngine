@@ -13,7 +13,7 @@ from netengine.errors import DNSError
 from netengine.handlers.context import PhaseContext, RuntimeState
 from netengine.handlers.dns import DNSHandler
 from netengine.handlers.substrate import SubstrateHandler
-from logs import get_logger
+from netengine.logs import get_logger
 from netengine.spec.models import NetEngineSpec
 
 

@@ -7,7 +7,7 @@ sequencing, and so the initialisation path is testable in isolation.
 import os
 from typing import Any, Optional
 
-from logs import get_logger
+from netengine.logs import get_logger
 
 logger = get_logger(__name__)
 

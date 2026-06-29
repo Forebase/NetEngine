@@ -18,7 +18,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from netengine.core.state import RuntimeState
-from logs import get_logger
+from netengine.logs import get_logger
 
 logger = get_logger(__name__)
 

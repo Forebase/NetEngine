@@ -20,7 +20,7 @@ from netengine.core.db_client import pgmq_available
 from netengine.core.reload import ReloadResult, apply_reload
 from netengine.core.state import RUNTIME_STATE_SCHEMA_VERSION, RuntimeState
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
-from logs import get_logger
+from netengine.logs import get_logger
 from netengine.phase_labels import PHASE_LABELS
 from netengine.security.redaction import (
     _contains_private_pem,

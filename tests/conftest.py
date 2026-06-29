@@ -1,13 +1,13 @@
 """Pytest configuration and shared fixtures."""
 
-import logs
+import netengine.logs as logs
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from netengine.handlers.context import PhaseContext, RuntimeState
-from logs import get_logger
+from netengine.logs import get_logger
 from netengine.spec.loader import load_spec
 from netengine.spec.models import NetEngineSpec
 

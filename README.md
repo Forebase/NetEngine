@@ -204,7 +204,7 @@ netengine/
   spec/         Pydantic v2 models + YAML loader with cross-field validation
   events/       EventEnvelope schema (locked)
   api/          FastAPI operator API
-  logging/      Structured logging (loguru)
+  logs/         Structured logging (loguru)
   errors.py     Error hierarchy (SubstrateError, DNSError, PKIError, …)
 migrations/     SQL schema + pgmq queue setup
 examples/       Reference YAML specs

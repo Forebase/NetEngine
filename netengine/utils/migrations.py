@@ -8,7 +8,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Protocol
 
-from logs import get_logger
+from netengine.logs import get_logger
 
 logger = get_logger(__name__)
 
