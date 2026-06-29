@@ -21,6 +21,7 @@ from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
+from netengine.handlers.domain_registry_handler import DomainRegistryHandler
 from netengine.handlers.docker_handler import DockerHandler
 from netengine.handlers.gateway_handler import GatewayHandler
 
@@ -116,9 +117,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
                 profiles_used.add(and_instance.profile)
 
                 # Store in runtime_state for this session
-                if not hasattr(context.runtime_state, "ands_instances"):
-                    context.runtime_state.ands_instances = {}  # type: ignore[attr-defined]
-                context.runtime_state.ands_instances[and_instance.name] = and_data  # type: ignore[attr-defined]
+                context.runtime_state.ands_instances[and_instance.name] = and_data
 
             ands_output["ands_provisioned"] = ands_provisioned
             ands_output["address_allocations"] = address_allocations
@@ -168,11 +167,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
                 logger.warning("No ANDs provisioned")
                 return False
 
-            if not hasattr(context.runtime_state, "ands_instances"):
-                logger.warning("AND instances not tracked in runtime_state")
-                return False
-
-            instances = context.runtime_state.ands_instances  # type: ignore[attr-defined]
+            instances = context.runtime_state.ands_instances
             if not all(and_name in instances for and_name in ands_provisioned):
                 logger.warning("Some AND instances missing from runtime_state")
                 return False
@@ -224,7 +219,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
             raise RuntimeError(f"Profile '{profile_name}' not found in spec")
 
         # 2. Allocate subnet
-        cidr = await self._allocate_address(and_instance.name, profile_name, ands_spec)
+        cidr = await self._allocate_address(context, and_instance.name, profile_name, ands_spec)
         logger.info(f"Allocated CIDR for {and_instance.name}: {cidr}")
 
         # 3. Create isolated Docker bridge network
@@ -339,6 +334,9 @@ class ANDsPhaseHandler(BasePhaseHandler):
             "bridge_name": bridge_name,
             "dns_suffix": dns_suffix,
             "deployed_at": datetime.now(UTC).isoformat(),
+            "dynamic_ip": bool(profile_obj.dynamic_ip),
+            "reverse_dns": bool(profile_obj.reverse_dns),
+            "bgp": profile_obj.bgp,
         }
 
         try:
@@ -352,6 +350,7 @@ class ANDsPhaseHandler(BasePhaseHandler):
 
     async def _allocate_address(
         self,
+        context: PhaseContext,
         and_name: str,
         profile: str,
         ands_spec: Any,
@@ -361,12 +360,167 @@ class ANDsPhaseHandler(BasePhaseHandler):
         if profile_obj is None:
             raise RuntimeError(f"Profile '{profile}' not found")
 
-        # Sequential /24 allocation within 172.16.0.0/12.
-        # Uses ord-sum rather than hash() to avoid collision with >256 ANDs.
-        idx = sum(ord(c) for c in and_name) % 4096
-        third_octet = idx % 256
-        second_extra = idx // 256
-        return f"172.{16 + second_extra}.{third_octet}.0/24"
+        try:
+            registry = DomainRegistryHandler(context=context)
+            return await registry.allocate_address(and_name, profile)
+        except Exception as exc:
+            # Tests and mock-mode executions may not have a DB. Fall back only when
+            # the registry output does not expose seeded pools; otherwise surface
+            # the allocation failure so exhaustion/collisions are not hidden.
+            output = context.runtime_state.domain_registry_output or {}
+            if output.get("address_pools") or output.get("address_pools_seeded"):
+                raise RuntimeError(f"Failed to allocate address for {and_name}: {exc}") from exc
+            context.logger.warning("Registry allocation unavailable; using mock CIDR: %s", exc)
+            idx = len(context.runtime_state.ands_instances)
+            return f"172.31.{idx}.0/24"
+
+    async def reconcile(
+        self,
+        context: PhaseContext,
+        docker: DockerHandler | None = None,
+        gateway: GatewayHandler | None = None,
+    ) -> dict[str, list[str]]:
+        """Reconcile desired AND spec against runtime/Docker/gateway/DNS side effects."""
+        docker = docker or DockerHandler()
+        gateway = gateway or GatewayHandler(docker)
+        desired = {inst.name: inst for inst in context.spec.ands.instances}
+        existing = context.runtime_state.ands_instances
+        actions: dict[str, list[str]] = {
+            "created": [],
+            "updated": [],
+            "removed": [],
+            "repaired": [],
+        }
+
+        for and_name in set(existing) - set(desired):
+            await self._teardown_and(context, docker, gateway, and_name, existing[and_name])
+            actions["removed"].append(and_name)
+
+        for and_name, inst in desired.items():
+            current = existing.get(and_name)
+            if current is None:
+                data = await self._provision_and(context, docker, gateway, inst, context.spec.ands)
+                context.runtime_state.ands_instances[and_name] = data
+                actions["created"].append(and_name)
+                continue
+            if current.get("profile") != inst.profile:
+                await self._update_and_profile(context, gateway, inst, current, context.spec.ands)
+                actions["updated"].append(and_name)
+            repaired = await self._repair_and(
+                context, docker, gateway, inst, current, context.spec.ands
+            )
+            if repaired:
+                actions["repaired"].append(and_name)
+        return actions
+
+    async def _update_and_profile(
+        self,
+        context: PhaseContext,
+        gateway: GatewayHandler,
+        and_instance: Any,
+        current: dict[str, Any],
+        ands_spec: Any,
+    ) -> None:
+        old_profile = ands_spec.profiles.get(current.get("profile")) if ands_spec.profiles else None
+        new_profile = ands_spec.profiles.get(and_instance.profile) if ands_spec.profiles else None
+        if new_profile is None:
+            raise RuntimeError(f"Profile '{and_instance.profile}' not found in spec")
+        if old_profile and getattr(old_profile, "dynamic_ip", False) and not new_profile.dynamic_ip:
+            await gateway.remove_dhcp(and_instance.name)
+        if old_profile and getattr(old_profile, "bgp", None) and not new_profile.bgp:
+            await gateway.remove_bgp(and_instance.name)
+        rules = await gateway.generate_rules(
+            and_instance.name, and_instance.profile, current["cidr"]
+        )
+        await gateway.apply_rules(and_instance.name, rules)
+        if new_profile.dynamic_ip:
+            await gateway.setup_dhcp(and_instance.name, current["cidr"], current["gateway_ip"])
+        if new_profile.reverse_dns:
+            await DNSHandler().add_reverse_zone(context, current["cidr"], current["gateway_ip"])
+        if new_profile.bgp:
+            await gateway.setup_bgp(
+                and_instance.name, current["cidr"], current["gateway_ip"], new_profile.bgp
+            )
+        current.update(
+            {
+                "profile": and_instance.profile,
+                "dynamic_ip": new_profile.dynamic_ip,
+                "reverse_dns": new_profile.reverse_dns,
+                "bgp": new_profile.bgp,
+            }
+        )
+
+    async def _teardown_and(
+        self,
+        context: PhaseContext,
+        docker: DockerHandler,
+        gateway: GatewayHandler,
+        and_name: str,
+        current: dict[str, Any],
+    ) -> None:
+        await gateway.remove_rules(and_name)
+        if current.get("dynamic_ip"):
+            await gateway.remove_dhcp(and_name)
+        if current.get("reverse_dns"):
+            await DNSHandler().remove_reverse_zone(context, current["cidr"])
+        if current.get("bgp"):
+            await gateway.remove_bgp(and_name)
+        bridge_name = current.get("bridge_name", f"netengines_and_{and_name}")
+        try:
+            await docker.disconnect_network(gateway.gateway_container, bridge_name)
+        except Exception:
+            pass
+        await docker.remove_network(bridge_name)
+        context.runtime_state.ands_instances.pop(and_name, None)
+        try:
+            db = await self._get_supabase()
+            await db.table("address_leases").delete().eq("and_name", and_name).execute()
+            await db.table("and_instances").delete().eq("name", and_name).execute()
+        except Exception as exc:
+            context.logger.warning("Failed to delete AND DB state for %s: %s", and_name, exc)
+
+    async def _repair_and(
+        self,
+        context: PhaseContext,
+        docker: DockerHandler,
+        gateway: GatewayHandler,
+        and_instance: Any,
+        current: dict[str, Any],
+        ands_spec: Any,
+    ) -> bool:
+        repaired = False
+        bridge_name = current.get("bridge_name", f"netengines_and_{and_instance.name}")
+        try:
+            docker.client.networks.get(bridge_name)
+        except Exception:
+            await docker.create_network(
+                name=bridge_name, driver="bridge", subnet=current["cidr"], internal=True
+            )
+            repaired = True
+        try:
+            await docker.connect_network(
+                container=gateway.gateway_container, network=bridge_name, ip=current["gateway_ip"]
+            )
+        except Exception:
+            pass
+        profile = ands_spec.profiles.get(and_instance.profile) if ands_spec.profiles else None
+        rules = await gateway.generate_rules(
+            and_instance.name, and_instance.profile, current["cidr"]
+        )
+        await gateway.apply_rules(and_instance.name, rules)
+        dns_suffix = getattr(and_instance, "dns_suffix", None) or current.get("dns_suffix")
+        await DNSHandler().add_zone_record(
+            context, "internal", "A", dns_suffix.rstrip("."), current["gateway_ip"], 300
+        )
+        if profile and profile.dynamic_ip:
+            await gateway.setup_dhcp(and_instance.name, current["cidr"], current["gateway_ip"])
+        if profile and profile.reverse_dns:
+            await DNSHandler().add_reverse_zone(context, current["cidr"], current["gateway_ip"])
+        if profile and profile.bgp:
+            await gateway.setup_bgp(
+                and_instance.name, current["cidr"], current["gateway_ip"], profile.bgp
+            )
+        return repaired
 
     # ─────────────────────────────────────────────
     # Event-Driven Provisioning
