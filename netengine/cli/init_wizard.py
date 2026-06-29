@@ -631,7 +631,7 @@ def build_spec_dict(cfg: WorldConfig) -> dict[str, object]:
                 "canonical_name": "ca.platform.internal",
             },
             "intermediate_ca_enabled": cfg.intermediate_ca,
-            "dnssec_enabled": True,
+            "dnssec_enabled": False,
             "dnssec_ksk_lifetime_days": 365,
             "dnssec_zsk_lifetime_days": 30,
             "crl_enabled": cfg.crl_enabled,

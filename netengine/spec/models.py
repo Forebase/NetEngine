@@ -220,7 +220,7 @@ class PKIPhase(SpecModel):
     root_ca: RootCAConfig = Field(default_factory=RootCAConfig)
     acme: ACMEConfig = Field(default_factory=ACMEConfig)
     intermediate_ca_enabled: bool = Field(default=False)
-    dnssec_enabled: bool = Field(default=True)
+    dnssec_enabled: bool = Field(default=False)
     dnssec_ksk_lifetime_days: int = Field(default=365)
     dnssec_zsk_lifetime_days: int = Field(default=30)
     crl_enabled: bool = Field(default=False)

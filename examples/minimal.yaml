@@ -56,7 +56,7 @@ pki:
     enabled: true
     listen_ip: 10.0.0.6
     canonical_name: ca.platform.internal
-  dnssec_enabled: true
+  dnssec_enabled: false
   dnssec_ksk_lifetime_days: 365
   dnssec_zsk_lifetime_days: 30
 
