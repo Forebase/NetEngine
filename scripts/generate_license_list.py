@@ -17,11 +17,16 @@ def field(meta: metadata.PackageMetadata, name: str) -> str:
     return compact or "UNKNOWN"
 
 
+_INFRA_PACKAGES = frozenset({"pip", "setuptools", "wheel", "distribute"})
+
+
 def main() -> int:
     rows = []
     for dist in sorted(metadata.distributions(), key=lambda d: (d.metadata.get("Name") or "").lower()):
         meta = dist.metadata
         name = field(meta, "Name")
+        if name.lower() in _INFRA_PACKAGES:
+            continue
         version = dist.version or "UNKNOWN"
         license_expr = field(meta, "License-Expression")
         license_field = license_expr if license_expr != "UNKNOWN" else field(meta, "License")
