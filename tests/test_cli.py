@@ -433,15 +433,16 @@ def test_validate_valid_spec_exits_zero() -> None:
     assert "Spec validation succeeded: minimal-example" in result.output
 
 
-def test_validate_unsupported_enabled_feature_exits_nonzero(tmp_path: Path) -> None:
-    """Unsupported active feature gates should fail validation precisely."""
+def test_validate_experimental_gateway_mode_exits_zero_with_explanation(tmp_path: Path) -> None:
+    """Mirrored gateway mode is wired but remains experimental during alpha."""
     spec_file = _write_cli_validate_spec(tmp_path, gateway_portal__real_internet__mode="mirrored")
 
-    result = CliRunner().invoke(cli_main.cli, ["validate", str(spec_file)])
+    result = CliRunner().invoke(cli_main.cli, ["validate", str(spec_file), "--explain"])
 
-    assert result.exit_code == 1
-    assert "Unsupported spec features enabled" in result.output
-    assert "gateway_portal.real_internet.mode is unsupported" in result.output
+    assert result.exit_code == 0, result.output
+    assert "Spec validation succeeded" in result.output
+    assert "WARNING:" in result.output
+    assert "gateway_portal.real_internet.mode: experimental" in result.output
 
 
 def test_validate_experimental_enabled_feature_exits_zero_with_explanation(tmp_path: Path) -> None:
@@ -480,14 +481,16 @@ def test_validate_json_reports_active_feature_states(tmp_path: Path) -> None:
 
 def test_validate_json_unsupported_active_feature_exits_nonzero(tmp_path: Path) -> None:
     """Unsupported active fields should be machine-readable and fail CI."""
-    spec_file = _write_cli_validate_spec(tmp_path, pki__crl_enabled=True)
+    spec_file = _write_cli_validate_spec(
+        tmp_path, gateway_portal__real_internet__upstream_resolver_enabled=True
+    )
 
     result = CliRunner().invoke(cli_main.cli, ["validate", str(spec_file), "--format", "json"])
 
     assert result.exit_code == 1
     payload = json.loads(result.output)
     assert payload["ok"] is False
-    assert payload["feature_states"][0]["path"] == "pki.crl_enabled"
+    assert payload["feature_states"][0]["path"] == "gateway_portal.real_internet.upstream_resolver_enabled"
     assert payload["feature_states"][0]["state"] == "unsupported"
     assert payload["feature_states"][0]["current_value"] is True
     assert payload["feature_states"][0]["default_value"] is False

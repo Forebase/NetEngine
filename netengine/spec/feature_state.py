@@ -47,15 +47,21 @@ FEATURE_STATE_REGISTRY: tuple[FeatureStateEntry, ...] = (
     ),
     FeatureStateEntry(
         path="gateway_portal.real_internet.mode",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="real-internet gateway policies are not implemented",
+        reason=(
+            "gateway policies for isolated, shadowed, mirrored, and exposed modes "
+            "are wired through nftables, but real-host integration remains alpha"
+        ),
     ),
     FeatureStateEntry(
         path="gateway_portal.real_internet.service_mirrors",
-        state="unsupported",
+        state="experimental",
         stage="alpha",
-        reason="service mirror provisioning is not implemented",
+        reason=(
+            "mirrored-mode nftables allowlists and operator output are wired; "
+            "automatic DNS aliasing for real hostnames remains alpha"
+        ),
     ),
     FeatureStateEntry(
         path="gateway_portal.real_internet.upstream_resolver_enabled",

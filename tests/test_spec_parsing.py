@@ -180,16 +180,21 @@ class TestFeatureStateValidation:
             "pki.dnssec_enabled is experimental in alpha" in r.message for r in caplog.records
         )
 
-    def test_unsupported_non_default_active_field_raises_spec_load_error(self, tmp_path) -> None:
+    def test_experimental_gateway_mode_logs_warning_not_raises(self, tmp_path, caplog) -> None:
+        import logging
+
         spec_file = self._write_spec(
             tmp_path, {"gateway_portal": {"real_internet": {"mode": "mirrored"}}}
         )
 
-        with pytest.raises(
-            SpecLoadError,
-            match="gateway_portal\\.real_internet\\.mode is unsupported in alpha",
-        ):
-            load_spec(spec_file)
+        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
+            spec = load_spec(spec_file)
+
+        assert spec.gateway_portal.real_internet.mode.value == "mirrored"
+        assert any(
+            "gateway_portal.real_internet.mode is experimental in alpha" in r.message
+            for r in caplog.records
+        )
 
     def test_experimental_profile_field_logs_warning_not_raises(self, tmp_path, caplog) -> None:
         import logging
