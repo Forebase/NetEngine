@@ -9,9 +9,10 @@ from typing import Any
 import click
 import yaml
 
+from netengine.core.migrations import MigrationService, MigrationStatus
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState
-from netengine.db.migrations import MigrationRunResult, migration_status, run_migrations
+from netengine.db.migrations import MIGRATIONS_DIR, MigrationRunResult, migration_status, run_migrations
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
@@ -68,11 +69,107 @@ async def _run_migrations(db_url: str) -> MigrationRunResult:
         f"{result.skipped_count} skipped, {result.failed_count} failed"
     )
     return result
+def _db_url_from_env() -> str | None:
+    """Return the database URL used by CLI migration operations."""
+    return os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+
+
+
+
+def _print_migration_status(status: MigrationStatus) -> None:
+    click.echo("Migration status")
+    click.echo(f"  Applied: {len(status.applied)}")
+    for record in status.applied:
+        applied_at = record.applied_at.isoformat() if record.applied_at else "unknown time"
+        click.echo(f"    ✓ {record.version} {record.name} ({applied_at})")
+
+    click.echo(f"  Pending: {len(status.pending)}")
+    for migration in status.pending:
+        click.echo(f"    • {migration.version} {migration.name} ({migration.path.name})")
+
+    click.echo(f"  Failed: {len(status.failed)}")
+    for record in status.failed:
+        detail = f": {record.error}" if record.error else ""
+        click.echo(f"    ✗ {record.version} {record.name}{detail}")
+
+    click.echo(f"  Checksum drift: {len(status.checksum_drifted)}")
+    for migration, record in status.checksum_drifted:
+        click.echo(
+            f"    ! {migration.version} {migration.name}: "
+            f"database={record.checksum or 'unknown'} file={migration.checksum}"
+        )
+
+    click.echo("  pgmq prerequisites:")
+    click.echo(f"    Extension available: {'yes' if status.pgmq_available else 'no'}")
+    click.echo(f"    Extension installed: {'yes' if status.pgmq_installed else 'no'}")
+    if status.missing_queues:
+        click.echo(f"    Missing queues: {', '.join(status.missing_queues)}")
+    else:
+        click.echo("    Missing queues: none")
+    service = MigrationService(db_url, MIGRATIONS_DIR, logger.info)
+    await service.apply()
 
 
 @click.group()
 def cli() -> None:
     """NetEngine — spin up, reload, and tear down authority-autonomous worlds."""
+
+
+@cli.group()
+def migrate() -> None:
+    """Manage NetEngine database migrations."""
+
+
+@migrate.command("up")
+def migrate_up() -> None:
+    """Apply pending database migrations."""
+    asyncio.run(_migrate_up())
+
+
+async def _migrate_up() -> None:
+    db_url = _require_db_url()
+    service = MigrationService(db_url, MIGRATIONS_DIR)
+    click.echo(f"Applying migrations from {MIGRATIONS_DIR}...")
+    try:
+        applied = await service.apply_pending()
+    except Exception as exc:
+        click.echo(f"Migration failed: {exc}", err=True)
+        sys.exit(1)
+    if applied:
+        click.echo(f"Applied {len(applied)} migration(s):")
+        for record in applied:
+            click.echo(f"  ✓ {record.version} {record.name}")
+    else:
+        click.echo("No pending migrations.")
+
+
+@migrate.command("status")
+def migrate_status() -> None:
+    """Print applied, pending, failed, and drifted migrations."""
+    asyncio.run(_migrate_status(exit_on_unhealthy=False))
+
+
+@migrate.command("check")
+def migrate_check() -> None:
+    """Validate migrations and pgmq prerequisites for CI."""
+    asyncio.run(_migrate_status(exit_on_unhealthy=True))
+
+
+async def _migrate_status(*, exit_on_unhealthy: bool) -> None:
+    db_url = _require_db_url()
+    service = MigrationService(db_url, MIGRATIONS_DIR)
+    try:
+        status = await service.status()
+    except Exception as exc:
+        click.echo(f"Unable to inspect migrations: {exc}", err=True)
+        sys.exit(1)
+    _print_migration_status(status)
+    if exit_on_unhealthy:
+        if status.ok:
+            click.echo("Migration check passed.")
+        else:
+            click.echo("Migration check failed.", err=True)
+            sys.exit(1)
 
 
 @cli.command()
@@ -92,6 +189,12 @@ def cli() -> None:
     help="Skip running database migrations on startup.",
 )
 @click.option(
+    "--allow-migration-failure",
+    is_flag=True,
+    default=False,
+    help="Continue booting if database migrations fail (development escape hatch).",
+)
+@click.option(
     "--env", "environment", help="Merge spec.{ENV}.yaml next to SPEC_FILE before booting."
 )
 @click.option(
@@ -106,11 +209,22 @@ def up(
     up_to: int,
     mock: bool,
     skip_migrations: bool,
+    allow_migration_failure: bool,
     environment: str | None,
     set_values: tuple[str, ...],
 ) -> None:
     """Boot a world from SPEC_FILE."""
-    asyncio.run(_up(spec_file, up_to, mock, skip_migrations, environment, set_values))
+    asyncio.run(
+        _up(
+            spec_file,
+            up_to,
+            mock,
+            skip_migrations,
+            allow_migration_failure,
+            environment,
+            set_values,
+        )
+    )
 
 
 async def _up(
@@ -118,6 +232,7 @@ async def _up(
     up_to: int,
     mock: bool,
     skip_migrations: bool,
+    allow_migration_failure: bool = False,
     environment: str | None = None,
     set_values: tuple[str, ...] = (),
 ) -> None:
@@ -135,12 +250,18 @@ async def _up(
         click.echo("WARNING: running in mock mode — no real infrastructure will be created.")
 
     if not skip_migrations and not mock:
-        db_url = os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL")
+        db_url = _db_url_from_env()
         if db_url:
             try:
                 await _run_migrations(db_url)
             except Exception as exc:
-                logger.warning(f"Migrations failed (continuing anyway): {exc}")
+                if allow_migration_failure:
+                    logger.warning(f"Migrations failed (continuing anyway): {exc}")
+                else:
+                    message = f"Migrations failed: {exc}"
+                    logger.error(message)
+                    click.echo(message, err=True)
+                    sys.exit(1)
 
     orchestrator = Orchestrator(spec, mock_mode=mock)
     click.echo(f"Booting world from {spec_file} (phases 0–{up_to})…")

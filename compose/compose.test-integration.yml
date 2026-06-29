@@ -28,6 +28,24 @@ services:
       - netengine-integration
     restart: unless-stopped
 
+  pgmq-setup-integration:
+    image: postgres:15
+    container_name: netengine_pgmq_setup_integration
+    depends_on:
+      postgres-integration:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: integration_test_password
+    command: |
+      sh -c "
+        psql -h postgres-integration -U netengine -d netengine_integration -f /migrations/001_initial.sql
+      "
+    volumes:
+      - ../migrations/001_initial.sql:/migrations/001_initial.sql:ro
+    networks:
+      - netengine-integration
+    restart: on-failure
+
   keycloak-integration:
     image: quay.io/keycloak/keycloak:latest
     container_name: netengine_keycloak_integration
