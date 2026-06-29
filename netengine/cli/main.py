@@ -19,6 +19,7 @@ from netengine.diagnostic.preflight import (
 )
 from netengine.cli.env import db_url_from_env
 from netengine.config.loader import ConfigOverrideError, parse_dotted_overrides
+from netengine.config.runtime import load_runtime_config
 from netengine.core.migrations import MigrationService, MigrationStatus
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState, get_state_file
@@ -404,8 +405,16 @@ def _wait_for_postgres_health(timeout_seconds: float = 120.0, interval: float = 
 
 
 @click.group()
-def cli() -> None:
+@click.option(
+    "--config",
+    "config_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    envvar="NETENGINE_CONFIG",
+    help="Runtime app config file (or NETENGINE_CONFIG). Spec files still control world topology.",
+)
+def cli(config_file: Path | None) -> None:
     """NetEngine — spin up, reload, and tear down authority-autonomous worlds."""
+    load_runtime_config(config_file)
 
 
 cli.add_command(doctor)

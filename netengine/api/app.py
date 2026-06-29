@@ -3,7 +3,10 @@
 from fastapi import FastAPI
 
 from netengine.api.routes import router
+from netengine.config.runtime import load_runtime_config
 from netengine.logs.middleware import StructuredLoggingMiddleware
+
+load_runtime_config()
 
 app = FastAPI(
     title="NetEngine Operator API",
