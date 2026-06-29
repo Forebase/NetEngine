@@ -19,7 +19,7 @@ from netengine.events.queues import Queue
 from netengine.events.emitter import emit_event
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
-from netengine.handlers.docker_handler import DockerHandler
+from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.handlers.gateway_handler import GatewayHandler
 from netengine.logging import get_logger
 from netengine.spec.models import CrossWorldPeer, GatewayPortal
@@ -61,7 +61,11 @@ class GatewayPortalHandler(BasePhaseHandler):
             )
             return
 
-        docker = context.docker_client or DockerHandler()  # type: ignore[no-untyped-call]
+        if context.docker_client is None:
+            raise RuntimeError(
+                "Gateway portal requires context.docker_client when mock_mode is disabled"
+            )
+        docker = context.docker_client
         gateway = GatewayHandler(docker)
 
         # ── Real Internet ───────────────────────────────────────────────────
@@ -162,7 +166,7 @@ class GatewayPortalHandler(BasePhaseHandler):
         self,
         context: PhaseContext,
         gateway: GatewayHandler,
-        docker: DockerHandler,
+        docker: DockerAdapterProtocol,
         portal: GatewayPortal,
     ) -> dict[str, Any]:
         cross_world = portal.cross_world
@@ -189,7 +193,7 @@ class GatewayPortalHandler(BasePhaseHandler):
         self,
         context: PhaseContext,
         gateway: GatewayHandler,
-        docker: DockerHandler,
+        docker: DockerAdapterProtocol,
         peer: CrossWorldPeer,
     ) -> dict[str, Any]:
         """Wire up a single cross-world peer: trust anchor + routing + DNS."""
@@ -237,7 +241,7 @@ class GatewayPortalHandler(BasePhaseHandler):
     async def _install_trust_anchor(
         self,
         context: PhaseContext,
-        docker: DockerHandler,
+        docker: DockerAdapterProtocol,
         peer_name: str,
         cert_pem: str,
     ) -> None:

@@ -18,7 +18,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
-from netengine.handlers.docker_handler import DockerHandler
+from netengine.handlers.protocols import DockerAdapterProtocol
 
 
 class MailHandler:
@@ -27,7 +27,7 @@ class MailHandler:
     def __init__(
         self,
         context: PhaseContext,
-        docker: DockerHandler,
+        docker: DockerAdapterProtocol,
         dns: DNSHandler,
     ):
         self.context = context

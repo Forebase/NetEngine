@@ -3,12 +3,14 @@ import tempfile
 from datetime import UTC, datetime
 
 from netengine.handlers.dns import DNSHandler
-from netengine.handlers.docker_handler import DockerHandler
+from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.handlers.pki_handler import PKIHandler
 
 
 class StorageHandler:
-    def __init__(self, context, docker: DockerHandler, dns: DNSHandler, pki: PKIHandler, state):
+    def __init__(
+        self, context, docker: DockerAdapterProtocol, dns: DNSHandler, pki: PKIHandler, state
+    ):
         self.context = context
         self.docker = docker
         self.dns = dns

@@ -5,7 +5,7 @@ from typing import Any
 from netengine.events.emitter import emit_event
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
-from netengine.handlers.docker_handler import DockerHandler
+from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.handlers.pki_handler import PKIHandler
 from netengine.logging import get_logger
 from netengine.workers.pki_cert_rotation_worker import CertTypeRotationConfig, PKICertRotationWorker
@@ -43,8 +43,11 @@ class PKIPhaseHandler(BasePhaseHandler):
             )
             return
 
-        # Use docker_client from context, falling back to a new DockerHandler
-        docker = context.docker_client if context.docker_client is not None else DockerHandler()
+        if context.docker_client is None:
+            raise RuntimeError(
+                "PKI phase requires context.docker_client when mock_mode is disabled"
+            )
+        docker = context.docker_client
         pki = PKIHandler(docker, context.runtime_state, spec)
 
         # 1. Bootstrap CA (generate + start server)
@@ -123,7 +126,9 @@ class PKIPhaseHandler(BasePhaseHandler):
         if context.mock_mode:
             return context.runtime_state.pki_output is not None
         try:
-            docker = context.docker_client if context.docker_client is not None else DockerHandler()
+            if context.docker_client is None:
+                return False
+            docker = context.docker_client
             pki = PKIHandler(docker, context.runtime_state, context.spec)
             return await pki.healthcheck()
         except Exception as exc:

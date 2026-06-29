@@ -12,14 +12,14 @@ import aiohttp
 
 from netengine.core.state import RuntimeState
 from netengine.errors import PKIError
-from netengine.handlers.docker_handler import DockerHandler
+from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 class PKIHandler:
-    def __init__(self, docker: DockerHandler, state: RuntimeState, spec):
+    def __init__(self, docker: DockerAdapterProtocol, state: RuntimeState, spec):
         self.docker = docker
         self.state = state
         self.spec = spec
