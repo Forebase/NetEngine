@@ -53,3 +53,18 @@ Feature states:
   rotation worker and can be updated through the operator API. It remains
   experimental because cert-type coverage and graceful cutover behavior are
   still evolving.
+
+## CI support-matrix validation
+
+`netengine validate` can emit machine-readable support-matrix results for CI:
+
+```bash
+poetry run netengine validate <spec.yaml> --format json > support-matrix-results.json
+```
+
+The JSON payload includes `ok`, `spec`, and a `feature_states` array. Each active
+feature-state entry reports the concrete `path`, `state`, `stage`, `reason`,
+`current_value`, and `default_value`. Active `unsupported` entries make the
+command exit non-zero, so CI can fail the build while still archiving the JSON
+artifact for review. Use `--format text --explain` (the default format is `text`)
+for operator-facing diagnostics.
