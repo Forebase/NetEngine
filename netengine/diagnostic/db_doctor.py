@@ -62,7 +62,7 @@ def _queue_name(row: object) -> str | None:
 
 async def _inspect_database(db_url: str, *, timeout: float) -> list[DoctorCheckResult]:
     try:
-        import asyncpg  # type: ignore[import]
+        import asyncpg  # type: ignore[import-untyped]
     except ImportError:
         return [
             DoctorCheckResult(
@@ -157,9 +157,7 @@ async def _inspect_database(db_url: str, *, timeout: float) -> list[DoctorCheckR
         await conn.close()
 
 
-def check_database(
-    db_url: str | None, *, timeout: float = 3.0
-) -> list[DoctorCheckResult]:
+def check_database(db_url: str | None, *, timeout: float = 3.0) -> list[DoctorCheckResult]:
     """Return actionable doctor checks for Postgres, pgmq, and event queues."""
     checks = [parsed := _parse_db_url(db_url)]
     if not db_url or parsed.status != DoctorStatus.OK:

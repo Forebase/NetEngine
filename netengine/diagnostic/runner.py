@@ -60,14 +60,10 @@ class ProbeResult:
         self.elapsed_ms = elapsed_ms
         self.remediation = remediation or hint
         self.related_phase = related_phase if related_phase is not None else phase
-        self.related_resource = (
-            related_resource if related_resource is not None else resource
-        )
+        self.related_resource = related_resource if related_resource is not None else resource
         log_commands = related_logs if related_logs is not None else logs
         self.related_logs = list(log_commands or [])
-        self.command_to_retry = (
-            command_to_retry if command_to_retry is not None else retry_command
-        )
+        self.command_to_retry = command_to_retry if command_to_retry is not None else retry_command
 
     @property
     def phase(self) -> int | None:
