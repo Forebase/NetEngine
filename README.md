@@ -87,6 +87,60 @@ Worlds are defined in YAML. See `examples/` for reference:
 | `examples/single-org.yaml` | One organisation with residential AND |
 | `examples/dev-sandbox.yaml` | Full dev setup with orgs, ANDs, mail, storage |
 
+### Alpha golden paths
+
+These are the official alpha operator paths. Run them after the Quickstart setup to validate the supported lifecycle.
+
+#### Path A — Minimal smoke world
+
+```bash
+poetry run netengine up examples/minimal.yaml
+poetry run netengine up examples/minimal.yaml
+poetry run netengine status
+poetry run netengine diagnose examples/minimal.yaml
+poetry run netengine down --dry-run
+poetry run netengine down --yes
+```
+
+The second `up` proves idempotency.
+
+#### Path B — Single-org world
+
+Uses `examples/single-org.yaml` to prove org identity, DNS delegation, AND profile basics, and registry records.
+
+```bash
+poetry run netengine up examples/single-org.yaml
+poetry run netengine up examples/single-org.yaml
+poetry run netengine status
+poetry run netengine diagnose examples/single-org.yaml
+poetry run netengine down --dry-run
+poetry run netengine down --yes
+```
+
+#### Path C — Dev sandbox
+
+Uses `examples/dev-sandbox.yaml` as the feature-rich alpha demo. It is more experimental than Paths A/B if some integrations are still stabilizing.
+
+```bash
+poetry run netengine up examples/dev-sandbox.yaml
+poetry run netengine up examples/dev-sandbox.yaml
+poetry run netengine status
+poetry run netengine diagnose examples/dev-sandbox.yaml
+poetry run netengine down --dry-run
+poetry run netengine down --yes
+```
+
+#### Acceptance checklist
+
+- Fresh install works
+- Boot completes
+- Re-running `up` is idempotent
+- `status` is accurate
+- `diagnose` explains failures
+- `reload` rejects immutable changes
+- `down --dry-run` lists resources
+- `down --yes` leaves no project-owned Docker resources behind
+
 ### Spec composition
 
 Large specs can be split across files:
@@ -161,7 +215,13 @@ See `docs/runbook.md` for the full rollback and recovery procedure.
 └─────────────────────────────────────────────────┘
 ```
 
-**Runtime state** is persisted to `netengines_state.json` after each phase so interrupted runs can resume where they left off.
+**Runtime state** is persisted to `netengines_state.json` after each phase so interrupted runs can resume where they left off. The state file carries `schema_version: netengine.runtime_state.v1`; pre-version alpha.1 state files are detected as v1-compatible and stamped on the next save, while unknown future/foreign versions fail closed with instructions to export using the older release or migrate through a compatible release. The file is written atomically with `0600` permissions because it can contain runtime secrets (bootstrap admin password, OIDC client secrets, generated in-world admin passwords, and other phase outputs). Do not commit it, attach it to issues, or copy it into shared logs; use a sanitized support bundle instead.
+
+**Spec compatibility** is tracked in `metadata.schema_version` (default `netengine.spec.v1`). The loader accepts missing schema versions for existing alpha specs, rejects unsupported versions before boot/import, and includes the spec schema in support bundles so alpha.2+ can decide whether an alpha.1 world is safe to restore.
+
+**Support bundles** are produced with `netengine export --out netengine-support-bundle.json` or `GET /api/v1/export`. Bundles include schema metadata, the world spec, phase completion, public CA material, and sanitized phase outputs with secret-looking fields/private PEMs removed. Restore with `netengine import <bundle-file>` or `POST /api/v1/import`; import validates the bundle schema, spec schema compatibility, spec parseability, known phases, phase prerequisites, and required outputs before replacing local runtime state.
+
+**Persistent teardown safety** requires typed confirmation. CLI teardown of a persistent world must pass `netengine down --confirm <world-name>`; the operator API requires both `confirm=true` and `confirmation` equal to the world name. `--yes` is intentionally not enough for persistent destructive operations.
 
 **Events** flow phase-to-phase via pgmq queues defined by `netengine/events/queues.py::PRIMARY_QUEUES`. There are currently 11 primary queues (`dns_updates`, `oidc_provisioning`, `and_provisioning`, `inworld_admissions`, `services_admissions`, `and_admissions`, `pki_cert_rotation_events`, `drift_events`, `world_health`, `gateway_portal_events`, `phase_events`) plus 11 matching dead-letter queues (`*_dlq`) for failed messages.
 

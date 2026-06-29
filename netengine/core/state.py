@@ -14,6 +14,37 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 DEFAULT_STATE_FILE = "netengines_state.json"
+RUNTIME_STATE_SCHEMA_VERSION = "netengine.runtime_state.v1"
+SUPPORTED_RUNTIME_STATE_SCHEMA_VERSIONS = {RUNTIME_STATE_SCHEMA_VERSION}
+
+
+class RuntimeStateSchemaError(RuntimeError):
+    """Raised when a runtime state file cannot be loaded safely."""
+
+
+def _detect_or_migrate_state_schema(data: Dict[str, Any], state_file: Path) -> Dict[str, Any]:
+    """Return state data with a supported schema version or raise clear guidance."""
+    schema_version = data.get("schema_version")
+    if schema_version is None:
+        # Alpha.1 state files predate explicit runtime state versioning. Treat them
+        # as v1-compatible and stamp the in-memory data so the next save persists it.
+        data["schema_version"] = RUNTIME_STATE_SCHEMA_VERSION
+        logger.warning(
+            "Runtime state file %s has no schema_version; assuming alpha.1-compatible %s. "
+            "Run `netengine export --out support-bundle.json` before upgrading further.",
+            state_file,
+            RUNTIME_STATE_SCHEMA_VERSION,
+        )
+        return data
+    if schema_version not in SUPPORTED_RUNTIME_STATE_SCHEMA_VERSIONS:
+        supported = ", ".join(sorted(SUPPORTED_RUNTIME_STATE_SCHEMA_VERSIONS))
+        raise RuntimeStateSchemaError(
+            f"Unsupported runtime state schema_version {schema_version!r} in {state_file}. "
+            f"This NetEngine build supports: {supported}. Export the world with the "
+            "older NetEngine version, upgrade through a release that provides a state "
+            "migration, or restore from a compatible support bundle."
+        )
+    return data
 
 
 JsonPrimitive = str | int | float | bool | None
@@ -168,6 +199,8 @@ def get_state_file() -> Path:
 class RuntimeState:
     """Mutable runtime state, persisted to a local JSON file between phases."""
 
+    schema_version: str = RUNTIME_STATE_SCHEMA_VERSION
+
     # Execution trace
     correlation_id: Optional[str] = None
     parent_event_id: Optional[str] = None
@@ -232,6 +265,7 @@ class RuntimeState:
         if state_file.exists():
             with open(state_file, "r") as f:
                 data: Dict[str, Any] = json.load(f)
+            data = _detect_or_migrate_state_schema(data, state_file)
             # datetime fields are stored as ISO strings
             for dt_field in ("started_at", "completed_at", "last_error_at", "last_drift_check_at"):
                 if data.get(dt_field):
