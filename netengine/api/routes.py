@@ -23,7 +23,12 @@ from netengine.core.state import RUNTIME_STATE_SCHEMA_VERSION, RuntimeState
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
-from netengine.security.redaction import redact_for_api, redact_for_support_bundle
+from netengine.security.redaction import (
+    _contains_private_pem,
+    _is_secret_field,
+    redact_for_api,
+    redact_for_support_bundle,
+)
 from netengine.spec.loader import SpecLoadError, load_spec
 from netengine.spec.models import SPEC_SCHEMA_VERSION, NetEngineSpec
 

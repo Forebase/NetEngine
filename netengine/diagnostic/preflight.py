@@ -119,6 +119,8 @@ def _parse_compose_port(raw_port: object) -> tuple[int, str] | None:
     if isinstance(raw_port, dict):
         published = raw_port.get("published") or raw_port.get("target")
         proto = str(raw_port.get("protocol") or "tcp").lower()
+        if published is None:
+            return None
         try:
             return int(published), proto
         except (TypeError, ValueError):
@@ -330,9 +332,7 @@ def _can_bind(port: int, proto: str) -> bool:
 
 def _check_port(port: int, proto: str) -> DoctorCheckResult:
     name = f"port:{port}/{proto}"
-    label = next(
-        (p.label for p in KNOWN_LOCAL_PORTS if p.port == port and p.proto == proto), None
-    )
+    label = next((p.label for p in KNOWN_LOCAL_PORTS if p.port == port and p.proto == proto), None)
     detail_suffix = f" ({label})" if label else ""
     try:
         _can_bind(port, proto)
@@ -479,20 +479,20 @@ def _check_docker_conflicts(ctx: DoctorContext) -> list[DoctorCheckResult]:
                 (
                     DoctorStatus.FAIL
                     if kind == "container" and conflicts
-                    else DoctorStatus.WARN
-                    if conflicts
-                    else DoctorStatus.OK
+                    else DoctorStatus.WARN if conflicts else DoctorStatus.OK
                 ),
                 ", ".join(conflicts) if conflicts else "no known name conflicts",
                 (
                     "Stop/remove conflicting containers before startup."
                     if kind == "container" and conflicts
                     else (
-                        "Run `netengine down` or remove stale Docker resources if these "
-                        "belong to an old run."
+                        (
+                            "Run `netengine down` or remove stale Docker resources if these "
+                            "belong to an old run."
+                        )
+                        if conflicts
+                        else None
                     )
-                    if conflicts
-                    else None
                 ),
                 "docker",
                 required=kind == "container",
@@ -604,6 +604,12 @@ def _check_filesystem(ctx: DoctorContext) -> list[DoctorCheckResult]:
     ]
 
 
+def _check_pgmq_runtime_state(ctx: DoctorContext) -> DoctorCheckResult:
+    from netengine.diagnostic.db_doctor import check_pgmq_runtime_state
+
+    return check_pgmq_runtime_state(ctx.state_file)
+
+
 def standard_probes() -> tuple[DoctorProbe, ...]:
     """Return host-readiness probes; each accepts only ``DoctorContext``."""
     return (
@@ -614,6 +620,7 @@ def standard_probes() -> tuple[DoctorProbe, ...]:
         lambda ctx: _check_docker_daemon(),
         lambda ctx: _check_compose(),
         _check_database,
+        _check_pgmq_runtime_state,
         _check_ports,
         _check_filesystem,
         _check_docker_conflicts,
