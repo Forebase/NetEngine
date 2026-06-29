@@ -330,9 +330,7 @@ def _can_bind(port: int, proto: str) -> bool:
 
 def _check_port(port: int, proto: str) -> DoctorCheckResult:
     name = f"port:{port}/{proto}"
-    label = next(
-        (p.label for p in KNOWN_LOCAL_PORTS if p.port == port and p.proto == proto), None
-    )
+    label = next((p.label for p in KNOWN_LOCAL_PORTS if p.port == port and p.proto == proto), None)
     detail_suffix = f" ({label})" if label else ""
     try:
         _can_bind(port, proto)
@@ -479,20 +477,20 @@ def _check_docker_conflicts(ctx: DoctorContext) -> list[DoctorCheckResult]:
                 (
                     DoctorStatus.FAIL
                     if kind == "container" and conflicts
-                    else DoctorStatus.WARN
-                    if conflicts
-                    else DoctorStatus.OK
+                    else DoctorStatus.WARN if conflicts else DoctorStatus.OK
                 ),
                 ", ".join(conflicts) if conflicts else "no known name conflicts",
                 (
                     "Stop/remove conflicting containers before startup."
                     if kind == "container" and conflicts
                     else (
-                        "Run `netengine down` or remove stale Docker resources if these "
-                        "belong to an old run."
+                        (
+                            "Run `netengine down` or remove stale Docker resources if these "
+                            "belong to an old run."
+                        )
+                        if conflicts
+                        else None
                     )
-                    if conflicts
-                    else None
                 ),
                 "docker",
                 required=kind == "container",

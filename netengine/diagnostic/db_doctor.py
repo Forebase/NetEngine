@@ -157,9 +157,7 @@ async def _inspect_database(db_url: str, *, timeout: float) -> list[DoctorCheckR
         await conn.close()
 
 
-def check_database(
-    db_url: str | None, *, timeout: float = 3.0
-) -> list[DoctorCheckResult]:
+def check_database(db_url: str | None, *, timeout: float = 3.0) -> list[DoctorCheckResult]:
     """Return actionable doctor checks for Postgres, pgmq, and event queues."""
     checks = [parsed := _parse_db_url(db_url)]
     if not db_url or parsed.status != DoctorStatus.OK:
