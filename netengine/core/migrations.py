@@ -151,7 +151,8 @@ class MigrationService:
             await conn.close()
 
     async def _ensure_table(self, conn: Any) -> None:
-        await conn.execute("""
+        await conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS netengine_schema_migrations (
                 version text PRIMARY KEY,
                 name text NOT NULL,
@@ -160,14 +161,17 @@ class MigrationService:
                 applied_at timestamptz,
                 error text
             )
-            """)
+            """
+        )
 
     async def _records(self, conn: Any) -> list[MigrationRecord]:
-        rows = await conn.fetch("""
+        rows = await conn.fetch(
+            """
             SELECT version, name, checksum, status, applied_at, error
             FROM netengine_schema_migrations
             ORDER BY version
-            """)
+            """
+        )
         return [
             MigrationRecord(
                 version=row["version"],

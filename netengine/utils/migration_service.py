@@ -247,7 +247,8 @@ class MigrationService:
             raise MigrationApplyError(path.name, context, exc) from exc
 
     async def _ensure_table(self, conn: "asyncpg.Connection") -> None:
-        await conn.execute(f"""
+        await conn.execute(
+            f"""
             CREATE TABLE IF NOT EXISTS {MIGRATION_TABLE} (
                 filename TEXT PRIMARY KEY,
                 checksum TEXT NOT NULL,
@@ -255,7 +256,8 @@ class MigrationService:
                 error TEXT,
                 applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
             )
-            """)
+            """
+        )
 
     def _migration_files(self) -> Iterable[Path]:
         return sorted(self.migrations_dir.glob("*.sql"))
