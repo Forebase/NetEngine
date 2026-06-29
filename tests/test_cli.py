@@ -404,13 +404,13 @@ def test_validate_valid_spec_exits_zero() -> None:
 
 def test_validate_unsupported_enabled_feature_exits_nonzero(tmp_path: Path) -> None:
     """Unsupported active feature gates should fail validation precisely."""
-    spec_file = _write_cli_validate_spec(tmp_path, pki__crl_enabled=True)
+    spec_file = _write_cli_validate_spec(tmp_path, gateway_portal__real_internet__mode="mirrored")
 
     result = CliRunner().invoke(cli_main.cli, ["validate", str(spec_file)])
 
     assert result.exit_code == 1
     assert "Unsupported spec features enabled" in result.output
-    assert "pki.crl_enabled is unsupported" in result.output
+    assert "gateway_portal.real_internet.mode is unsupported" in result.output
 
 
 def test_validate_experimental_enabled_feature_exits_zero_with_explanation(tmp_path: Path) -> None:
