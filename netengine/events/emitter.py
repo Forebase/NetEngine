@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
+from netengine.events import factory as event_factory
 from netengine.events.queues import Queue, queue_for_event_type
 from netengine.events.schema import EventEnvelope
 from netengine.handlers.context import PhaseContext
@@ -90,7 +91,7 @@ async def emit_event(
     a phase output dict already exists, under that output's
     ``event_send_failures`` key.
     """
-    event = EventEnvelope.create(
+    event = event_factory.phase_event(
         event_type=event_type,
         emitted_by=emitted_by,
         payload=payload,
