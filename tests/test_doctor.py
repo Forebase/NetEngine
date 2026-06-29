@@ -375,7 +375,6 @@ def test_port_check_fails_for_unavailable_port_with_no_docker_listener(monkeypat
     assert "Stop the process using 5432/tcp" in (result.hint or "")
 
 
-def test_docker_resource_conflicts_use_short_format_commands(monkeypatch, tmp_path: Path) -> None:
 def test_docker_resource_conflicts_use_short_format_commands(
     monkeypatch, tmp_path: Path
 ) -> None:
