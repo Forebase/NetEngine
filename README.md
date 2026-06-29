@@ -50,17 +50,20 @@ cd NetEngine
 # 2. Install dependencies
 poetry install
 
-# 3. Start local Postgres + pgmq (includes pgmq extension pre-installed)
-docker compose up -d db
+# 3. Verify host prerequisites
+poetry run netengine doctor
 
-# 4. Apply migrations
+# 4. Start local Postgres + pgmq (includes pgmq extension pre-installed)
+docker compose up -d postgres
+
+# 5. Apply migrations
 poetry run python -m netengine.utils.run_migrations
 
-# 5. Boot a minimal world
+# 6. Boot a minimal world
 poetry run netengine up examples/minimal.yaml
 ```
 
-Check status at any time:
+If you only want host/container checks before configuring Postgres, run `poetry run netengine doctor --skip-db`. Check status at any time:
 
 ```bash
 poetry run netengine status
