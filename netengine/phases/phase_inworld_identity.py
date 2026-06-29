@@ -469,7 +469,11 @@ class InWorldIdentityPhaseHandler(BasePhaseHandler):
         logger = context.logger
 
         if context.pgmq_client is None:
-            logger.info("pgmq_client not available; org admission events disabled")
+            logger.warning(
+                "pgmq_client not available; in-world admission events are DISABLED — "
+                "per-org realms will not be auto-provisioned from org.admitted events. "
+                "Provision pgmq (see docker-compose.yml) for event-driven operation."
+            )
             return
 
         logger.info("Starting org admission event consumer")

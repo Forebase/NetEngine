@@ -289,7 +289,9 @@ The active development roadmap lives in the [GitHub project](https://github.com/
 
 - [x] End-to-end integration test (real Docker, live DNS query, cert issuance, OIDC login)
 - [x] Complete operator API (org CRUD, AND management, domain management)
-- [x] Cross-world federation
+- [~] Cross-world federation — DNS-stub peering is prototyped and e2e-tested; full
+  nftables routing, trust-anchor wiring, and live cross-world resolution remain
+  gated `unsupported` (see [`docs/spec-alpha-support.md`](docs/spec-alpha-support.md))
 - [x] `persistent` lifecycle mode (import/export, lifecycle guards, teardown confirmation)
 - [x] `netengine down --dry-run`
 

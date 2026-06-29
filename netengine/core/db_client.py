@@ -218,3 +218,28 @@ async def close_pool() -> None:
     if _pool is not None:
         await _pool.close()
         _pool = None
+
+
+async def pgmq_available() -> tuple[bool, Optional[str]]:
+    """Best-effort probe for whether the pgmq event backend is reachable.
+
+    Used by the operator API ``/health`` endpoint and ``netengine doctor`` to
+    surface event-driven operation being disabled (e.g. ANDs and per-org realms
+    are not auto-provisioned without it). Never raises; on any failure it
+    returns ``(False, reason)`` so callers can report the degraded state.
+
+    Returns:
+        ``(True, None)`` when the pgmq extension is installed and reachable,
+        otherwise ``(False, reason)``.
+    """
+    try:
+        db = await get_local_db()
+        async with db._pool.acquire() as conn:
+            installed = await conn.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pgmq')"
+            )
+        if installed:
+            return True, None
+        return False, "pgmq extension not installed"
+    except Exception as exc:  # pragma: no cover - environment dependent
+        return False, f"database unreachable: {exc}"

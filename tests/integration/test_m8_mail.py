@@ -259,6 +259,27 @@ class TestM8DKIMSetup:
         # Verify DKIM is disabled in spec
         assert spec.world_services.mail.dkim.enabled is False
 
+    def test_dkim_txt_value_uses_real_public_key(self) -> None:
+        """The DKIM TXT value must carry the real key, not a placeholder."""
+        from netengine.handlers.mail_handler import MailHandler
+
+        public_pem = (
+            "-----BEGIN PUBLIC KEY-----\n"
+            "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA\n"
+            "abcDEF1234567890\n"
+            "-----END PUBLIC KEY-----\n"
+        )
+
+        value = MailHandler._dkim_txt_value(public_pem)
+
+        assert value.startswith("v=DKIM1; k=rsa; p=")
+        # The PEM armor and line breaks are stripped into a single base64 blob.
+        assert value == (
+            "v=DKIM1; k=rsa; " "p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAabcDEF1234567890"
+        )
+        # Regression guard against the old "Simplified for MVP" placeholder.
+        assert "<public_key>" not in value
+
 
 class TestM8DNSRecords:
     """Tests that M8 injects DNS records (SPF, DKIM, DMARC, MX)."""
