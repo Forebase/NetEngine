@@ -45,7 +45,6 @@ exclude = [
     "netengine/api/",
     "netengine/cli/",
     "netengine/phases/",
-    "netengine/core/pgmq_client\\.py",
     "netengine/handlers/substrate\\.py",
     "netengine/handlers/dns\\.py",
     "netengine/handlers/pki_handler\\.py",
