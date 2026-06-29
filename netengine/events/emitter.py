@@ -10,6 +10,9 @@ from netengine.events.schema import EventEnvelope
 from netengine.handlers.context import PhaseContext
 
 
+_PGMQ_DISABLED_QUEUE = "<pgmq_disabled>"
+
+
 def _failure_record(event: EventEnvelope, queue: Queue | str, exc: Exception) -> EventSendFailure:
     """Build the structured runtime-state record for an event send failure."""
     return {
@@ -105,7 +108,16 @@ async def emit_event(
     )
 
     if context.pgmq_client is None:
-        context.logger.debug("pgmq_client not available; event logged only")
+        context.logger.warning(
+            "pgmq_client not wired; event dropped "
+            f"(event_type={event_type}, emitted_by={emitted_by})"
+        )
+        record_event_send_failure(
+            context,
+            event,
+            _PGMQ_DISABLED_QUEUE,
+            RuntimeError("pgmq_client not wired — event silently dropped"),
+        )
         return event
 
     target_queue = queue or queue_for_event_type(event_type)

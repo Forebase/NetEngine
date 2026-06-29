@@ -1079,6 +1079,26 @@ def _print_status(state: RuntimeState) -> None:
     if state.step_ca_container_id:
         click.echo(f"step-ca container: {state.step_ca_container_id}")
 
+    failures = state.event_send_failures
+    if failures:
+        from netengine.events.emitter import _PGMQ_DISABLED_QUEUE
+
+        disabled_drops = [f for f in failures if f.get("queue") == _PGMQ_DISABLED_QUEUE]
+        send_failures = [f for f in failures if f.get("queue") != _PGMQ_DISABLED_QUEUE]
+        click.echo("")
+        if disabled_drops:
+            click.echo(
+                f"WARNING: pgmq client not wired — {len(disabled_drops)} event(s) silently "
+                "dropped in last run. Run `netengine doctor` for details."
+            )
+        if send_failures:
+            click.echo(f"Event send failures: {len(send_failures)}")
+            for failure in send_failures[-3:]:
+                click.echo(
+                    f"  ! [{failure.get('queue', '?')}] {failure.get('event_type', '?')}: "
+                    f"{failure.get('exception', '?')}"
+                )
+
 
 @cli.command()
 @click.option("--name", default=None, help="World name (pre-fills wizard prompt).")
