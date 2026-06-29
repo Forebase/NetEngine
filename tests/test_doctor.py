@@ -1,7 +1,7 @@
 """Doctor command tests."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 from click.testing import CliRunner
@@ -9,8 +9,8 @@ from click.testing import CliRunner
 from netengine.cli import doctor as doctor_mod
 from netengine.cli import main as cli_main
 from netengine.cli.doctor import DoctorCheckResult, DoctorStatus
-from netengine.events.queues import PRIMARY_QUEUES, dlq_for
 from netengine.diagnostic.preflight import DoctorContext, run_preflight
+from netengine.events.queues import PRIMARY_QUEUES, dlq_for
 
 
 def test_doctor_appears_in_help() -> None:
