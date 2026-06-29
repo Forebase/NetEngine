@@ -218,37 +218,25 @@ def _validate_spec_data(
     return spec
 
 
-def load_spec(yaml_path: str | Path, *, validate_feature_states: bool = True) -> NetEngineSpec:
-    """Load and validate a NetEngine YAML specification.
+def validate_spec_data(
+    data: dict[str, Any], *, validate_feature_states: bool = True
+) -> NetEngineSpec:
+    """Validate composed raw spec data and return a ``NetEngineSpec``.
 
-    Args:
-        data: Composed raw specification dictionary
-        validate_feature_states: Whether to enforce feature-state metadata
-
-    Returns:
-        Validated, immutable NetEngineSpec object
-
-    Raises:
-        SpecLoadError: If the composed spec data is invalid
+    Callers should compose data according to the project precedence contract
+    before validation: structured model defaults < base spec <
+    environment/spec file < explicit overrides/CLI ``--set``.
     """
-    yaml_path = Path(yaml_path)
-
-    if not yaml_path.exists():
-        raise SpecLoadError(f"Spec file not found: {yaml_path}")
-
-    try:
-        with open(yaml_path) as f:
-            data = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        raise SpecLoadError(f"Failed to parse YAML: {e}")
-    except IOError as e:
-        raise SpecLoadError(f"Failed to read file: {e}")
-
     return _validate_spec_data(data, validate_feature_states=validate_feature_states)
 
 
 def load_spec(yaml_path: str | Path, *, validate_feature_states: bool = True) -> NetEngineSpec:
-    """Load and validate a NetEngine YAML specification.
+    """Load and validate a single NetEngine YAML specification.
+
+    A single file is applied over structured ``NetEngineSpec`` defaults during
+    validation. Composition helpers use the broader precedence contract:
+    structured defaults < base spec < environment/spec file < explicit
+    overrides/CLI ``--set``.
 
     Args:
         yaml_path: Path to YAML spec file
@@ -272,7 +260,7 @@ def load_spec(yaml_path: str | Path, *, validate_feature_states: bool = True) ->
     except IOError as e:
         raise SpecLoadError(f"Failed to read file: {e}")
 
-    return validate_spec_data(data, validate_feature_states=validate_feature_states)
+    return _validate_spec_data(data, validate_feature_states=validate_feature_states)
 
 
 def load_spec_with_composition(
@@ -283,10 +271,14 @@ def load_spec_with_composition(
 ) -> NetEngineSpec:
     """Load spec with optional base spec composition and overrides.
 
-    Supports merging a base spec with environment-specific overrides.
+    Precedence is: structured ``NetEngineSpec`` defaults < ``base_path`` <
+    ``yaml_path`` < ``overrides`` (including CLI ``--set`` values). Nested
+    mappings are deep-merged, and later layers win for fields set in multiple
+    places.
+
     Example:
         base spec: spec.base.yaml
-        environment override: spec.prod.yaml
+        environment/spec override: spec.prod.yaml
         inline overrides: {"logging": {"level": "ERROR"}}
 
     Args:
@@ -333,6 +325,11 @@ def load_spec_with_environment(
     validate_feature_states: bool = True,
 ) -> NetEngineSpec:
     """Load base spec and merge with environment-specific overrides.
+
+    Precedence is: structured ``NetEngineSpec`` defaults < ``base_spec`` <
+    ``spec.{environment}.yaml`` when present < ``overrides`` (including CLI
+    ``--set`` values). Nested mappings are deep-merged, and later layers win
+    for fields set in multiple places.
 
     Automatically loads environment-specific spec file if it exists.
     Pattern: spec.base.yaml or spec.yaml + spec.{environment}.yaml

@@ -61,7 +61,15 @@ T = TypeVar("T")
 
 
 class ConfigLoader:
-    """Load and merge OmegaConf configurations."""
+    """Load and merge OmegaConf configurations.
+
+    Precedence is intentionally last-writer-wins for all helpers in this
+    module. The contract is: structured schema defaults < caller-provided
+    defaults < config/spec file data < explicit overrides such as CLI
+    ``--set`` values. Nested mappings are deep-merged at each layer, so a
+    higher-precedence layer can replace one nested field without discarding
+    sibling fields from lower-precedence layers.
+    """
 
     @staticmethod
     def load_yaml(path: Path | str) -> dict[str, Any]:
@@ -85,6 +93,10 @@ class ConfigLoader:
         overrides: Optional[dict[str, Any]] = None,
     ) -> T:
         """Load configuration with optional file and overrides.
+
+        Merge precedence is: structured schema defaults < ``defaults`` <
+        ``config_file`` < ``overrides``. Later layers win for the same field,
+        while nested dictionaries are deep-merged.
 
         Args:
             config_schema: OmegaConf dataclass schema
@@ -116,6 +128,10 @@ class ConfigLoader:
     @staticmethod
     def merge_configs(*configs: dict[str, Any] | Any) -> dict[str, Any]:
         """Merge multiple configurations in order.
+
+        Later positional arguments have higher precedence than earlier ones.
+        Nested dictionaries are deep-merged, allowing higher-precedence layers
+        to override individual nested fields while preserving siblings.
 
         Args:
             *configs: Configuration dictionaries to merge
