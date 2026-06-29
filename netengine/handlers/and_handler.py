@@ -7,14 +7,14 @@ from netengine.errors import ServicesError
 from netengine.events.schema import EventEnvelope
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
-from netengine.handlers.docker_handler import DockerHandler
+from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.handlers.domain_registry_handler import DomainRegistryHandler
 from netengine.handlers.gateway_handler import GatewayHandler
 from netengine.logging import get_logger
 
 
 class ANDHandler:
-    def __init__(self, docker: DockerHandler, state, context: PhaseContext | None = None):
+    def __init__(self, docker: DockerAdapterProtocol, state, context: PhaseContext | None = None):
         self.context = context or PhaseContext(
             spec={}, runtime_state=state, logger=get_logger(__name__)
         )

@@ -8,7 +8,7 @@ from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
-from netengine.handlers.docker_handler import DockerHandler
+from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.handlers.oidc_handler import OIDCHandler
 from netengine.handlers.pki_handler import PKIHandler
 from netengine.logging import get_logger
@@ -17,7 +17,7 @@ from netengine.logging import get_logger
 class AppHandler:
     def __init__(
         self,
-        docker: DockerHandler,
+        docker: DockerAdapterProtocol,
         dns: DNSHandler,
         pki: PKIHandler,
         oidc: OIDCHandler,

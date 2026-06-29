@@ -50,7 +50,6 @@ exclude = [
     "netengine/handlers/pki_handler\\.py",
     "netengine/handlers/phase_pki\\.py",
     "netengine/handlers/oidc_handler\\.py",
-    "netengine/handlers/docker_handler\\.py",
     "netengine/handlers/and_handler\\.py",
     "netengine/handlers/mail_handler\\.py",
     "netengine/handlers/minio_handler\\.py",
