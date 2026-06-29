@@ -363,3 +363,70 @@ def test_up_supports_repeatable_set_overrides():
     assert spec_arg.metadata.name == "my-world"
     assert spec_arg.world_services.mail.enabled is True
     mock_orchestrator.execute_phases.assert_awaited_once_with(up_to_phase=9)
+
+
+def _write_cli_validate_spec(tmp_path: Path, **updates) -> Path:
+    """Write an example-derived spec for validate command tests."""
+    import copy
+    import yaml
+
+    source = Path(__file__).parent.parent / "examples" / "minimal.yaml"
+    data = yaml.safe_load(source.read_text())
+    data = copy.deepcopy(data)
+
+    for dotted_path, value in updates.items():
+        cursor = data
+        parts = dotted_path.split("__")
+        for part in parts[:-1]:
+            cursor = cursor[part]
+        cursor[parts[-1]] = value
+
+    spec_file = tmp_path / "spec.yaml"
+    spec_file.write_text(yaml.safe_dump(data, sort_keys=False))
+    return spec_file
+
+
+def test_validate_valid_spec_exits_zero() -> None:
+    """The validate command should accept a valid spec without booting."""
+    spec_file = Path(__file__).parent.parent / "examples" / "minimal.yaml"
+
+    result = CliRunner().invoke(cli_main.cli, ["validate", str(spec_file)])
+
+    assert result.exit_code == 0, result.output
+    assert "Spec validation succeeded: minimal-example" in result.output
+
+
+def test_validate_unsupported_enabled_feature_exits_nonzero(tmp_path: Path) -> None:
+    """Unsupported active feature gates should fail validation precisely."""
+    spec_file = _write_cli_validate_spec(tmp_path, pki__crl_enabled=True)
+
+    result = CliRunner().invoke(cli_main.cli, ["validate", str(spec_file)])
+
+    assert result.exit_code == 1
+    assert "Unsupported spec features enabled" in result.output
+    assert "pki.crl_enabled is unsupported" in result.output
+
+
+def test_validate_experimental_enabled_feature_exits_zero_with_explanation(tmp_path: Path) -> None:
+    """Experimental active features should validate but be visible to operators."""
+    spec_file = _write_cli_validate_spec(tmp_path, pki__intermediate_ca_enabled=True)
+
+    result = CliRunner().invoke(cli_main.cli, ["validate", str(spec_file), "--explain"])
+
+    assert result.exit_code == 0, result.output
+    assert "Spec validation succeeded" in result.output
+    assert "WARNING:" in result.output
+    assert "pki.intermediate_ca_enabled: experimental" in result.output
+
+
+def test_validate_explain_includes_dotted_field_paths_and_feature_states(tmp_path: Path) -> None:
+    """--explain should show concrete dotted paths and their feature states."""
+    spec_file = _write_cli_validate_spec(tmp_path, pki__intermediate_ca_enabled=True)
+
+    result = CliRunner().invoke(cli_main.cli, ["validate", str(spec_file), "--explain"])
+
+    assert result.exit_code == 0, result.output
+    assert "Feature-state details:" in result.output
+    assert "pki.intermediate_ca_enabled" in result.output
+    assert "experimental" in result.output
+    assert "alpha" in result.output
