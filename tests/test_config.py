@@ -260,6 +260,12 @@ class TestSpecConfig:
 class TestSpecLoaderIntegration:
     """Integration tests for spec loader with OmegaConf."""
 
+    def _write_spec(self, tmp_dir: Path, name: str, spec: dict) -> Path:
+        path = tmp_dir / name
+        with open(path, "w") as f:
+            yaml.dump(spec, f)
+        return path
+
     def test_load_spec_backward_compatibility(self, base_spec_file: Path) -> None:
         """Test that original load_spec function still works."""
         spec = load_spec(base_spec_file)
@@ -293,6 +299,37 @@ class TestSpecLoaderIntegration:
 
         with pytest.raises(SpecLoadError, match="Failed to parse YAML"):
             load_spec(spec_file)
+
+    def test_load_spec_rejects_unsupported_schema_version(self, temp_spec_dir: Path) -> None:
+        """Test schema-version rejection in the direct loader path."""
+        data = _minimal_spec()
+        data["metadata"]["schema_version"] = "netengine.spec.future"
+        spec_file = self._write_spec(temp_spec_dir, "spec.yaml", data)
+
+        with pytest.raises(SpecLoadError, match="Unsupported spec metadata.schema_version"):
+            load_spec(spec_file)
+
+    def test_load_spec_with_composition_rejects_unsupported_schema_version(
+        self, temp_spec_dir: Path
+    ) -> None:
+        """Test schema-version rejection in the composition loader path."""
+        base_file = self._write_spec(temp_spec_dir, "spec.base.yaml", _minimal_spec())
+        override = {"metadata": {"schema_version": "netengine.spec.future"}}
+        override_file = self._write_spec(temp_spec_dir, "spec.prod.yaml", override)
+
+        with pytest.raises(SpecLoadError, match="Unsupported spec metadata.schema_version"):
+            load_spec_with_composition(override_file, base_path=base_file)
+
+    def test_load_spec_with_environment_rejects_unsupported_schema_version(
+        self, temp_spec_dir: Path
+    ) -> None:
+        """Test schema-version rejection in the environment loader path."""
+        base_file = self._write_spec(temp_spec_dir, "spec.base.yaml", _minimal_spec())
+        env_override = {"metadata": {"schema_version": "netengine.spec.future"}}
+        self._write_spec(temp_spec_dir, "spec.dev.yaml", env_override)
+
+        with pytest.raises(SpecLoadError, match="Unsupported spec metadata.schema_version"):
+            load_spec_with_environment(base_file, environment="dev")
 
 
 class TestSpecCrossValidation:
