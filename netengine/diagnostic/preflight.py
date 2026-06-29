@@ -56,7 +56,7 @@ class DoctorContext:
     state_file: Path
     project_root: Path
     required_ports: tuple[tuple[int, str], ...]
-    required_commands: tuple[str, ...] = ("docker", "psql")
+    required_commands: tuple[str, ...] = ("docker",)
     optional_commands: tuple[str, ...] = ("step",)
     feature_flags: dict[str, bool] | None = None
 
@@ -513,25 +513,10 @@ def _check_database(ctx: DoctorContext) -> list[DoctorCheckResult]:
                 required=False,
             )
         ]
-    checks = [parsed := _parse_db_url(ctx.db_url)]
-    if ctx.db_url and parsed.status == DoctorStatus.OK:
-        checks.append(
-            _check_psql(
-                ctx.db_url,
-                "SELECT 1;",
-                "Postgres connectivity",
-                hint="Start Postgres or fix NETENGINE_DB_URL.",
-            )
-        )
-        checks.append(
-            _check_psql(
-                ctx.db_url,
-                "SELECT extname FROM pg_extension WHERE extname = 'pgmq';",
-                "pgmq extension",
-                hint="Install/enable pgmq in the configured database.",
-            )
-        )
-    return checks
+
+    from netengine.diagnostic.db_doctor import check_database
+
+    return check_database(ctx.db_url)
 
 
 def _check_ports(ctx: DoctorContext) -> list[DoctorCheckResult]:

@@ -8,13 +8,13 @@ live in :mod:`netengine.diagnostic.runner` and require ``NetEngineSpec``.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import asdict
 from pathlib import Path
 from typing import Iterable
 
 import click
 
+from netengine.cli.env import db_url_from_env
 from netengine.core.state import get_state_file
 from netengine.diagnostic import preflight as _preflight
 from netengine.diagnostic.preflight import (
@@ -69,7 +69,7 @@ def _print_report(results: Iterable[DoctorCheckResult]) -> None:
 @click.command("doctor")
 @click.option(
     "--db-url",
-    default=lambda: os.environ.get("NETENGINE_DB_URL") or os.environ.get("DATABASE_URL"),
+    default=db_url_from_env,
     help="PostgreSQL URL (defaults to NETENGINE_DB_URL or DATABASE_URL).",
 )
 @click.option(
