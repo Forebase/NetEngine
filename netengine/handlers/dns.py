@@ -472,6 +472,13 @@ class DNSHandler(BasePhaseHandler):
             networking_config = client.api.create_networking_config(
                 {"core": client.api.create_endpoint_config(ipv4_address=root_listen_ip)}
             )
+
+            # Expose port 53/udp to host for DNS queries from the orchestrator.
+            # This allows the host to verify DNS is working even when not on the core network.
+            port_bindings = {
+                "53/udp": ("127.0.0.1", 53),
+            }
+
             response = client.api.create_container(
                 image=COREDNS_IMAGE,
                 name=COREDNS_CONTAINER_NAME,
@@ -479,8 +486,10 @@ class DNSHandler(BasePhaseHandler):
                 host_config=client.api.create_host_config(
                     binds={str(zone_dir): {"bind": "/etc/coredns", "mode": "rw"}},
                     restart_policy={"Name": "unless-stopped"},
+                    port_bindings=port_bindings,
                 ),
                 networking_config=networking_config,
+                ports=["53/udp"],
             )
             client.api.start(response["Id"])
 
@@ -659,28 +668,58 @@ class DNSHandler(BasePhaseHandler):
                 return True
 
             # Real mode: query the root zone for its SOA record, with retries.
-            root_ip = dns_output["root_zone"].get("listen_ip", "10.0.0.2")
+            root_ip = dns_output["root_zone"].get("listen_ip", "10.10.0.2")
             root_zone_name = dns_output["root_zone"].get("name", "root.internal")
 
+            logger.debug(f"Attempting DNS verification: querying {root_zone_name} at localhost:53")
+
             for attempt in range(1, 7):
-                verified = await self._query_soa(root_ip, root_zone_name, logger)
+                # Query via localhost:53 (port-mapped to container) for better host accessibility
+                verified = await self._query_soa("127.0.0.1", root_zone_name, logger)
                 if verified:
-                    logger.info(f"DNS SOA query confirmed at {root_ip} (attempt {attempt})")
+                    logger.info(f"DNS SOA query confirmed at localhost:53 (attempt {attempt})")
                     return True
                 if attempt < 6:
                     logger.warning(f"SOA query attempt {attempt}/6 failed; retrying in 2s...")
                     await asyncio.sleep(2)
 
-            # All retries exhausted — capture CoreDNS container logs for diagnosis.
-            logger.error(f"DNS SOA query failed for {root_zone_name} at {root_ip} (6 attempts)")
+            # All retries exhausted — capture CoreDNS container logs and network info for diagnosis.
+            logger.error(f"DNS SOA query failed for {root_zone_name} at localhost:53 (6 attempts)")
             try:
                 client = context.docker_client.client  # type: ignore[union-attr]
                 container = client.containers.get(COREDNS_CONTAINER_NAME)
                 coredns_logs = container.logs(tail=80).decode("utf-8", errors="replace")
                 logger.error(f"CoreDNS container status: {container.status}")
                 logger.error(f"CoreDNS logs (last 80 lines):\n{coredns_logs}")
+
+                # Log network and port information for diagnostics
+                inspect = container.attrs
+                if "NetworkSettings" in inspect:
+                    networks = inspect["NetworkSettings"].get("Networks", {})
+                    for net_name, net_info in networks.items():
+                        ip = net_info.get("IPAddress", "N/A")
+                        logger.error(f"  Network '{net_name}': container IP={ip}")
+                    ports = inspect["NetworkSettings"].get("Ports", {})
+                    if ports:
+                        logger.error("  Port mappings:")
+                        for container_port, host_bindings in ports.items():
+                            if host_bindings:
+                                for binding in host_bindings:
+                                    host_ip = binding.get("HostIp", "0.0.0.0")
+                                    host_port = binding.get("HostPort", "?")
+                                    logger.error(f"    {container_port} -> {host_ip}:{host_port}")
+                            else:
+                                logger.error(f"    {container_port} (not exposed to host)")
             except Exception as log_err:
-                logger.error(f"Could not retrieve CoreDNS logs: {log_err}")
+                logger.error(f"Could not retrieve CoreDNS diagnostics: {log_err}")
+
+            logger.error(
+                "DNS verification failed. Common causes:\n"
+                "  - Port 53 is already in use on the host\n"
+                "  - CoreDNS failed to start or bind to the port\n"
+                "  - Zone files are malformed\n"
+                "Check the CoreDNS logs above for details."
+            )
             return False
 
         except Exception as e:
@@ -688,7 +727,16 @@ class DNSHandler(BasePhaseHandler):
             return False
 
     async def _query_soa(self, server_ip: str, zone: str, logger: Any) -> bool:
-        """Send a raw DNS SOA query and return True if a valid response arrives."""
+        """Send a raw DNS SOA query and return True if a valid response arrives.
+
+        Args:
+            server_ip: IP address to query (typically 127.0.0.1 for port-mapped DNS)
+            zone: Zone name to query (e.g., 'root.internal')
+            logger: Logger instance for diagnostics
+
+        Returns:
+            True if valid SOA response received, False otherwise
+        """
         import socket
         import struct
 
@@ -711,16 +759,35 @@ class DNSHandler(BasePhaseHandler):
             def _send() -> bytes:
                 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                     s.settimeout(3)
-                    s.sendto(query, (server_ip, 53))
+                    try:
+                        s.sendto(query, (server_ip, 53))
+                    except OSError as e:
+                        # Likely "Permission denied" (port 53 already in use) or unreachable
+                        if "Permission denied" in str(e) or "Operation not permitted" in str(e):
+                            raise RuntimeError(
+                                f"Cannot bind to port 53. This usually means port 53/udp is already "
+                                f"in use on the host. Run 'lsof -i :53' or 'netstat -an | grep 53' to check."
+                            ) from e
+                        raise
                     data, _ = s.recvfrom(512)
                     return data
 
             response = await asyncio.wait_for(loop.run_in_executor(None, _send), timeout=5)
             # Response ID should match query ID (0x1234) and QR bit should be set
             resp_id, flags = struct.unpack(">HH", response[:4])
-            return resp_id == 0x1234 and bool(flags & 0x8000)
+            if resp_id == 0x1234 and bool(flags & 0x8000):
+                logger.debug(f"Valid DNS response received from {server_ip} for {zone}")
+                return True
+            logger.debug(f"Invalid DNS response from {server_ip}: wrong ID or flags")
+            return False
+        except asyncio.TimeoutError:
+            logger.debug(f"DNS query to {server_ip}:53 timed out (CoreDNS may not be ready)")
+            return False
+        except ConnectionRefusedError:
+            logger.debug(f"Connection refused to {server_ip}:53 (CoreDNS may not be listening)")
+            return False
         except Exception as exc:
-            logger.warning(f"SOA query to {server_ip} failed: {exc}")
+            logger.debug(f"SOA query to {server_ip}:53 failed: {type(exc).__name__}: {exc}")
             return False
 
     # ─────────────────────────────────────────────
