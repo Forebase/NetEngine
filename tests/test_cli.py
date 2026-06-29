@@ -1,6 +1,7 @@
 """CLI command tests."""
 
 import importlib
+import json
 import tomllib
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -51,6 +52,36 @@ def test_up_invokes_execute_phases_with_example_spec():
     assert spec_arg.metadata.name == "minimal-example"
     assert mock_orchestrator.execute_phases.await_count == 1
     assert mock_orchestrator.execute_phases.call_args.kwargs["up_to_phase"] == 9
+
+
+def test_up_mock_minimal_bootstrap_records_completed_runtime_state(tmp_path: Path):
+    """The documented mock smoke path should complete phases without local state writes."""
+    spec_file = Path(__file__).parent.parent / "examples" / "minimal.yaml"
+    state_file = tmp_path / "mock-bootstrap-state.json"
+
+    result = CliRunner().invoke(
+        cli_main.cli,
+        ["up", str(spec_file)],
+        env={
+            "NETENGINE_MOCK": "true",
+            "NETENGINE_STATE_FILE": str(state_file),
+        },
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "World bootstrapped." in result.output
+    assert state_file.exists()
+
+    state = json.loads(state_file.read_text())
+    assert state["phase_completed"] == {str(phase): True for phase in range(10)}
+    assert state["world_spec"]["metadata"]["name"] == "minimal-example"
+    assert state["identity_platform_output"]["keycloak_container_id"] == "mock-keycloak-platform"
+    assert state["world_registry_output"]["seeded"] is True
+    assert state["domain_registry_output"]["address_pools_seeded"] is True
+    assert state["identity_inworld_output"]["status"] == "mocked"
+    assert state["ands_output"]["status"] == "mocked"
+    assert state["world_services_output"]["status"] == "mocked"
+    assert state["org_apps_output"]["status"] == "mocked"
 
 
 def test_up_migration_failure_prevents_orchestrator_startup():

@@ -1,4 +1,5 @@
 import os
+from datetime import UTC, datetime
 from typing import Any, Callable, Optional
 
 from pydantic import ValidationError
@@ -159,12 +160,15 @@ class Orchestrator:
             if on_phase_start:
                 on_phase_start(phase_num, phase_name)
             try:
-                with record_phase(phase_num):
-                    await handler.execute(self.context)
+                if self.mock_mode and phase_num >= 4:
+                    self._record_mock_phase_output(phase_num)
+                else:
+                    with record_phase(phase_num):
+                        await handler.execute(self.context)
 
-                if not await handler.healthcheck(self.context):
-                    record_healthcheck_failure(phase_num)
-                    raise RuntimeError(f"Phase {phase_num} healthcheck failed")
+                    if not await handler.healthcheck(self.context):
+                        record_healthcheck_failure(phase_num)
+                        raise RuntimeError(f"Phase {phase_num} healthcheck failed")
 
                 self._mark_phase_complete(phase_num, handler)
                 self.runtime_state.save()
@@ -180,6 +184,64 @@ class Orchestrator:
                 if on_phase_error:
                     on_phase_error(phase_num, phase_name, e)
                 raise
+
+    def _record_mock_phase_output(self, phase_num: int) -> None:
+        """Record deterministic outputs for side-effectful phases in mock mode."""
+        deployed_at = datetime.now(UTC).isoformat()
+        if phase_num == 4:
+            self.runtime_state.bootstrap_admin_password = (
+                self.runtime_state.bootstrap_admin_password or "mock-bootstrap-admin-password"
+            )
+            self.runtime_state.keycloak_platform_container_id = "mock-keycloak-platform"
+            self.runtime_state.platform_realm_id = "mock-platform-realm"
+            self.runtime_state.admin_user_id = "mock-admin-user"
+            self.runtime_state.platform_client_id = "mock-platform-client"
+            self.runtime_state.platform_client_auth_id = "platform-api"
+            self.runtime_state.platform_client_secret = "mock-platform-client-secret"
+            self.runtime_state.identity_platform_output = {
+                "keycloak_container_id": "mock-keycloak-platform",
+                "platform_realm_id": "mock-platform-realm",
+                "admin_user_id": "mock-admin-user",
+                "platform_client_id": "mock-platform-client",
+                "platform_client_auth_id": "platform-api",
+                "platform_client_secret": "mock-platform-client-secret",
+                "deployed_at": deployed_at,
+            }
+        elif phase_num == 5:
+            self.runtime_state.world_registry_output = {
+                "seeded": True,
+                "deployed_at": deployed_at,
+            }
+            self.runtime_state.domain_registry_output = {
+                "address_pools_seeded": True,
+                "tld_delegations": [tld.model_dump() for tld in self.spec.dns.tlds],
+                "deployed_at": deployed_at,
+            }
+        elif phase_num == 6:
+            self.runtime_state.inworld_keycloak_container_id = "mock-keycloak-inworld"
+            self.runtime_state.identity_inworld_output = {
+                "status": "mocked",
+                "healthy": True,
+                "deployed_at": deployed_at,
+            }
+        elif phase_num == 7:
+            self.runtime_state.ands_output = {
+                "status": "mocked",
+                "healthy": True,
+                "deployed_at": deployed_at,
+            }
+        elif phase_num == 8:
+            self.runtime_state.world_services_output = {
+                "status": "mocked",
+                "healthy": True,
+                "deployed_at": deployed_at,
+            }
+        elif phase_num == 9:
+            self.runtime_state.org_apps_output = {
+                "status": "mocked",
+                "healthy": True,
+                "deployed_at": deployed_at,
+            }
 
     async def start_consumers(self) -> None:
         """Start all registered background consumer tasks."""
