@@ -204,6 +204,79 @@ class TestDNSHandler:
 
         assert skip is False
 
+    async def test_root_zone_file_has_ns_delegation_per_tld(
+        self, phase_context: PhaseContext
+    ) -> None:
+        """Root zone file must include an NS delegation record for each TLD in the spec."""
+        handler = DNSHandler()
+        await handler.execute(phase_context)
+
+        root_zone_file = phase_context.runtime_state.dns_output["zone_files"]["root.internal"]
+        for tld in phase_context.spec.dns.tlds:
+            assert (
+                f"{tld.name}. NS" in root_zone_file
+            ), f"Root zone file missing NS delegation for TLD '{tld.name}'"
+
+    async def test_root_zone_file_has_glue_record_per_tld(
+        self, phase_context: PhaseContext
+    ) -> None:
+        """Root zone file must include a glue A record for each TLD nameserver."""
+        handler = DNSHandler()
+        await handler.execute(phase_context)
+
+        root_zone_file = phase_context.runtime_state.dns_output["zone_files"]["root.internal"]
+        for tld in phase_context.spec.dns.tlds:
+            tld_config = phase_context.runtime_state.dns_output["tlds"][tld.name]
+            assert tld_config["listen_ip"] in root_zone_file, (
+                f"Root zone file missing glue A record for TLD '{tld.name}' "
+                f"(expected IP {tld_config['listen_ip']})"
+            )
+
+    async def test_root_zone_file_has_platform_delegation(
+        self, phase_context: PhaseContext
+    ) -> None:
+        """Root zone file must delegate platform.internal to the platform nameserver."""
+        handler = DNSHandler()
+        await handler.execute(phase_context)
+
+        root_zone_file = phase_context.runtime_state.dns_output["zone_files"]["root.internal"]
+        assert (
+            "platform.internal. 3600 IN NS" in root_zone_file
+        ), "Root zone file missing NS delegation for platform.internal"
+        platform_ip = phase_context.runtime_state.dns_output["platform_zone"]["listen_ip"]
+        assert (
+            platform_ip in root_zone_file
+        ), "Root zone file missing platform.internal glue A record"
+
+    async def test_tld_output_has_listen_ip_per_tld(self, phase_context: PhaseContext) -> None:
+        """Each TLD in dns_output must have a listen_ip matching its spec config."""
+        handler = DNSHandler()
+        await handler.execute(phase_context)
+
+        tlds_output = phase_context.runtime_state.dns_output["tlds"]
+        for tld in phase_context.spec.dns.tlds:
+            assert tld.name in tlds_output, f"TLD '{tld.name}' missing from dns_output['tlds']"
+            assert tlds_output[tld.name]["listen_ip"] == tld.listen_ip, (
+                f"TLD '{tld.name}' listen_ip mismatch: "
+                f"expected {tld.listen_ip}, got {tlds_output[tld.name]['listen_ip']}"
+            )
+
+    async def test_tld_zone_files_have_correct_soa_and_ns(
+        self, phase_context: PhaseContext
+    ) -> None:
+        """Each TLD must have its own zone file with SOA and NS records."""
+        handler = DNSHandler()
+        await handler.execute(phase_context)
+
+        zone_files = phase_context.runtime_state.dns_output["zone_files"]
+        for tld in phase_context.spec.dns.tlds:
+            assert tld.name in zone_files, f"Zone file missing for TLD '{tld.name}'"
+            content = zone_files[tld.name]
+            assert "SOA" in content, f"TLD zone '{tld.name}' missing SOA record"
+            assert (
+                f"{tld.name}. 3600 IN NS" in content
+            ), f"TLD zone '{tld.name}' missing self NS record"
+
 
 class TestSubstrateAndDNSIntegration:
     """Integration tests for M1: Substrate → DNS execution order."""
