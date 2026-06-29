@@ -62,7 +62,7 @@ def _queue_name(row: object) -> str | None:
 
 async def _inspect_database(db_url: str, *, timeout: float) -> list[DoctorCheckResult]:
     try:
-        import asyncpg  # type: ignore[import]
+        import asyncpg  # type: ignore[import-untyped]
     except ImportError:
         return [
             DoctorCheckResult(
