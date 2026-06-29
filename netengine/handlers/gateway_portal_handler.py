@@ -11,6 +11,7 @@ This is a boundary handler, not a numbered phase. It is invoked after Phase 7
 """
 
 import os
+import re
 from datetime import datetime
 from typing import Any
 
@@ -57,7 +58,9 @@ class GatewayPortalHandler(BasePhaseHandler):
             }
             context.runtime_state.save()
             await self._emit_event(
-                context, "gateway_portal.ready", context.runtime_state.gateway_portal_output
+                context,
+                "gateway_portal.ready",
+                context.runtime_state.gateway_portal_output,
             )
             return
 
@@ -72,7 +75,9 @@ class GatewayPortalHandler(BasePhaseHandler):
         internet_output = await self._apply_internet_policy(context, gateway, portal)
 
         # ── Cross-World Federation ──────────────────────────────────────────
-        federation_output = await self._apply_cross_world(context, gateway, docker, portal)
+        federation_output = await self._apply_cross_world(
+            context, gateway, docker, portal
+        )
 
         # ── Persist ────────────────────────────────────────────────────────
         context.runtime_state.gateway_portal_output = {
@@ -82,6 +87,7 @@ class GatewayPortalHandler(BasePhaseHandler):
             "peer_count": len(portal.cross_world.peers),
             "internet": internet_output,
             "federation": federation_output,
+            "peer_artifacts": federation_output.get("peers", []),
             "deployed_at": datetime.utcnow().isoformat(),
         }
         context.runtime_state.save()
@@ -94,7 +100,54 @@ class GatewayPortalHandler(BasePhaseHandler):
         context.logger.info("Gateway portal policies applied")
 
     async def healthcheck(self, context: PhaseContext) -> bool:
-        return context.runtime_state.gateway_portal_output is not None
+        output = context.runtime_state.gateway_portal_output
+        if output is None:
+            return False
+        if not output.get("enabled", True) or output.get("mock"):
+            return True
+        if context.docker_client is None:
+            return False
+
+        gateway = GatewayHandler(context.docker_client)
+        checks: dict[str, Any] = {
+            "gateway_reachable": await gateway.gateway_reachable()
+        }
+        if not checks["gateway_reachable"]:
+            output["healthchecks"] = checks
+            return False
+
+        internet_mode = output.get("internet_mode")
+        if internet_mode and internet_mode != GatewayRealInternetMode.CUSTOM.value:
+            checks["internet_nft_table"] = await gateway.nft_table_exists(
+                "inet", "netengine_internet"
+            )
+
+        peers = output.get("peer_artifacts", [])
+        peer_checks = []
+        for peer in peers:
+            peer_check = {"name": peer.get("name")}
+            peer_check["nft_table"] = await gateway.nft_table_exists(
+                "inet", peer.get("nft_table", f"netengine_peer_{peer.get('name')}")
+            )
+            trust_anchor_path = peer.get("trust_anchor_path")
+            peer_check["trust_anchor"] = (
+                True
+                if not trust_anchor_path
+                else await gateway.path_exists(trust_anchor_path)
+            )
+            peer_check["dns_stub"] = self._corefile_contains_stub(context, peer)
+            endpoint_status = await gateway.peer_endpoint_reachable(
+                peer.get("endpoint", "")
+            )
+            if endpoint_status is not None:
+                peer_check["endpoint_reachable"] = endpoint_status
+            peer_checks.append(peer_check)
+        checks["peers"] = peer_checks
+        output["healthchecks"] = checks
+        return all(v is True for k, v in checks.items() if k != "peers") and all(
+            all(value is True for key, value in peer.items() if key != "name")
+            for peer in peer_checks
+        )
 
     async def should_skip(self, context: PhaseContext) -> bool:
         return context.runtime_state.gateway_portal_output is not None
@@ -123,7 +176,9 @@ class GatewayPortalHandler(BasePhaseHandler):
         output: dict[str, Any] = {"mode": config.mode.value}
 
         if config.upstream_resolver_enabled and config.upstream_resolver_ip:
-            await self._configure_upstream_resolver(context, config.upstream_resolver_ip)
+            await self._configure_upstream_resolver(
+                context, config.upstream_resolver_ip
+            )
             output["upstream_resolver"] = config.upstream_resolver_ip
 
         if config.mode == GatewayRealInternetMode.MIRRORED and config.service_mirrors:
@@ -134,7 +189,9 @@ class GatewayPortalHandler(BasePhaseHandler):
 
         return output
 
-    async def _configure_upstream_resolver(self, context: PhaseContext, resolver_ip: str) -> None:
+    async def _configure_upstream_resolver(
+        self, context: PhaseContext, resolver_ip: str
+    ) -> None:
         """Inject an upstream forwarder into the CoreDNS root Corefile.
 
         Adds a ``forward . <resolver_ip>`` directive so that names not
@@ -148,7 +205,8 @@ class GatewayPortalHandler(BasePhaseHandler):
 
         try:
             corefile_patch = (
-                f"\n# Upstream internet resolver (gateway portal)\n" f"forward . {resolver_ip}\n"
+                f"\n# Upstream internet resolver (gateway portal)\n"
+                f"forward . {resolver_ip}\n"
             )
             corefile_path = os.path.join(context.zone_dir, "Corefile")
             with open(corefile_path, "a") as f:
@@ -176,12 +234,13 @@ class GatewayPortalHandler(BasePhaseHandler):
             return {"mode": GatewayCrossWorldMode.NONE.value, "peers": []}
 
         context.logger.info(
-            f"Cross-world mode: {cross_world.mode.value} " f"({len(cross_world.peers)} peer(s))"
+            f"Cross-world mode: {cross_world.mode.value} "
+            f"({len(cross_world.peers)} peer(s))"
         )
 
         peers_output = []
         for peer in cross_world.peers:
-            peer_result = await self._setup_peer(context, gateway, docker, peer)
+            peer_result = await self.add_peer(context, gateway, docker, peer)
             peers_output.append(peer_result)
 
         return {
@@ -189,54 +248,129 @@ class GatewayPortalHandler(BasePhaseHandler):
             "peers": peers_output,
         }
 
-    async def _setup_peer(
+    async def add_peer(
         self,
         context: PhaseContext,
         gateway: GatewayHandler,
         docker: DockerAdapterProtocol,
         peer: CrossWorldPeer,
     ) -> dict[str, Any]:
+        """Explicit lifecycle operation to add a peer with rollback on failure."""
+        return await self._setup_peer(
+            context, gateway, docker, peer, rollback_on_failure=True
+        )
+
+    async def update_peer(
+        self,
+        context: PhaseContext,
+        gateway: GatewayHandler,
+        docker: DockerAdapterProtocol,
+        peer: CrossWorldPeer,
+    ) -> dict[str, Any]:
+        """Replace a peer's installed artifacts with the supplied definition."""
+        await self.remove_peer(context, gateway, peer.name)
+        return await self.add_peer(context, gateway, docker, peer)
+
+    async def remove_peer(
+        self, context: PhaseContext, gateway: GatewayHandler, peer_name: str
+    ) -> None:
+        """Explicit lifecycle operation to remove routing, trust, and DNS artifacts."""
+        await gateway.remove_peer_routing(peer_name)
+        if context.docker_client is not None:
+            await context.docker_client.exec_command(
+                "netengine_gateway",
+                ["rm", "-f", self._trust_anchor_path(peer_name)],
+            )
+            await context.docker_client.exec_command(
+                "netengine_gateway", ["update-ca-certificates"]
+            )
+        self._remove_peer_dns(context, peer_name)
+        self._drop_peer_artifact(context, peer_name)
+
+    async def rotate_trust_anchor(
+        self,
+        context: PhaseContext,
+        docker: DockerAdapterProtocol,
+        peer_name: str,
+        cert_pem: str,
+    ) -> dict[str, Any]:
+        """Explicit lifecycle operation to rotate an installed peer trust anchor."""
+        await self._install_trust_anchor(context, docker, peer_name, cert_pem)
+        artifact = self._upsert_peer_artifact(context, {"name": peer_name})
+        artifact["trust_anchor_path"] = self._trust_anchor_path(peer_name)
+        artifact["trust_anchor_installed_at"] = datetime.utcnow().isoformat()
+        context.runtime_state.save()
+        return artifact
+
+    async def reapply_routing_after_gateway_restart(
+        self, context: PhaseContext, gateway: GatewayHandler
+    ) -> None:
+        """Reload persisted peer routing rule files after gateway restart."""
+        output = context.runtime_state.gateway_portal_output or {}
+        await gateway.reapply_peer_routing(output.get("peer_artifacts", []))
+
+    async def _setup_peer(
+        self,
+        context: PhaseContext,
+        gateway: GatewayHandler,
+        docker: DockerAdapterProtocol,
+        peer: CrossWorldPeer,
+        rollback_on_failure: bool = False,
+    ) -> dict[str, Any]:
         """Wire up a single cross-world peer: trust anchor + routing + DNS."""
-        context.logger.info(f"Setting up cross-world peer: {peer.name} ({peer.endpoint})")
-        result: dict[str, Any] = {
+        context.logger.info(
+            f"Setting up cross-world peer: {peer.name} ({peer.endpoint})"
+        )
+        peer_ip = peer.endpoint.split(":")[0]
+        artifact = {
             "name": peer.name,
             "endpoint": peer.endpoint,
             "mode": peer.mode.value,
+            "nft_table": f"netengine_peer_{self._safe_peer_name(peer.name)}",
+            "routing_rules_path": f"/etc/nftables/rules/peer_{self._safe_peer_name(peer.name)}.nft",
+            "dns_zone": f"{peer.name}.internal",
+            "dns_forwarder": f"{peer_ip}:53",
+            "trust_anchor_path": self._trust_anchor_path(peer.name)
+            if peer.trust_anchor_cert
+            else None,
+            "installed_at": datetime.utcnow().isoformat(),
+            "trust_anchor_installed": False,
+            "routing_configured": False,
+            "dns_forwarding_configured": False,
         }
-
-        # 1. Install trust anchor certificate
-        if peer.trust_anchor_cert:
-            try:
-                await self._install_trust_anchor(context, docker, peer.name, peer.trust_anchor_cert)
-                result["trust_anchor_installed"] = True
-            except Exception as exc:
-                context.logger.warning(f"Trust anchor install failed for peer {peer.name}: {exc}")
-                result["trust_anchor_installed"] = False
-                result["trust_anchor_error"] = str(exc)
-        else:
-            result["trust_anchor_installed"] = False
-
-        # 2. Configure nftables routing to peer endpoint
+        completed: list[str] = []
         try:
-            # Extract host from endpoint (strip port if present)
-            peer_ip = peer.endpoint.split(":")[0]
+            if peer.trust_anchor_cert:
+                await self._install_trust_anchor(
+                    context, docker, peer.name, peer.trust_anchor_cert
+                )
+                completed.append("trust_anchor")
+                artifact["trust_anchor_installed"] = True
+            else:
+                artifact["trust_anchor_installed"] = False
+
             await gateway.apply_peer_routing(peer.name, peer_ip)
-            result["routing_configured"] = True
-        except GatewayError as exc:
-            context.logger.warning(f"Peer routing failed for {peer.name}: {exc}")
-            result["routing_configured"] = False
-            result["routing_error"] = str(exc)
+            completed.append("routing")
+            artifact["routing_configured"] = True
 
-        # 3. Configure DNS forwarding for peer domains
-        try:
             await self._configure_peer_dns(context, peer)
-            result["dns_forwarding_configured"] = True
+            completed.append("dns")
+            artifact["dns_forwarding_configured"] = True
+            self._upsert_peer_artifact(context, artifact)
+            return artifact
         except Exception as exc:
-            context.logger.warning(f"Peer DNS forwarding failed for {peer.name}: {exc}")
-            result["dns_forwarding_configured"] = False
-            result["dns_error"] = str(exc)
-
-        return result
+            context.logger.warning(f"Peer setup failed for {peer.name}: {exc}")
+            if rollback_on_failure:
+                await self._rollback_peer_setup(
+                    context, gateway, docker, peer.name, completed
+                )
+            artifact["error"] = str(exc)
+            if "routing" not in completed:
+                artifact["routing_error"] = str(exc)
+            elif "dns" not in completed:
+                artifact["dns_error"] = str(exc)
+            artifact["rolled_back"] = rollback_on_failure
+            return artifact
 
     async def _install_trust_anchor(
         self,
@@ -258,7 +392,7 @@ class GatewayPortalHandler(BasePhaseHandler):
             f.write(cert_pem)
             tmp_path = f.name
         try:
-            dest_path = f"/usr/local/share/ca-certificates/peer_{peer_name}.crt"
+            dest_path = self._trust_anchor_path(peer_name)
             await docker.copy_to_container("netengine_gateway", tmp_path, dest_path)
         finally:
             os.unlink(tmp_path)
@@ -267,11 +401,15 @@ class GatewayPortalHandler(BasePhaseHandler):
             "netengine_gateway", ["update-ca-certificates"]
         )
         if exit_code != 0:
-            raise PKIError(f"update-ca-certificates failed for peer {peer_name}: {output}")
+            raise PKIError(
+                f"update-ca-certificates failed for peer {peer_name}: {output}"
+            )
 
         context.logger.info(f"Trust anchor installed for peer: {peer_name}")
 
-    async def _configure_peer_dns(self, context: PhaseContext, peer: CrossWorldPeer) -> None:
+    async def _configure_peer_dns(
+        self, context: PhaseContext, peer: CrossWorldPeer
+    ) -> None:
         """Add a CoreDNS forwarding zone for the peer world's TLD.
 
         Derives the peer TLD from ``<peer.name>.internal`` and adds a
@@ -298,11 +436,92 @@ class GatewayPortalHandler(BasePhaseHandler):
             with open(corefile_path, "a") as f:
                 f.write(corefile_stub)
         except OSError as exc:
-            raise GatewayError(f"Could not append to Corefile at {corefile_path}: {exc}") from exc
+            raise GatewayError(
+                f"Could not append to Corefile at {corefile_path}: {exc}"
+            ) from exc
 
         # Signal CoreDNS to reload config via Docker daemon (no shell required)
         await context.docker_client.signal_container("netengine_coredns", "HUP")
         context.logger.info(f"DNS forwarding configured for peer TLD: {peer_tld}")
+
+    def _safe_peer_name(self, peer_name: str) -> str:
+        return re.sub(r"[^A-Za-z0-9_.-]", "_", peer_name)
+
+    def _trust_anchor_path(self, peer_name: str) -> str:
+        return f"/usr/local/share/ca-certificates/peer_{self._safe_peer_name(peer_name)}.crt"
+
+    def _upsert_peer_artifact(
+        self, context: PhaseContext, artifact: dict[str, Any]
+    ) -> dict[str, Any]:
+        output = context.runtime_state.gateway_portal_output or {}
+        artifacts = list(output.get("peer_artifacts", []))
+        artifacts = [p for p in artifacts if p.get("name") != artifact.get("name")]
+        artifacts.append(artifact)
+        output["peer_artifacts"] = artifacts
+        context.runtime_state.gateway_portal_output = output
+        context.runtime_state.save()
+        return artifact
+
+    def _drop_peer_artifact(self, context: PhaseContext, peer_name: str) -> None:
+        output = context.runtime_state.gateway_portal_output or {}
+        output["peer_artifacts"] = [
+            p for p in output.get("peer_artifacts", []) if p.get("name") != peer_name
+        ]
+        context.runtime_state.gateway_portal_output = output
+        context.runtime_state.save()
+
+    async def _rollback_peer_setup(
+        self,
+        context: PhaseContext,
+        gateway: GatewayHandler,
+        docker: DockerAdapterProtocol,
+        peer_name: str,
+        completed: list[str],
+    ) -> None:
+        if "dns" in completed:
+            self._remove_peer_dns(context, peer_name)
+        if "routing" in completed:
+            try:
+                await gateway.remove_peer_routing(peer_name)
+            except Exception as exc:
+                context.logger.warning(
+                    f"Peer routing rollback failed for {peer_name}: {exc}"
+                )
+        if "trust_anchor" in completed:
+            await docker.exec_command(
+                "netengine_gateway", ["rm", "-f", self._trust_anchor_path(peer_name)]
+            )
+            await docker.exec_command("netengine_gateway", ["update-ca-certificates"])
+        self._drop_peer_artifact(context, peer_name)
+
+    def _remove_peer_dns(self, context: PhaseContext, peer_name: str) -> None:
+        corefile_path = os.path.join(context.zone_dir, "Corefile")
+        try:
+            text = open(corefile_path).read()
+        except OSError:
+            return
+        pattern = re.compile(
+            rf"\n?# Cross-world peer: {re.escape(peer_name)}\n{re.escape(peer_name)}\.internal \{{\n    forward \. [^\n]+\n\}}\n?",
+            re.MULTILINE,
+        )
+        new_text = pattern.sub("\n", text)
+        if new_text != text:
+            with open(corefile_path, "w") as f:
+                f.write(new_text)
+        if context.docker_client is not None:
+            # Fire-and-forget is not possible in this sync helper; callers also reload on add.
+            pass
+
+    def _corefile_contains_stub(
+        self, context: PhaseContext, peer: dict[str, Any]
+    ) -> bool:
+        try:
+            text = open(os.path.join(context.zone_dir, "Corefile")).read()
+        except OSError:
+            return False
+        return (
+            peer.get("dns_zone", "") in text and peer.get("dns_forwarder", "") in text
+        )
 
     # ─────────────────────────────────────────────
     # Event emission
