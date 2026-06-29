@@ -65,13 +65,11 @@ def migration_checksum(sql: str) -> str:
 
 def postgres_allows_transaction(sql: str) -> bool:
     """Return False for common PostgreSQL operations forbidden in transaction blocks."""
-
     return not any(pattern.search(sql) for pattern in NON_TRANSACTIONAL_PATTERNS)
 
 
 def split_sql_statements(sql: str) -> list[str]:
     """Split SQL on semicolons while preserving quoted and dollar-quoted bodies."""
-
     statements: list[str] = []
     start = 0
     i = 0

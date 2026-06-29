@@ -131,7 +131,7 @@ async def run_migrations(
     migrations_dir: Path | str = MIGRATIONS_DIR,
 ) -> MigrationRunResult:
     """Apply all pending SQL migrations and return structured outcomes."""
-    import asyncpg
+    import asyncpg  # type: ignore[import-untyped]
 
     resolved_dir = Path(migrations_dir)
     migration_files = discover_migrations(resolved_dir)

@@ -316,6 +316,93 @@ def _docker_names(kind: str) -> set[str]:
     )
 
 
+def _check_docker_subnet_conflicts(ctx: DoctorContext) -> DoctorCheckResult:
+    """Warn if any existing Docker network subnets overlap with NetEngine's configured subnets."""
+    compose_config = _compose_config(ctx.project_root)
+    ne_subnets: list[str] = []
+    for network_cfg in (compose_config.get("networks") or {}).values():
+        if isinstance(network_cfg, dict):
+            for ipam_config in (network_cfg.get("ipam") or {}).get("config") or []:
+                if isinstance(ipam_config, dict) and "subnet" in ipam_config:
+                    ne_subnets.append(ipam_config["subnet"])
+
+    if not ne_subnets:
+        return DoctorCheckResult(
+            "Docker subnet conflicts",
+            DoctorStatus.SKIP,
+            "no subnets defined in compose config",
+            group="docker",
+            required=False,
+        )
+
+    try:
+        import ipaddress
+
+        result = _run(["docker", "network", "ls", "-q"])
+        if result.returncode != 0 or not result.stdout.strip():
+            return DoctorCheckResult(
+                "Docker subnet conflicts",
+                DoctorStatus.OK,
+                "no existing Docker networks to check",
+                group="docker",
+            )
+        network_ids = result.stdout.split()
+        inspect_result = _run(["docker", "network", "inspect"] + network_ids)
+        if inspect_result.returncode != 0:
+            return DoctorCheckResult(
+                "Docker subnet conflicts",
+                DoctorStatus.WARN,
+                "could not inspect Docker networks",
+                "Run `docker network ls` manually to check for subnet conflicts.",
+                "docker",
+                required=False,
+            )
+
+        import json as _json
+
+        networks = _json.loads(inspect_result.stdout)
+        ne_networks = [ipaddress.ip_network(s, strict=False) for s in ne_subnets]
+        conflicts: list[str] = []
+        for network in networks:
+            name = network.get("Name", "unknown")
+            for ipam_config in (network.get("IPAM") or {}).get("Config") or []:
+                subnet_str = ipam_config.get("Subnet")
+                if not subnet_str:
+                    continue
+                try:
+                    existing = ipaddress.ip_network(subnet_str, strict=False)
+                except ValueError:
+                    continue
+                for ne_net in ne_networks:
+                    if existing.overlaps(ne_net):
+                        conflicts.append(f"{name} ({subnet_str}) overlaps {ne_net}")
+
+        if conflicts:
+            return DoctorCheckResult(
+                "Docker subnet conflicts",
+                DoctorStatus.WARN,
+                "; ".join(conflicts),
+                "Remove conflicting networks with `docker network rm <name>` or `docker network prune`.",
+                "docker",
+                required=False,
+            )
+        return DoctorCheckResult(
+            "Docker subnet conflicts",
+            DoctorStatus.OK,
+            f"no conflicts with {', '.join(ne_subnets)}",
+            group="docker",
+        )
+    except Exception as exc:
+        return DoctorCheckResult(
+            "Docker subnet conflicts",
+            DoctorStatus.WARN,
+            f"subnet conflict check failed: {exc}",
+            "Run `docker network ls` manually to check for subnet conflicts.",
+            "docker",
+            required=False,
+        )
+
+
 def _check_docker_conflicts(ctx: DoctorContext) -> list[DoctorCheckResult]:
     _, containers, volumes, networks = _compose_ports_and_resources(ctx.project_root)
     checks = []
@@ -421,6 +508,7 @@ def standard_probes() -> tuple[DoctorProbe, ...]:
         _check_ports,
         _check_filesystem,
         _check_docker_conflicts,
+        lambda ctx: _check_docker_subnet_conflicts(ctx),
     )
 
 
