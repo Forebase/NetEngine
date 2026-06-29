@@ -35,7 +35,7 @@ class _FakePGMQClient:
 
 def _client(monkeypatch) -> TestClient:
     async def operator_user():
-        return {"sub": "operator"}
+        return {"sub": "operator", "roles": ["admin"]}
 
     app.dependency_overrides[require_auth] = operator_user
     monkeypatch.setattr("netengine.core.pgmq_client.PGMQClient", _FakePGMQClient)

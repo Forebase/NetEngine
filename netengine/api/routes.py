@@ -123,7 +123,7 @@ class ReloadRequest(BaseModel):
 
 
 @router.post("/reload")
-async def reload_world(body: ReloadRequest, user: dict = Depends(require_auth)) -> dict[str, Any]:
+async def reload_world(body: ReloadRequest, user: dict = Depends(require_admin)) -> dict[str, Any]:
     """Diff a new spec against the running world and apply changes in dep order.
 
     Rejects entirely if any immutable field changed.
@@ -182,7 +182,7 @@ class WorldTeardownRequest(BaseModel):
 
 @router.delete("/world")
 async def teardown_world(
-    body: WorldTeardownRequest, user: dict = Depends(require_auth)
+    body: WorldTeardownRequest, user: dict = Depends(require_admin)
 ) -> dict[str, Any]:
     """Tear down the running world.
 
@@ -259,7 +259,7 @@ class ServiceToggleRequest(BaseModel):
 
 @router.put("/services/{name}")
 async def update_service(
-    name: str, body: ServiceToggleRequest, user: dict = Depends(require_auth)
+    name: str, body: ServiceToggleRequest, user: dict = Depends(require_admin)
 ) -> dict[str, Any]:
     """Enable or disable a named world service (mail, storage) in the spec."""
     state = RuntimeState.load()
@@ -334,7 +334,7 @@ async def get_org(org: str, user: dict = Depends(require_auth)) -> Any:
 
 
 @router.post("/orgs")
-async def admit_org(body: OrgAdmitRequest, user: dict = Depends(require_auth)) -> dict[str, Any]:
+async def admit_org(body: OrgAdmitRequest, user: dict = Depends(require_admin)) -> dict[str, Any]:
     """Admit a new organisation to the world registry and trigger provisioning."""
     from netengine.handlers.world_registry_handler import WorldRegistryHandler
 
@@ -354,7 +354,7 @@ class OrgUpdateRequest(BaseModel):
 
 @router.put("/orgs/{org}")
 async def update_org(
-    org: str, body: OrgUpdateRequest, user: dict = Depends(require_auth)
+    org: str, body: OrgUpdateRequest, user: dict = Depends(require_admin)
 ) -> dict[str, Any]:
     """Update an organisation's capabilities and AND profile."""
     from netengine.handlers.world_registry_handler import WorldRegistryHandler
@@ -373,7 +373,7 @@ class OrgRemoveRequest(BaseModel):
 
 @router.delete("/orgs/{org}")
 async def remove_org(
-    org: str, body: OrgRemoveRequest, user: dict = Depends(require_auth)
+    org: str, body: OrgRemoveRequest, user: dict = Depends(require_admin)
 ) -> dict[str, Any]:
     """Remove an organisation from the world registry.
 
@@ -405,7 +405,7 @@ class AppDeployRequest(BaseModel):
 
 @router.post("/orgs/{org}/apps")
 async def deploy_app(
-    org: str, body: AppDeployRequest, user: dict = Depends(require_auth)
+    org: str, body: AppDeployRequest, user: dict = Depends(require_admin)
 ) -> dict[str, Any]:
     """Deploy a catalog app into an org's AND (container → DNS → cert → OIDC)."""
     from netengine.core.supabase_client import get_db
@@ -457,7 +457,7 @@ async def list_ands(user: dict = Depends(require_auth)) -> dict[str, Any]:
 
 
 @router.post("/ands")
-async def create_and(body: ANDCreateRequest, user: dict = Depends(require_auth)) -> dict[str, Any]:
+async def create_and(body: ANDCreateRequest, user: dict = Depends(require_admin)) -> dict[str, Any]:
     """Provision a new AND for an org."""
     from netengine.core.supabase_client import get_db
 
@@ -496,7 +496,7 @@ class ANDProfileUpdateRequest(BaseModel):
 
 @router.put("/ands/{and_name}/profile")
 async def update_and_profile(
-    and_name: str, body: ANDProfileUpdateRequest, user: dict = Depends(require_auth)
+    and_name: str, body: ANDProfileUpdateRequest, user: dict = Depends(require_admin)
 ) -> dict[str, Any]:
     """Update the profile (and optionally dns_suffix) of a provisioned AND instance."""
     state = RuntimeState.load()
@@ -528,7 +528,7 @@ async def update_and_profile(
 
 
 @router.delete("/ands/{and_name}")
-async def remove_and(and_name: str, user: dict = Depends(require_auth)) -> dict[str, Any]:
+async def remove_and(and_name: str, user: dict = Depends(require_admin)) -> dict[str, Any]:
     """Remove an AND instance."""
     from netengine.core.supabase_client import get_db
 
@@ -571,7 +571,7 @@ class DomainRegisterRequest(BaseModel):
 
 @router.post("/registry/domains")
 async def register_domain(
-    body: DomainRegisterRequest, user: dict = Depends(require_auth)
+    body: DomainRegisterRequest, user: dict = Depends(require_admin)
 ) -> dict[str, Any]:
     """Register a domain in the domain registry."""
     from netengine.core.supabase_client import get_db
@@ -588,7 +588,7 @@ async def register_domain(
 
 
 @router.delete("/registry/domains/{domain:path}")
-async def remove_domain(domain: str, user: dict = Depends(require_auth)) -> dict[str, Any]:
+async def remove_domain(domain: str, user: dict = Depends(require_admin)) -> dict[str, Any]:
     """Remove a domain from the domain registry."""
     from netengine.core.supabase_client import get_db
 
@@ -652,7 +652,7 @@ class GatewayUpdateRequest(BaseModel):
 
 @router.put("/gateway")
 async def update_gateway(
-    body: GatewayUpdateRequest, user: dict = Depends(require_auth)
+    body: GatewayUpdateRequest, user: dict = Depends(require_admin)
 ) -> dict[str, Any]:
     """Update gateway portal configuration in the running spec.
 
@@ -759,7 +759,7 @@ class PKIRotationPolicyUpdateRequest(BaseModel):
 
 @router.put("/pki/rotation-policy")
 async def update_pki_rotation_policy(
-    body: PKIRotationPolicyUpdateRequest, user: dict = Depends(require_auth)
+    body: PKIRotationPolicyUpdateRequest, user: dict = Depends(require_admin)
 ) -> dict[str, Any]:
     """Update PKI certificate rotation policy in the running spec.
 
@@ -861,7 +861,7 @@ async def get_queue_state(user: dict = Depends(require_auth)) -> dict[str, Any]:
 
 
 @router.post("/queues/{queue_name}/dlq/replay")
-async def replay_dlq(queue_name: str, user: dict = Depends(require_auth)) -> dict[str, Any]:
+async def replay_dlq(queue_name: str, user: dict = Depends(require_admin)) -> dict[str, Any]:
     """Move all messages from a DLQ back to the main queue for retry."""
     from netengine.core.pgmq_client import PGMQClient
 
