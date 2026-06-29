@@ -1,14 +1,20 @@
-from typing import Any, List, cast
+from typing import Any, List
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.events import factory as event_factory
 from netengine.events.queues import Queue
+from netengine.handlers.context import PhaseContext
+from netengine.handlers.protocols import PGMQAdapterProtocol
 
 
 class WorldRegistryHandler:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        pgmq: PGMQAdapterProtocol | None = None,
+        context: PhaseContext | None = None,
+    ) -> None:
         self._db = None
-        self.pgmq = PGMQClient()
+        self.pgmq = pgmq or (context.pgmq_client if context else None) or PGMQClient()
 
     async def _get_db(self) -> Any:
         if self._db is None:

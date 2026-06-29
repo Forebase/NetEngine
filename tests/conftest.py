@@ -220,7 +220,10 @@ def mock_pgmq_client() -> AsyncMock:
     """Mock pgmq client."""
     client = AsyncMock()
     client.send = AsyncMock()
-    client.read = AsyncMock(return_value=[])
+    client.receive = AsyncMock(return_value=None)
+    client.delete = AsyncMock()
+    client.read_by_id = AsyncMock(return_value=None)
+    client.archive_to_dlq = AsyncMock()
     return client
 
 

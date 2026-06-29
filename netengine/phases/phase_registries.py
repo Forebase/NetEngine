@@ -23,11 +23,13 @@ class RegistriesPhaseHandler(BasePhaseHandler):
         logger.info("Phase 5: Registries + event wiring")
 
         # 1. Seed World Registry
-        world = WorldRegistryHandler()
+        pgmq = context.pgmq_client or PGMQClient()
+        context.pgmq_client = pgmq
+        world = WorldRegistryHandler(pgmq=pgmq, context=context)
         await world.seed_from_spec(spec)
 
         # 2. Seed Domain Registry (address pools)
-        domain = DomainRegistryHandler()
+        domain = DomainRegistryHandler(pgmq=pgmq, context=context)
         await domain.seed_address_pools(spec)
 
         # 3. Start WHOIS server via ConsumerSupervisor so crashes are visible
@@ -94,7 +96,8 @@ class RegistriesPhaseHandler(BasePhaseHandler):
     async def _consume_dns_updates(self, context: PhaseContext) -> None:
         """pgmq consumer: domain.registered -> DNSHandler.add_zone_record."""
         logger = context.logger
-        pgmq = PGMQClient()
+        pgmq = context.pgmq_client or PGMQClient()
+        context.pgmq_client = pgmq
         dns = DNSHandler()
         while True:
             try:

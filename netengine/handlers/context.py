@@ -5,8 +5,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+from netengine.handlers.protocols import DockerAdapterProtocol, PGMQAdapterProtocol
+
 from netengine.core.state import RuntimeState
-from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.spec.models import NetEngineSpec
 
 if TYPE_CHECKING:
@@ -14,7 +15,6 @@ if TYPE_CHECKING:
     from supabase import AsyncClient as SupabaseClient
 
     from netengine.core.consumer_supervisor import ConsumerSupervisor
-    from netengine.core.pgmq_client import PGMQClient
 
 
 def default_zone_dir() -> str:
@@ -43,7 +43,7 @@ class PhaseContext:
     docker_client: Optional[DockerAdapterProtocol] = None
     kubernetes_client: Any = None
     supabase_client: Optional["SupabaseClient"] = None
-    pgmq_client: Optional["PGMQClient"] = None
+    pgmq_client: Optional[PGMQAdapterProtocol] = None
 
     # Background task supervisor — always present; handlers register long-running
     # consumers here rather than calling asyncio.create_task() directly.

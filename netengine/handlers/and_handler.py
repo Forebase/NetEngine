@@ -1,32 +1,39 @@
-import asyncio
 import ipaddress
-from typing import Any, Dict
+from typing import Any, cast
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.errors import ServicesError
+from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
+from netengine.handlers.protocols import DockerAdapterProtocol, PGMQAdapterProtocol
 from netengine.handlers.domain_registry_handler import DomainRegistryHandler
 from netengine.handlers.gateway_handler import GatewayHandler
-from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.logging import get_logger
+from netengine.spec.models import NetEngineSpec
 
 
 class ANDHandler:
-    def __init__(self, docker: DockerAdapterProtocol, state, context: PhaseContext | None = None):
+    def __init__(
+        self,
+        docker: DockerAdapterProtocol,
+        state: Any,
+        context: PhaseContext | None = None,
+        pgmq: PGMQAdapterProtocol | None = None,
+    ) -> None:
         self.context = context or PhaseContext(
-            spec={}, runtime_state=state, logger=get_logger(__name__)
+            spec=cast(NetEngineSpec, {}), runtime_state=state, logger=get_logger(__name__)
         )
         self.docker = docker
         self.state = state
-        self.domain_registry = DomainRegistryHandler()
+        self.domain_registry = DomainRegistryHandler(pgmq=pgmq, context=self.context)
         self.gateway = GatewayHandler(docker)
         self.dns = DNSHandler()
         self._db = None
-        self.pgmq = PGMQClient()
+        self.pgmq = pgmq or self.context.pgmq_client or PGMQClient()
 
-    async def _get_db(self):
+    async def _get_db(self) -> Any:
         if self._db is None:
             from netengine.core.supabase_client import get_db
 
@@ -72,7 +79,7 @@ class ANDHandler:
         ).execute()
         # 7. Emit event for downstream (could trigger service deployments)
         await self.pgmq.send(
-            "and_provisioned",
+            Queue.AND_PROVISIONING,
             EventEnvelope.create(
                 event_type="and.provisioned",
                 emitted_by="and_handler",

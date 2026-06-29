@@ -1,17 +1,16 @@
-import secrets
 from datetime import UTC, datetime
-from typing import Any, Dict
+from typing import Any, cast
 
 from netengine.core.pgmq_client import PGMQClient
 from netengine.errors import ServicesError
-from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
 from netengine.handlers.dns import DNSHandler
+from netengine.handlers.protocols import DockerAdapterProtocol, PGMQAdapterProtocol
 from netengine.handlers.oidc_handler import OIDCHandler
 from netengine.handlers.pki_handler import PKIHandler
-from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.logging import get_logger
+from netengine.spec.models import NetEngineSpec
 
 
 class AppHandler:
@@ -21,11 +20,12 @@ class AppHandler:
         dns: DNSHandler,
         pki: PKIHandler,
         oidc: OIDCHandler,
-        state,
+        state: Any,
         context: PhaseContext | None = None,
-    ):
+        pgmq: PGMQAdapterProtocol | None = None,
+    ) -> None:
         self.context = context or PhaseContext(
-            spec={}, runtime_state=state, logger=get_logger(__name__)
+            spec=cast(NetEngineSpec, {}), runtime_state=state, logger=get_logger(__name__)
         )
         self.docker = docker
         self.dns = dns
@@ -33,9 +33,9 @@ class AppHandler:
         self.oidc = oidc
         self.state = state
         self._db = None
-        self.pgmq = PGMQClient()
+        self.pgmq = pgmq or self.context.pgmq_client or PGMQClient()
 
-    async def _get_db(self):
+    async def _get_db(self) -> Any:
         if self._db is None:
             from netengine.core.supabase_client import get_db
 
@@ -43,8 +43,10 @@ class AppHandler:
         return self._db
 
     async def deploy_app(
-        self, org: str, app_name: str, subdomain: str, config: Dict[str, Any] = None
-    ) -> dict:
+        self, org: str, app_name: str, subdomain: str, config: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        if config is None:
+            config = {}
         """4‑step deployment: container → DNS → cert → OIDC."""
         # Step 1: Determine AND bridge for this org
         and_name = f"{org.replace('_', '-')}-net"
@@ -106,7 +108,9 @@ class AppHandler:
 
         return deployment
 
-    async def _start_app_container(self, name: str, image: str, network: str, config: dict) -> str:
+    async def _start_app_container(
+        self, name: str, image: str, network: str, config: dict[str, Any]
+    ) -> str:
         """Start a container on the given AND bridge."""
         # The container should not be attached to core – only to its AND.
         # We'll create it with no network, then attach.
@@ -193,11 +197,13 @@ class OrgAppsPhaseHandler(BasePhaseHandler):
         org_apps_spec = getattr(context.spec, "org_apps", None)
         if not org_apps_spec or not org_apps_spec.enabled:
             context.logger.info("Phase 9: org_apps not enabled, skipping deployments")
-            context.runtime_state.org_apps_output = {"deployments": []}
+            context.runtime_state.org_apps_output = cast(Any, {"deployments": []})
             return
 
         docker = context.docker_client
         dns = DNSHandler()
+        if docker is None:
+            raise ServicesError("docker_client is required for org app deployments")
         pki = PKIHandler(docker, context.runtime_state, context.spec)
         oidc = OIDCHandler(
             keycloak_url="https://auth.platform.internal",
@@ -206,14 +212,14 @@ class OrgAppsPhaseHandler(BasePhaseHandler):
         )
         handler = AppHandler(docker, dns, pki, oidc, context.runtime_state, context)
 
-        deployments = []
+        deployments: list[dict[str, Any]] = []
         for dep in org_apps_spec.deployments:
             subdomain = dep.subdomain or dep.app
             result = await handler.deploy_app(dep.org, dep.app, subdomain, {})
             deployments.append(result)
             context.logger.info(f"Phase 9: deployed {dep.app} for {dep.org} at {result['domain']}")
 
-        context.runtime_state.org_apps_output = {"deployments": deployments}
+        context.runtime_state.org_apps_output = cast(Any, {"deployments": deployments})
 
     async def healthcheck(self, context: PhaseContext) -> bool:
         return bool(context.runtime_state.org_apps_output)

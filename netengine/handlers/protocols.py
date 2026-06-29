@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
+from netengine.core.pgmq_client import PGMQMessage
+from netengine.events.queues import Queue
+from netengine.events.schema import EventEnvelope
+
 
 @runtime_checkable
 class DockerAdapterProtocol(Protocol):
@@ -57,3 +61,18 @@ class DockerAdapterProtocol(Protocol):
     async def copy_to_container(self, container_id: str, src_path: str, dest_path: str) -> None: ...
 
     async def signal_container(self, container_id: str, signal: str) -> None: ...
+
+
+@runtime_checkable
+class PGMQAdapterProtocol(Protocol):
+    """Async PGMQ operations consumed by NetEngine handlers and phases."""
+
+    async def send(self, queue_name: Queue, event: EventEnvelope) -> int: ...
+
+    async def receive(self, queue_name: Queue, timeout: int = 5) -> PGMQMessage | None: ...
+
+    async def delete(self, queue_name: Queue, msg_id: int) -> None: ...
+
+    async def read_by_id(self, queue_name: Queue, msg_id: int) -> PGMQMessage | None: ...
+
+    async def archive_to_dlq(self, queue_name: Queue, msg_id: int, reason: str) -> None: ...

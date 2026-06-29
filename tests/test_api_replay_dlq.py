@@ -20,11 +20,17 @@ class _FakePGMQClient:
         self.received_from.append(queue)
         return None
 
-    async def send(self, queue: Queue, envelope) -> None:
+    async def send(self, queue: Queue, envelope) -> int:
         raise AssertionError("send should not be called when the DLQ is empty")
 
     async def delete(self, queue: Queue, msg_id: int) -> None:
         raise AssertionError("delete should not be called when the DLQ is empty")
+
+    async def read_by_id(self, queue: Queue, msg_id: int):
+        return None
+
+    async def archive_to_dlq(self, queue: Queue, msg_id: int, reason: str) -> None:
+        raise AssertionError("archive_to_dlq should not be called when the DLQ is empty")
 
 
 def _client(monkeypatch) -> TestClient:
