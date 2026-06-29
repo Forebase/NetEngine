@@ -1,7 +1,6 @@
 """YAML spec loading and validation with OmegaConf composition support."""
 
 import ipaddress
-import netengine.logs as logs
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Optional
@@ -9,6 +8,7 @@ from typing import Any, Optional
 import yaml
 from pydantic import ValidationError
 
+import netengine.logs as logs
 from netengine.config.loader import ConfigLoader
 from netengine.spec.models import SUPPORTED_SPEC_SCHEMA_VERSIONS, NetEngineSpec
 from netengine.spec.types import GatewayRealInternetMode
@@ -188,6 +188,47 @@ def _cross_validate(spec: NetEngineSpec) -> None:
         )
 
 
+def validate_spec_data(
+    data: dict[str, Any], *, validate_feature_states: bool = True
+) -> NetEngineSpec:
+    """Validate already-composed spec data into a ``NetEngineSpec``.
+
+    Args:
+        data: Composed raw specification dictionary
+        validate_feature_states: Whether to enforce feature-state metadata
+
+    Returns:
+        Validated, immutable NetEngineSpec object
+
+    Raises:
+        SpecLoadError: If the composed spec data is invalid
+    """
+    if not isinstance(data, dict):
+        raise SpecLoadError("Spec must be a YAML object (dict)")
+
+    metadata = data.get("metadata")
+    if not isinstance(metadata, dict):
+        raise SpecLoadError("Spec metadata must be a YAML object (dict)")
+    schema_version = metadata.get("schema_version")
+    if schema_version is not None and schema_version not in SUPPORTED_SPEC_SCHEMA_VERSIONS:
+        supported = ", ".join(sorted(SUPPORTED_SPEC_SCHEMA_VERSIONS))
+        raise SpecLoadError(
+            f"Unsupported spec metadata.schema_version {schema_version!r}; "
+            f"supported versions: {supported}. Export with the older NetEngine version "
+            "or migrate the spec before booting this release."
+        )
+
+    try:
+        spec = NetEngineSpec(**data)
+    except ValidationError as e:
+        raise SpecLoadError(f"Spec validation failed: {e}")
+
+    _cross_validate(spec)
+    if validate_feature_states:
+        _validate_feature_states(spec)
+    return spec
+
+
 def load_spec(yaml_path: str | Path, *, validate_feature_states: bool = True) -> NetEngineSpec:
     """Load and validate a NetEngine YAML specification.
 
@@ -213,30 +254,7 @@ def load_spec(yaml_path: str | Path, *, validate_feature_states: bool = True) ->
     except IOError as e:
         raise SpecLoadError(f"Failed to read file: {e}")
 
-    if not isinstance(data, dict):
-        raise SpecLoadError("Spec must be a YAML object (dict)")
-
-    metadata = data.get("metadata")
-    if not isinstance(metadata, dict):
-        raise SpecLoadError("Spec metadata must be a YAML object (dict)")
-    schema_version = metadata.get("schema_version")
-    if schema_version is not None and schema_version not in SUPPORTED_SPEC_SCHEMA_VERSIONS:
-        supported = ", ".join(sorted(SUPPORTED_SPEC_SCHEMA_VERSIONS))
-        raise SpecLoadError(
-            f"Unsupported spec metadata.schema_version {schema_version!r}; "
-            f"supported versions: {supported}. Export with the older NetEngine version "
-            "or migrate the spec before booting this release."
-        )
-
-    try:
-        spec = NetEngineSpec(**data)
-    except ValidationError as e:
-        raise SpecLoadError(f"Spec validation failed: {e}")
-
-    _cross_validate(spec)
-    if validate_feature_states:
-        _validate_feature_states(spec)
-    return spec
+    return validate_spec_data(data, validate_feature_states=validate_feature_states)
 
 
 def load_spec_with_composition(
@@ -287,30 +305,7 @@ def load_spec_with_composition(
     except IOError as e:
         raise SpecLoadError(f"Failed to read file: {e}")
 
-    if not isinstance(data, dict):
-        raise SpecLoadError("Spec must be a YAML object (dict)")
-
-    metadata = data.get("metadata")
-    if not isinstance(metadata, dict):
-        raise SpecLoadError("Spec metadata must be a YAML object (dict)")
-    schema_version = metadata.get("schema_version")
-    if schema_version is not None and schema_version not in SUPPORTED_SPEC_SCHEMA_VERSIONS:
-        supported = ", ".join(sorted(SUPPORTED_SPEC_SCHEMA_VERSIONS))
-        raise SpecLoadError(
-            f"Unsupported spec metadata.schema_version {schema_version!r}; "
-            f"supported versions: {supported}. Export with the older NetEngine version "
-            "or migrate the spec before booting this release."
-        )
-
-    try:
-        spec = NetEngineSpec(**data)
-    except ValidationError as e:
-        raise SpecLoadError(f"Spec validation failed: {e}")
-
-    _cross_validate(spec)
-    if validate_feature_states:
-        _validate_feature_states(spec)
-    return spec
+    return validate_spec_data(data, validate_feature_states=validate_feature_states)
 
 
 def load_spec_with_environment(
@@ -359,27 +354,4 @@ def load_spec_with_environment(
     except IOError as e:
         raise SpecLoadError(f"Failed to read file: {e}")
 
-    if not isinstance(data, dict):
-        raise SpecLoadError("Spec must be a YAML object (dict)")
-
-    metadata = data.get("metadata")
-    if not isinstance(metadata, dict):
-        raise SpecLoadError("Spec metadata must be a YAML object (dict)")
-    schema_version = metadata.get("schema_version")
-    if schema_version is not None and schema_version not in SUPPORTED_SPEC_SCHEMA_VERSIONS:
-        supported = ", ".join(sorted(SUPPORTED_SPEC_SCHEMA_VERSIONS))
-        raise SpecLoadError(
-            f"Unsupported spec metadata.schema_version {schema_version!r}; "
-            f"supported versions: {supported}. Export with the older NetEngine version "
-            "or migrate the spec before booting this release."
-        )
-
-    try:
-        spec = NetEngineSpec(**data)
-    except ValidationError as e:
-        raise SpecLoadError(f"Spec validation failed: {e}")
-
-    _cross_validate(spec)
-    if validate_feature_states:
-        _validate_feature_states(spec)
-    return spec
+    return validate_spec_data(data, validate_feature_states=validate_feature_states)

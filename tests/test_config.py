@@ -15,6 +15,7 @@ from netengine.spec.loader import (
     load_spec_with_composition,
     load_spec_with_environment,
 )
+from netengine.spec.models import NetEngineSpec
 
 
 @pytest.fixture
@@ -209,6 +210,34 @@ class TestSpecConfig:
         spec = SpecConfig.load(base_spec_file)
         assert spec["metadata"]["name"] == "test-network"
 
+    def test_load_raw_returns_dict(self, base_spec_file: Path) -> None:
+        """Test explicit raw spec loading returns a dictionary."""
+        spec = SpecConfig.load_raw(base_spec_file)
+
+        assert isinstance(spec, dict)
+        assert spec["metadata"]["name"] == "test-network"
+
+    def test_load_validated_returns_netengine_spec(self, base_spec_file: Path) -> None:
+        """Test validated spec loading returns a NetEngineSpec."""
+        spec = SpecConfig.load_validated(base_spec_file)
+
+        assert isinstance(spec, NetEngineSpec)
+        assert spec.metadata.name == "test-network"
+
+    def test_load_validated_rejects_invalid_specs(self, base_spec_file: Path) -> None:
+        """Test validated spec loading rejects invalid composed specs."""
+        overrides = {
+            "substrate": {
+                "networks": {
+                    "platform": {"type": "bridge", "subnet": "10.0.0.0/8"},
+                    "core": {"type": "bridge", "subnet": "10.1.0.0/16"},
+                }
+            }
+        }
+
+        with pytest.raises(SpecLoadError, match="subnet overlap"):
+            SpecConfig.load_validated(base_spec_file, overrides=overrides)
+
     def test_load_with_base(self, base_spec_file: Path, prod_spec_file: Path) -> None:
         """Test loading spec with base composition."""
         spec = SpecConfig.load(prod_spec_file, base_path=base_spec_file)
@@ -229,6 +258,34 @@ class TestSpecConfig:
         assert spec["metadata"]["name"] == "test-network"
         # Dev spec sets environment field
         assert spec["metadata"].get("environment") == "dev"
+
+    def test_load_environment_variants_raw_returns_dict(
+        self, base_spec_file: Path, dev_spec_file: Path
+    ) -> None:
+        """Test explicit raw environment loading returns a dictionary."""
+        spec = SpecConfig.load_environment_variants_raw(base_spec_file, environment="dev")
+
+        assert isinstance(spec, dict)
+        assert spec["metadata"].get("environment") == "dev"
+
+    def test_load_environment_variant_validated_returns_netengine_spec(
+        self, base_spec_file: Path, dev_spec_file: Path
+    ) -> None:
+        """Test validated environment loading returns a NetEngineSpec."""
+        spec = SpecConfig.load_environment_variant_validated(base_spec_file, environment="dev")
+
+        assert isinstance(spec, NetEngineSpec)
+        assert spec.metadata.name == "test-network"
+        assert spec.metadata.environment == "dev"
+
+    def test_load_environment_variant_validated_rejects_invalid_specs(
+        self, base_spec_file: Path
+    ) -> None:
+        """Test validated environment loading rejects invalid composed specs."""
+        overrides = {"substrate": {"networks": {"bad": {"type": "bridge", "subnet": "bad"}}}}
+
+        with pytest.raises(SpecLoadError, match="invalid CIDR"):
+            SpecConfig.load_environment_variant_validated(base_spec_file, overrides=overrides)
 
     def test_load_environment_variants_prod(
         self, base_spec_file: Path, prod_spec_file: Path
