@@ -3,8 +3,8 @@ import tempfile
 from datetime import UTC, datetime
 
 from netengine.handlers.dns import DNSHandler
-from netengine.handlers.protocols import DockerAdapterProtocol
 from netengine.handlers.pki_handler import PKIHandler
+from netengine.handlers.protocols import DockerAdapterProtocol
 
 
 class StorageHandler:

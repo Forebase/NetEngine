@@ -1,7 +1,7 @@
 """Regression tests for pgmq queue declarations in migrations."""
 
-from pathlib import Path
 import re
+from pathlib import Path
 
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 

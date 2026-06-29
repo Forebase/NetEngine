@@ -22,7 +22,7 @@ from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
 from netengine.logging import get_logger
 from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import SpecLoadError, load_spec
-from netengine.spec.models import NetEngineSpec, SPEC_SCHEMA_VERSION
+from netengine.spec.models import SPEC_SCHEMA_VERSION, NetEngineSpec
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1")

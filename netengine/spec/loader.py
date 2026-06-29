@@ -10,7 +10,7 @@ import yaml
 from pydantic import ValidationError
 
 from netengine.config.loader import ConfigLoader
-from netengine.spec.models import NetEngineSpec, SUPPORTED_SPEC_SCHEMA_VERSIONS
+from netengine.spec.models import SUPPORTED_SPEC_SCHEMA_VERSIONS, NetEngineSpec
 
 logger = logging.getLogger(__name__)
 

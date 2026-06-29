@@ -368,6 +368,7 @@ def test_up_supports_repeatable_set_overrides():
 def _write_cli_validate_spec(tmp_path: Path, **updates) -> Path:
     """Write an example-derived spec for validate command tests."""
     import copy
+
     import yaml
 
     source = Path(__file__).parent.parent / "examples" / "minimal.yaml"

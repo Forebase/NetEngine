@@ -15,8 +15,8 @@ import json
 from datetime import UTC, datetime
 from typing import Any, Optional
 
-from netengine.events.queues import Queue
 from netengine.events.emitter import emit_event
+from netengine.events.queues import Queue
 from netengine.events.schema import EventEnvelope
 from netengine.handlers._base import BasePhaseHandler
 from netengine.handlers.context import PhaseContext
