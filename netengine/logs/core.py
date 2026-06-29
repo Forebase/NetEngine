@@ -10,6 +10,7 @@ Provides:
 """
 
 import json
+import logging
 import os
 import sys
 import threading
@@ -132,6 +133,15 @@ def format_record_json(record: "Record") -> str:
 
     # Escape braces so loguru's format_map pass doesn't treat JSON keys as placeholders.
     return json.dumps(log_entry).replace("{", "{{").replace("}", "}}") + "\n"
+
+
+def forward_to_stdlib_logging(message: Any) -> None:
+    """Forward Loguru records to Python logging for pytest caplog and integrations."""
+    record = message.record
+    logging.getLogger(record["extra"].get("logger_name") or record["name"]).log(
+        record["level"].no,
+        record["message"],
+    )
 
 
 # ============================================================================
@@ -269,6 +279,7 @@ class LoggerFactory:
             if add_default_sinks:
                 cls.add_stdout_sink(config)
                 cls.add_file_sink(config)
+                cls.add_stdlib_sink(config)
 
             cls._initialized = True
 
@@ -288,6 +299,17 @@ class LoggerFactory:
             filter=noise_filter,
         )
         cls._sinks.append("stdout")
+
+    @classmethod
+    def add_stdlib_sink(cls, config: type[LogConfig] = LogConfig) -> None:
+        """Forward log records to Python's logging module for integrations like pytest caplog."""
+        _logger.add(
+            forward_to_stdlib_logging,
+            level=config.LOG_LEVEL,
+            format="{message}",
+            filter=NoiseFilter(),
+        )
+        cls._sinks.append("stdlib")
 
     @classmethod
     def add_file_sink(

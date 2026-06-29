@@ -165,14 +165,14 @@ class TestFeatureStateValidation:
         return spec_file
 
     def test_experimental_pki_field_logs_warning_not_error(self, tmp_path, caplog) -> None:
-        import logging
+        import netengine.logs as logs
 
         # DNSSEC/CRL/OCSP were promoted from unsupported to experimental once the
         # CoreDNS online-signing + step-ca config paths were wired (WS-A). They
         # now load with a warning instead of being rejected.
         spec_file = self._write_spec(tmp_path, {"pki": {"dnssec_enabled": True}})
 
-        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
+        with caplog.at_level(logs.WARNING, logger="netengine.spec.loader"):
             spec = load_spec(spec_file)
 
         assert spec.pki.dnssec_enabled is True
@@ -180,14 +180,34 @@ class TestFeatureStateValidation:
             "pki.dnssec_enabled is experimental in alpha" in r.message for r in caplog.records
         )
 
-    def test_experimental_gateway_portal_field_logs_warning_not_error(
-        self, tmp_path, caplog
-    ) -> None:
-        import logging
+    def test_experimental_gateway_mode_logs_warning_not_raises(self, tmp_path, caplog) -> None:
+        import netengine.logs as logs
 
-        # gateway_portal.real_internet.mode was promoted from unsupported to experimental
-        # once the nftables policy implementation landed (WS-C). It now loads with a
-        # warning instead of being rejected.
+        spec_file = self._write_spec(
+            tmp_path,
+            {
+                "gateway_portal": {
+                    "real_internet": {
+                        "mode": "mirrored",
+                        "service_mirrors": [
+                            {"real_hostname": "github.com", "in_world_service": "10.0.1.20"}
+                        ],
+                    }
+                }
+            },
+        )
+
+        with caplog.at_level(logs.WARNING, logger="netengine.spec.loader"):
+            spec = load_spec(spec_file)
+
+        assert spec.gateway_portal.real_internet.mode.value == "mirrored"
+        assert spec.gateway_portal.real_internet.service_mirrors[0].in_world_service == "10.0.1.20"
+        assert any(
+            "gateway_portal.real_internet.mode is experimental in alpha" in r.message
+            for r in caplog.records
+        )
+
+    def test_mirrored_gateway_requires_service_mirrors(self, tmp_path) -> None:
         spec_file = self._write_spec(
             tmp_path, {"gateway_portal": {"real_internet": {"mode": "mirrored"}}}
         )
@@ -200,9 +220,50 @@ class TestFeatureStateValidation:
             "gateway_portal.real_internet.mode is experimental in alpha" in r.message
             for r in caplog.records
         )
+        with pytest.raises(SpecLoadError, match="at least one service mirror is required"):
+            load_spec(spec_file)
+
+    def test_service_mirrors_require_mirrored_gateway_mode(self, tmp_path) -> None:
+        spec_file = self._write_spec(
+            tmp_path,
+            {
+                "gateway_portal": {
+                    "real_internet": {
+                        "service_mirrors": [
+                            {"real_hostname": "github.com", "in_world_service": "10.0.1.20"}
+                        ]
+                    }
+                }
+            },
+        )
+
+        with pytest.raises(SpecLoadError, match="service mirrors require"):
+            load_spec(spec_file)
+
+    def test_service_mirror_targets_must_be_ipv4_for_alpha_nftables(self, tmp_path) -> None:
+        spec_file = self._write_spec(
+            tmp_path,
+            {
+                "gateway_portal": {
+                    "real_internet": {
+                        "mode": "mirrored",
+                        "service_mirrors": [
+                            {
+                                "real_hostname": "github.com",
+                                "in_world_service": "gitea.acme.internal",
+                            }
+                        ],
+                    }
+                }
+            },
+        )
+
+        with pytest.raises(SpecLoadError, match="must be an IPv4 address"):
+            load_spec(spec_file)
+
 
     def test_experimental_profile_field_logs_warning_not_raises(self, tmp_path, caplog) -> None:
-        import logging
+        import netengine.logs as logs
 
         spec_file = self._write_spec(
             tmp_path,
@@ -221,7 +282,7 @@ class TestFeatureStateValidation:
             },
         )
 
-        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
+        with caplog.at_level(logs.WARNING, logger="netengine.spec.loader"):
             spec = load_spec(spec_file)
 
         assert spec.ands is not None
@@ -231,11 +292,11 @@ class TestFeatureStateValidation:
         )
 
     def test_experimental_enabled_field_logs_warning(self, tmp_path, caplog) -> None:
-        import logging
+        import netengine.logs as logs
 
         spec_file = self._write_spec(tmp_path, {"pki": {"intermediate_ca_enabled": True}})
 
-        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
+        with caplog.at_level(logs.WARNING, logger="netengine.spec.loader"):
             spec = load_spec(spec_file)
 
         assert spec.pki.intermediate_ca_enabled is True
@@ -245,9 +306,9 @@ class TestFeatureStateValidation:
         )
 
     def test_no_warnings_for_default_spec(self, caplog, minimal_spec) -> None:
-        import logging
+        import netengine.logs as logs
 
-        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
+        with caplog.at_level(logs.WARNING, logger="netengine.spec.loader"):
             from netengine.spec.loader import _validate_feature_states
 
             _validate_feature_states(minimal_spec)

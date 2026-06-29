@@ -1,5 +1,4 @@
 # netengine/handlers/pki_handler.py
-import asyncio
 import os
 import ssl
 import subprocess
@@ -13,7 +12,7 @@ import aiohttp
 from netengine.core.state import RuntimeState
 from netengine.errors import PKIError
 from netengine.handlers.protocols import DockerAdapterProtocol
-from netengine.logging import get_logger
+from netengine.logs import get_logger
 
 logger = get_logger(__name__)
 
@@ -91,19 +90,17 @@ class PKIHandler:
                 self.volume_name: {"bind": "/home/step", "mode": "rw"},
                 tmpdir: {"bind": "/tmp/pass", "mode": "ro"},
             }
+            password_file = "/tmp/pass/password.txt"
+            os.makedirs(os.path.dirname(password_file), exist_ok=True)
+            with open(password_file, "w") as f:
+                f.write("dev_password")  # or whatever password you want
             cmd = [
-                "step",
-                "ca",
-                "init",
-                "--name",
-                "NetEngines Root CA",
-                "--dns",
-                self.ca_dns,
-                "--provisioner",
-                "acme",
-                "--password-file",
-                "/tmp/pass/password.txt",
-                "--no-start",
+                "step", "ca", "init",
+                f"--name={ca_name}",
+                f"--dns={dns_name}",
+                "--provisioner=acme",
+                f"--password-file={password_file}",
+                "--pki"  # <-- use --pki instead of --no-start
             ]
             logger.info(f"Running step ca init with command: {' '.join(cmd)}")
             result = await self.docker.run_container_one_off(

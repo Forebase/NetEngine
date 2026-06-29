@@ -10,7 +10,7 @@ from netengine.handlers.dns import DNSHandler
 from netengine.handlers.domain_registry_handler import DomainRegistryHandler
 from netengine.handlers.gateway_handler import GatewayHandler
 from netengine.handlers.protocols import DockerAdapterProtocol, PGMQAdapterProtocol
-from netengine.logging import get_logger
+from netengine.logs import get_logger
 from netengine.spec.models import NetEngineSpec
 
 

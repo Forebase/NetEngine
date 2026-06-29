@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional, TypedDict, cast
 
-from netengine.logging import get_logger
+from netengine.logs import get_logger
 
 if TYPE_CHECKING:
     import asyncio

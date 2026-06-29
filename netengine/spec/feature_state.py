@@ -52,6 +52,8 @@ FEATURE_STATE_REGISTRY: tuple[FeatureStateEntry, ...] = (
         reason=(
             "nftables policies for isolated/shadowed/mirrored/exposed modes are "
             "implemented; requires gateway container with nft available"
+            "gateway policies for isolated, shadowed, mirrored, and exposed modes "
+            "are wired through nftables, but real-host integration remains alpha"
         ),
     ),
     FeatureStateEntry(
@@ -59,8 +61,8 @@ FEATURE_STATE_REGISTRY: tuple[FeatureStateEntry, ...] = (
         state="experimental",
         stage="alpha",
         reason=(
-            "mirror accept rules are generated in mirrored mode; "
-            "live upstream reachability is not validated in CI e2e"
+            "mirrored-mode nftables allowlists and operator output are wired; "
+            "automatic DNS aliasing for real hostnames remains alpha"
         ),
     ),
     FeatureStateEntry(

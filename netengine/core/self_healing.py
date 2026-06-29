@@ -3,14 +3,14 @@
 Implements the logic for re-applying drifted phases and their dependencies.
 """
 
-import logging
+import netengine.logs as logs
 from dataclasses import dataclass
 from typing import Optional
 
 from netengine.core.orchestrator import Orchestrator
 from netengine.handlers._base import BasePhaseHandler
 
-logger = logging.getLogger(__name__)
+logger = logs.getLogger(__name__)
 
 
 @dataclass

@@ -433,14 +433,21 @@ def test_validate_valid_spec_exits_zero() -> None:
     assert "Spec validation succeeded: minimal-example" in result.output
 
 
-def test_validate_experimental_gateway_portal_exits_zero_with_warning(tmp_path: Path) -> None:
-    """Experimental gateway_portal fields load with a warning, not an error."""
-    spec_file = _write_cli_validate_spec(tmp_path, gateway_portal__real_internet__mode="mirrored")
+def test_validate_experimental_gateway_mode_exits_zero_with_explanation(tmp_path: Path) -> None:
+    """Mirrored gateway mode is wired but remains experimental during alpha."""
+    spec_file = _write_cli_validate_spec(
+        tmp_path,
+        gateway_portal__real_internet__mode="mirrored",
+        gateway_portal__real_internet__service_mirrors=[
+            {"real_hostname": "github.com", "in_world_service": "10.0.1.20"}
+        ],
+    )
 
     result = CliRunner().invoke(cli_main.cli, ["validate", str(spec_file), "--explain"])
 
     assert result.exit_code == 0, result.output
     assert "Spec validation succeeded" in result.output
+    assert "WARNING:" in result.output
     assert "gateway_portal.real_internet.mode: experimental" in result.output
 
 
@@ -478,17 +485,22 @@ def test_validate_json_reports_active_feature_states(tmp_path: Path) -> None:
     ]
 
 
-def test_validate_json_experimental_active_feature_exits_zero(tmp_path: Path) -> None:
-    """Experimental active fields are machine-readable and do not fail CI."""
-    spec_file = _write_cli_validate_spec(tmp_path, pki__crl_enabled=True)
+def test_validate_json_unsupported_active_feature_exits_nonzero(tmp_path: Path) -> None:
+    """Unsupported active fields should be machine-readable and fail CI."""
+    spec_file = _write_cli_validate_spec(
+        tmp_path, gateway_portal__real_internet__upstream_resolver_enabled=True
+    )
 
     result = CliRunner().invoke(cli_main.cli, ["validate", str(spec_file), "--format", "json"])
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    assert payload["ok"] is True
-    assert payload["feature_states"][0]["path"] == "pki.crl_enabled"
-    assert payload["feature_states"][0]["state"] == "experimental"
+    assert payload["ok"] is False
+    assert (
+        payload["feature_states"][0]["path"]
+        == "gateway_portal.real_internet.upstream_resolver_enabled"
+    )
+    assert payload["feature_states"][0]["state"] == "unsupported"
     assert payload["feature_states"][0]["current_value"] is True
     assert payload["feature_states"][0]["default_value"] is False
 
@@ -504,3 +516,112 @@ def test_validate_explain_includes_dotted_field_paths_and_feature_states(tmp_pat
     assert "pki.intermediate_ca_enabled" in result.output
     assert "experimental" in result.output
     assert "alpha" in result.output
+
+
+def test_setup_local_orchestrates_doctor_compose_migrations_and_bootstrap(tmp_path: Path):
+    """Setup should coordinate preflight, compose, migrations, readiness, then up."""
+    spec_file = Path(__file__).parent.parent / "examples" / "minimal.yaml"
+    ok = cli_main.DoctorCheckResult("ok", cli_main.DoctorStatus.OK, "ready", group="test")
+
+    with (
+        patch("netengine.cli.main._run_setup_host_checks", return_value=[ok]) as host_checks,
+        patch("netengine.cli.main._docker_compose_up") as compose_up,
+        patch("netengine.cli.main._wait_for_postgres_health") as wait_postgres,
+        patch("netengine.cli.main._run_migrations", new_callable=AsyncMock) as migrations,
+        patch("netengine.cli.main.run_preflight", return_value=[ok]) as readiness,
+        patch(
+            "netengine.cli.main._check_migration_readiness",
+            new_callable=AsyncMock,
+            return_value=[ok],
+        ),
+        patch("netengine.cli.main._feature_state_readiness_results", return_value=[ok]),
+        patch("netengine.cli.main._up", new_callable=AsyncMock) as up,
+    ):
+        result = CliRunner().invoke(
+            cli_main.cli,
+            [
+                "setup",
+                "local",
+                str(spec_file),
+                "--db-url",
+                "postgresql://example/db",
+                "--state-file",
+                str(tmp_path / "state.json"),
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "Step 1/5: host checks before Postgres starts" in result.output
+    assert "Setup checks passed" in result.output
+    host_checks.assert_called_once()
+    compose_up.assert_called_once_with(("postgres",))
+    wait_postgres.assert_called_once_with(timeout_seconds=120.0)
+    migrations.assert_awaited_once_with("postgresql://example/db")
+    readiness.assert_called_once()
+    up.assert_awaited_once()
+    assert up.call_args.kwargs["skip_migrations"] is True
+
+
+def test_setup_local_stops_before_compose_when_required_host_check_fails(tmp_path: Path):
+    """Setup should not start infrastructure when required pre-Postgres checks fail."""
+    spec_file = Path(__file__).parent.parent / "examples" / "minimal.yaml"
+    failed = cli_main.DoctorCheckResult(
+        "Docker container names",
+        cli_main.DoctorStatus.FAIL,
+        "netengine_postgres",
+        "Stop/remove conflicting containers before startup.",
+        "docker",
+        required=True,
+    )
+
+    with (
+        patch("netengine.cli.main._run_setup_host_checks", return_value=[failed]),
+        patch("netengine.cli.main._docker_compose_up") as compose_up,
+        patch("netengine.cli.main._up", new_callable=AsyncMock) as up,
+    ):
+        result = CliRunner().invoke(
+            cli_main.cli,
+            ["setup", "local", str(spec_file), "--state-file", str(tmp_path / "state.json")],
+        )
+
+    assert result.exit_code == 1
+    assert "Hint: Stop/remove conflicting containers before startup." in result.output
+    assert "required host checks failed" in result.output
+    compose_up.assert_not_called()
+    up.assert_not_awaited()
+
+
+def test_setup_local_stops_before_up_when_spec_aware_check_fails(tmp_path: Path):
+    """Setup should stop after migrations when spec-aware doctor checks fail."""
+    spec_file = Path(__file__).parent.parent / "examples" / "minimal.yaml"
+    ok = cli_main.DoctorCheckResult("ok", cli_main.DoctorStatus.OK, "ready", group="test")
+    failed = cli_main.DoctorCheckResult(
+        "Database connectivity",
+        cli_main.DoctorStatus.FAIL,
+        "connection refused",
+        "Verify database connectivity, credentials, and pgmq/Postgres availability.",
+        "database",
+        required=True,
+    )
+
+    with (
+        patch("netengine.cli.main._run_setup_host_checks", return_value=[ok]),
+        patch("netengine.cli.main._docker_compose_up"),
+        patch("netengine.cli.main._wait_for_postgres_health"),
+        patch("netengine.cli.main._run_migrations", new_callable=AsyncMock),
+        patch("netengine.cli.main.run_preflight", return_value=[failed]),
+        patch(
+            "netengine.cli.main._check_migration_readiness", new_callable=AsyncMock, return_value=[]
+        ),
+        patch("netengine.cli.main._feature_state_readiness_results", return_value=[]),
+        patch("netengine.cli.main._up", new_callable=AsyncMock) as up,
+    ):
+        result = CliRunner().invoke(
+            cli_main.cli,
+            ["setup", "local", str(spec_file), "--db-url", "postgresql://example/db"],
+        )
+
+    assert result.exit_code == 1
+    assert "required setup checks failed; NetEngine stopped before `netengine up`" in result.output
+    assert "Verify database connectivity" in result.output
+    up.assert_not_awaited()

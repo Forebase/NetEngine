@@ -53,8 +53,8 @@ exclude = [
     "netengine/handlers/mail_handler\\.py",
     "netengine/handlers/minio_handler\\.py",
     "netengine/handlers/whois_server\\.py",
-    "netengine/logging/middleware\\.py",
-    "netengine/logging/sinks\\.py",
+    "netengine/logs/middleware\\.py",
+    "netengine/logs/sinks\\.py",
 ]
 
 [[tool.mypy.overrides]]

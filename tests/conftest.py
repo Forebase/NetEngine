@@ -1,13 +1,13 @@
 """Pytest configuration and shared fixtures."""
 
-import logging
+import netengine.logs as logs
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from netengine.handlers.context import PhaseContext, RuntimeState
-from netengine.logging import get_logger
+from netengine.logs import get_logger
 from netengine.spec.loader import load_spec
 from netengine.spec.models import NetEngineSpec
 
@@ -52,7 +52,7 @@ def pytest_configure(config):
 
 
 @pytest.fixture
-def logger() -> logging.Logger:
+def logger() -> logs.Logger:
     """Logger instance for tests."""
     return get_logger("test")
 
@@ -143,7 +143,7 @@ def runtime_state_with_substrate() -> RuntimeState:
 def phase_context(
     minimal_spec: NetEngineSpec,
     runtime_state_with_substrate: RuntimeState,
-    logger: logging.Logger,
+    logger: logs.Logger,
 ) -> PhaseContext:
     """Phase context ready for DNS and later handler testing.
 
@@ -161,7 +161,7 @@ def phase_context(
 def phase_context_substrate(
     minimal_spec: NetEngineSpec,
     runtime_state: RuntimeState,
-    logger: logging.Logger,
+    logger: logs.Logger,
 ) -> PhaseContext:
     """Phase context for Substrate handler testing.
 
@@ -179,7 +179,7 @@ def phase_context_substrate(
 def phase_context_single_org(
     single_org_spec: NetEngineSpec,
     runtime_state_with_substrate: RuntimeState,
-    logger: logging.Logger,
+    logger: logs.Logger,
 ) -> PhaseContext:
     """Phase context with single-org spec."""
     return PhaseContext(

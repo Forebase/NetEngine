@@ -25,6 +25,7 @@ from netengine.diagnostic.preflight import (
     build_context,
     run_preflight,
 )
+from netengine.spec.loader import SpecLoadError, load_spec
 
 __all__ = [
     "DoctorCheckResult",
@@ -34,6 +35,7 @@ __all__ = [
     "build_context",
     "doctor",
     "run_checks",
+    "_check_python_dependencies",
     "run_preflight",
 ]
 
@@ -41,6 +43,7 @@ __all__ = [
 _run = _preflight._run
 _can_bind = _preflight._can_bind
 _check_python = _preflight._check_python
+_check_python_dependencies = _preflight._check_python_dependencies
 _check_command = _preflight._check_command
 _check_docker_daemon = _preflight._check_docker_daemon
 _check_compose = _preflight._check_compose
@@ -53,13 +56,29 @@ _check_docker_conflicts = _preflight._check_docker_conflicts
 
 
 def run_checks(
-    db_url: str | None, state_file: Path, *, skip_db: bool = False
+    db_url: str | None,
+    state_file: Path,
+    *,
+    skip_db: bool = False,
+    spec_subnets: tuple[str, ...] = (),
 ) -> list[DoctorCheckResult]:
     """Run host-readiness checks without requiring a loaded NetEngine spec."""
     # Keep monkeypatches of the legacy CLI module effective for callers/tests.
     _preflight._run = _run
     _preflight._can_bind = _can_bind
-    return _preflight.run_checks(db_url, state_file, skip_db=skip_db)
+    return _preflight.run_checks(
+        db_url, state_file, skip_db=skip_db, spec_subnets=spec_subnets
+    )
+
+
+def _spec_subnets_from_file(spec_path: Path) -> tuple[str, ...]:
+    """Load a world spec and return substrate network subnets for doctor checks."""
+    spec = load_spec(str(spec_path))
+    return tuple(
+        str(network.subnet)
+        for network in spec.substrate.networks.values()
+        if getattr(network, "subnet", None)
+    )
 
 
 def _print_report(results: Iterable[DoctorCheckResult]) -> None:
@@ -79,10 +98,48 @@ def _print_report(results: Iterable[DoctorCheckResult]) -> None:
     help="Runtime state file path.",
 )
 @click.option("--json", "as_json", is_flag=True, help="Output machine-readable JSON.")
-@click.option("--skip-db", is_flag=True, help="Skip database connectivity and pgmq checks.")
-def doctor(db_url: str | None, state_file: Path, as_json: bool, skip_db: bool) -> None:
+@click.option(
+    "--skip-db", is_flag=True, help="Skip database connectivity and pgmq checks."
+)
+@click.option(
+    "--spec",
+    "spec_option",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="World spec whose substrate subnets should be checked for Docker conflicts.",
+)
+@click.argument(
+    "spec_arg",
+    required=False,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+def doctor(
+    db_url: str | None,
+    state_file: Path,
+    as_json: bool,
+    skip_db: bool,
+    spec_option: Path | None,
+    spec_arg: Path | None,
+) -> None:
     """Run local host preflight checks before booting; use diagnose for world health."""
-    results = run_checks(db_url, state_file, skip_db=skip_db)
+    if spec_option and spec_arg:
+        raise click.UsageError(
+            "provide a spec path either as --spec or as the positional argument, not both"
+        )
+
+    spec_path = spec_option or spec_arg
+    spec_subnets: tuple[str, ...] = ()
+    if spec_path is not None:
+        try:
+            spec_subnets = _spec_subnets_from_file(spec_path)
+        except SpecLoadError as exc:
+            raise click.ClickException(f"spec validation failed: {exc}") from exc
+
+    if spec_path is None:
+        results = run_checks(db_url, state_file, skip_db=skip_db)
+    else:
+        results = run_checks(
+            db_url, state_file, skip_db=skip_db, spec_subnets=spec_subnets
+        )
     if as_json:
         click.echo(json.dumps([asdict(r) for r in results], indent=2))
     else:

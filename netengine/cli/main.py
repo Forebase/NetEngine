@@ -3,15 +3,16 @@
 import asyncio
 import json
 import os
+import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 import click
-import yaml
-
 from netengine.cli.doctor import doctor
 from netengine.cli.env import db_url_from_env
+from netengine.config.loader import ConfigOverrideError, parse_dotted_overrides
 from netengine.core.migrations import MigrationService, MigrationStatus
 from netengine.core.orchestrator import Orchestrator
 from netengine.core.state import RuntimeState, get_state_file
@@ -28,7 +29,7 @@ from netengine.diagnostic.preflight import (
     run_preflight,
 )
 from netengine.events.queues import PRIMARY_QUEUES, Queue, dlq_for
-from netengine.logging import get_logger
+from netengine.logs import get_logger
 from netengine.phase_labels import PHASE_LABELS
 from netengine.spec.loader import (
     SpecLoadError,
@@ -41,38 +42,15 @@ from netengine.spec.loader import (
 
 logger = get_logger(__name__)
 
+LOCAL_SETUP_DB_URL = "postgresql://netengine:dev_password@localhost:5432/netengine"
+
 
 def _parse_set_overrides(set_values: tuple[str, ...]) -> dict[str, Any]:
     """Convert repeatable dotted key=value CLI overrides into a nested dictionary."""
-    overrides: dict[str, Any] = {}
-
-    for item in set_values:
-        key, separator, raw_value = item.partition("=")
-        if not separator:
-            raise click.BadParameter("must be in key=value form", param_hint="--set")
-
-        parts = key.split(".")
-        if any(part == "" for part in parts):
-            raise click.BadParameter("keys must be non-empty dotted paths", param_hint="--set")
-
-        value = yaml.safe_load(raw_value)
-        cursor = overrides
-        for part in parts[:-1]:
-            existing = cursor.get(part)
-            if existing is None:
-                nested: dict[str, Any] = {}
-                cursor[part] = nested
-                cursor = nested
-            elif isinstance(existing, dict):
-                cursor = existing
-            else:
-                raise click.BadParameter(
-                    f"cannot set nested key under non-object path '{part}'",
-                    param_hint="--set",
-                )
-        cursor[parts[-1]] = value
-
-    return overrides
+    try:
+        return parse_dotted_overrides(set_values)
+    except ConfigOverrideError as exc:
+        raise click.BadParameter(str(exc), param_hint="--set") from exc
 
 
 def _load_spec_for_cli(
@@ -336,6 +314,95 @@ def _feature_state_readiness_results(spec: Any) -> list[DoctorCheckResult]:
     return results
 
 
+def _required_setup_failed(results: list[DoctorCheckResult]) -> bool:
+    """Return True when required setup checks should stop bootstrapping."""
+    return any(result.status == DoctorStatus.FAIL and result.required for result in results)
+
+
+def _print_setup_results(results: list[DoctorCheckResult]) -> None:
+    for result in results:
+        _readiness_line(result.status, result.name, result.detail, result.hint)
+
+
+def _setup_host_probes() -> tuple[Any, ...]:
+    """Doctor probes that are valid before local Postgres has been started."""
+    from netengine.diagnostic import preflight as preflight
+
+    return (
+        lambda ctx: preflight._check_python(),
+        lambda ctx: preflight._check_python_dependencies(),
+        preflight._check_required_commands,
+        preflight._check_optional_commands,
+        lambda ctx: preflight._check_step_version(),
+        lambda ctx: preflight._check_docker_daemon(),
+        lambda ctx: preflight._check_compose(),
+        preflight._check_ports,
+        preflight._check_filesystem,
+        preflight._check_docker_conflicts,
+        lambda ctx: preflight._check_docker_subnet_conflicts(ctx),
+    )
+
+
+def _run_setup_host_checks(
+    db_url: str | None, state_file: Path, spec_subnets: tuple[str, ...]
+) -> list[DoctorCheckResult]:
+    """Run pre-Postgres setup checks with database probes intentionally omitted."""
+    ctx = build_context(
+        db_url,
+        state_file,
+        skip_db=True,
+        spec_subnets=spec_subnets,
+    )
+    return run_preflight(ctx, probes=_setup_host_probes())
+
+
+def _docker_compose_up(services: tuple[str, ...] = ("postgres",)) -> None:
+    command = ["docker", "compose", "up", "-d", *services]
+    result = subprocess.run(command, text=True, capture_output=True, check=False)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "docker compose failed").strip()
+        raise click.ClickException(
+            "Unable to start required compose services. "
+            f"Command `{' '.join(command)}` failed: {detail}\n\n"
+            "Remediation: ensure Docker Desktop/daemon is running, remove stale "
+            "containers with `netengine down` or `docker compose down`, and retry."
+        )
+
+
+def _wait_for_postgres_health(timeout_seconds: float = 120.0, interval: float = 2.0) -> None:
+    """Wait until the compose Postgres container reports healthy/running."""
+    deadline = time.monotonic() + timeout_seconds
+    last_status = "unknown"
+    while time.monotonic() < deadline:
+        result = subprocess.run(
+            [
+                "docker",
+                "inspect",
+                "--format",
+                "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}",
+                "netengine_postgres",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            last_status = result.stdout.strip() or "unknown"
+            if last_status in {"healthy", "running"}:
+                return
+        else:
+            last_status = (result.stderr or result.stdout or "inspect failed").strip()
+        time.sleep(interval)
+
+    raise click.ClickException(
+        f"Postgres did not become healthy within {timeout_seconds:.0f}s "
+        f"(last status: {last_status}).\n\n"
+        "Remediation: run `docker compose ps postgres` and "
+        "`docker logs netengine_postgres`; verify port 5432 is free and the "
+        "postgres_data volume is not from an incompatible database version."
+    )
+
+
 @click.group()
 def cli() -> None:
     """NetEngine — spin up, reload, and tear down authority-autonomous worlds."""
@@ -467,7 +534,16 @@ async def _readiness(
             group="spec",
         )
     )
-    ctx = build_context(db_url, state_file, skip_db=skip_db)
+    ctx = build_context(
+        db_url,
+        state_file,
+        skip_db=skip_db,
+        spec_subnets=tuple(
+            str(network.subnet)
+            for network in spec.substrate.networks.values()
+            if getattr(network, "subnet", None)
+        ),
+    )
     results.extend(run_preflight(ctx))
     results.extend(await _check_migration_readiness(db_url))
     results.extend(_feature_state_readiness_results(spec))
@@ -576,6 +652,130 @@ def validate(
 
     if unsupported:
         sys.exit(1)
+
+
+@cli.command("setup")
+@click.argument("mode", type=click.Choice(["local"]))
+@click.argument("spec_file", type=click.Path(exists=True))
+@click.option(
+    "--db-url", default=db_url_from_env, help="PostgreSQL URL for migration and doctor checks."
+)
+@click.option(
+    "--state-file",
+    type=click.Path(path_type=Path),
+    default=get_state_file,
+    help="Runtime state file path for host preflight checks.",
+)
+@click.option(
+    "--env",
+    "environment",
+    help="Merge spec.{ENV}.yaml next to SPEC_FILE before validating.",
+)
+@click.option(
+    "--set",
+    "set_values",
+    multiple=True,
+    metavar="KEY=VALUE",
+    help="Override a spec value; repeat for multiple dotted keys.",
+)
+@click.option(
+    "--postgres-timeout",
+    default=120.0,
+    show_default=True,
+    help="Seconds to wait for Postgres health.",
+)
+def setup(
+    mode: str,
+    spec_file: str,
+    db_url: str | None,
+    state_file: Path,
+    environment: str | None,
+    set_values: tuple[str, ...],
+    postgres_timeout: float,
+) -> None:
+    """Guided first-time setup for a local NetEngine world."""
+    asyncio.run(
+        _setup_local(spec_file, db_url, state_file, environment, set_values, postgres_timeout)
+    )
+
+
+async def _setup_local(
+    spec_file: str,
+    db_url: str | None,
+    state_file: Path,
+    environment: str | None = None,
+    set_values: tuple[str, ...] = (),
+    postgres_timeout: float = 120.0,
+) -> None:
+    try:
+        spec = _load_spec_for_cli(spec_file, environment=environment, set_values=set_values)
+    except SpecLoadError as exc:
+        raise click.ClickException(
+            f"spec validation failed: {exc}\n\n"
+            "Remediation: fix the spec validation error and rerun `netengine setup local`."
+        ) from exc
+
+    spec_subnets = tuple(
+        str(network.subnet)
+        for network in spec.substrate.networks.values()
+        if getattr(network, "subnet", None)
+    )
+
+    click.echo(f"NetEngine local setup for {spec.metadata.name}")
+    click.echo("Step 1/5: host checks before Postgres starts")
+    host_results = _run_setup_host_checks(db_url, state_file, spec_subnets)
+    _print_setup_results(host_results)
+    if _required_setup_failed(host_results):
+        raise click.ClickException(
+            "required host checks failed; fix the remediation hints above before running `netengine up`."
+        )
+
+    click.echo("Step 2/5: starting compose services")
+    _docker_compose_up(("postgres",))
+
+    click.echo("Step 3/5: waiting for Postgres health")
+    _wait_for_postgres_health(timeout_seconds=postgres_timeout)
+
+    effective_db_url = db_url or _db_url_from_env() or LOCAL_SETUP_DB_URL
+
+    click.echo("Step 4/5: running migrations")
+    try:
+        await _run_migrations(effective_db_url)
+    except Exception as exc:
+        raise click.ClickException(
+            f"migrations failed: {exc}\n\n"
+            "Remediation: verify database credentials, inspect `docker logs netengine_postgres`, "
+            "then rerun `netengine migrate up`."
+        ) from exc
+
+    click.echo("Step 5/5: spec-aware doctor checks")
+    ctx = build_context(
+        effective_db_url,
+        state_file,
+        skip_db=False,
+        spec_subnets=spec_subnets,
+    )
+    readiness_results = []
+    readiness_results.extend(run_preflight(ctx))
+    readiness_results.extend(await _check_migration_readiness(effective_db_url))
+    readiness_results.extend(_feature_state_readiness_results(spec))
+    _print_setup_results(readiness_results)
+    if _required_setup_failed(readiness_results):
+        raise click.ClickException(
+            "required setup checks failed; NetEngine stopped before `netengine up`. "
+            "Apply the remediation hints above and rerun `netengine setup local`."
+        )
+
+    click.echo("Setup checks passed; bootstrapping world with existing `netengine up` path.")
+    await _up(
+        spec_file,
+        up_to=9,
+        mock=False,
+        skip_migrations=True,
+        allow_migration_failure=False,
+        environment=environment,
+        set_values=set_values,
+    )
 
 
 @cli.command()

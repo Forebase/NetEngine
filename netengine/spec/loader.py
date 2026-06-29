@@ -1,7 +1,6 @@
 """YAML spec loading and validation with OmegaConf composition support."""
 
 import ipaddress
-import logging
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Optional
@@ -9,10 +8,12 @@ from typing import Any, Optional
 import yaml
 from pydantic import ValidationError
 
+import netengine.logs as logs
 from netengine.config.loader import ConfigLoader
 from netengine.spec.models import SUPPORTED_SPEC_SCHEMA_VERSIONS, NetEngineSpec
+from netengine.spec.types import GatewayRealInternetMode
 
-logger = logging.getLogger(__name__)
+logger = logs.getLogger(__name__)
 
 
 class SpecLoadError(Exception):
@@ -155,37 +156,42 @@ def _cross_validate(spec: NetEngineSpec) -> None:
             if net_a.overlaps(net_b):
                 errors.append(f"subnet overlap: {name_a} ({net_a}) overlaps {name_b} ({net_b})")
 
+    # 5. Mirrored real-internet mode needs explicit IP allowlist targets.
+    # The alpha gateway implementation renders nftables `ip daddr` rules from
+    # service_mirrors, so hostnames would generate invalid nftables policy until
+    # DNS aliasing/resolution is implemented.
+    real_internet = spec.gateway_portal.real_internet
+    if real_internet.mode == GatewayRealInternetMode.MIRRORED:
+        if not real_internet.service_mirrors:
+            errors.append(
+                "gateway_portal.real_internet.service_mirrors: "
+                "at least one service mirror is required when mode is 'mirrored'"
+            )
+    elif real_internet.service_mirrors:
+        errors.append(
+            "gateway_portal.real_internet.service_mirrors: "
+            "service mirrors require real_internet.mode: 'mirrored'"
+        )
+
+    for idx, mirror in enumerate(real_internet.service_mirrors):
+        try:
+            ipaddress.IPv4Address(mirror.in_world_service)
+        except ValueError:
+            errors.append(
+                f"gateway_portal.real_internet.service_mirrors[{idx}].in_world_service: "
+                "must be an IPv4 address for alpha mirrored gateway nftables rules"
+            )
+
     if errors:
         raise SpecLoadError(
             "Spec cross-validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
         )
 
 
-def load_spec(yaml_path: str | Path, *, validate_feature_states: bool = True) -> NetEngineSpec:
-    """Load and validate a NetEngine YAML specification.
-
-    Args:
-        yaml_path: Path to YAML spec file
-
-    Returns:
-        Validated, immutable NetEngineSpec object
-
-    Raises:
-        SpecLoadError: If file not found or spec is invalid
-    """
-    yaml_path = Path(yaml_path)
-
-    if not yaml_path.exists():
-        raise SpecLoadError(f"Spec file not found: {yaml_path}")
-
-    try:
-        with open(yaml_path) as f:
-            data = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        raise SpecLoadError(f"Failed to parse YAML: {e}")
-    except IOError as e:
-        raise SpecLoadError(f"Failed to read file: {e}")
-
+def _validate_spec_data(
+    data: dict[str, Any], *, validate_feature_states: bool
+) -> NetEngineSpec:
+    """Validate loaded spec data and return a NetEngineSpec model."""
     if not isinstance(data, dict):
         raise SpecLoadError("Spec must be a YAML object (dict)")
 
@@ -212,6 +218,51 @@ def load_spec(yaml_path: str | Path, *, validate_feature_states: bool = True) ->
     return spec
 
 
+def validate_spec_data(
+    data: dict[str, Any], *, validate_feature_states: bool = True
+) -> NetEngineSpec:
+    """Validate composed raw spec data and return a ``NetEngineSpec``.
+
+    Callers should compose data according to the project precedence contract
+    before validation: structured model defaults < base spec <
+    environment/spec file < explicit overrides/CLI ``--set``.
+    """
+    return _validate_spec_data(data, validate_feature_states=validate_feature_states)
+
+
+def load_spec(yaml_path: str | Path, *, validate_feature_states: bool = True) -> NetEngineSpec:
+    """Load and validate a single NetEngine YAML specification.
+
+    A single file is applied over structured ``NetEngineSpec`` defaults during
+    validation. Composition helpers use the broader precedence contract:
+    structured defaults < base spec < environment/spec file < explicit
+    overrides/CLI ``--set``.
+
+    Args:
+        yaml_path: Path to YAML spec file
+
+    Returns:
+        Validated, immutable NetEngineSpec object
+
+    Raises:
+        SpecLoadError: If file not found or spec is invalid
+    """
+    yaml_path = Path(yaml_path)
+
+    if not yaml_path.exists():
+        raise SpecLoadError(f"Spec file not found: {yaml_path}")
+
+    try:
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        raise SpecLoadError(f"Failed to parse YAML: {e}")
+    except IOError as e:
+        raise SpecLoadError(f"Failed to read file: {e}")
+
+    return _validate_spec_data(data, validate_feature_states=validate_feature_states)
+
+
 def load_spec_with_composition(
     yaml_path: str | Path,
     base_path: Optional[str | Path] = None,
@@ -220,10 +271,14 @@ def load_spec_with_composition(
 ) -> NetEngineSpec:
     """Load spec with optional base spec composition and overrides.
 
-    Supports merging a base spec with environment-specific overrides.
+    Precedence is: structured ``NetEngineSpec`` defaults < ``base_path`` <
+    ``yaml_path`` < ``overrides`` (including CLI ``--set`` values). Nested
+    mappings are deep-merged, and later layers win for fields set in multiple
+    places.
+
     Example:
         base spec: spec.base.yaml
-        environment override: spec.prod.yaml
+        environment/spec override: spec.prod.yaml
         inline overrides: {"logging": {"level": "ERROR"}}
 
     Args:
@@ -260,30 +315,7 @@ def load_spec_with_composition(
     except IOError as e:
         raise SpecLoadError(f"Failed to read file: {e}")
 
-    if not isinstance(data, dict):
-        raise SpecLoadError("Spec must be a YAML object (dict)")
-
-    metadata = data.get("metadata")
-    if not isinstance(metadata, dict):
-        raise SpecLoadError("Spec metadata must be a YAML object (dict)")
-    schema_version = metadata.get("schema_version")
-    if schema_version is not None and schema_version not in SUPPORTED_SPEC_SCHEMA_VERSIONS:
-        supported = ", ".join(sorted(SUPPORTED_SPEC_SCHEMA_VERSIONS))
-        raise SpecLoadError(
-            f"Unsupported spec metadata.schema_version {schema_version!r}; "
-            f"supported versions: {supported}. Export with the older NetEngine version "
-            "or migrate the spec before booting this release."
-        )
-
-    try:
-        spec = NetEngineSpec(**data)
-    except ValidationError as e:
-        raise SpecLoadError(f"Spec validation failed: {e}")
-
-    _cross_validate(spec)
-    if validate_feature_states:
-        _validate_feature_states(spec)
-    return spec
+    return _validate_spec_data(data, validate_feature_states=validate_feature_states)
 
 
 def load_spec_with_environment(
@@ -293,6 +325,11 @@ def load_spec_with_environment(
     validate_feature_states: bool = True,
 ) -> NetEngineSpec:
     """Load base spec and merge with environment-specific overrides.
+
+    Precedence is: structured ``NetEngineSpec`` defaults < ``base_spec`` <
+    ``spec.{environment}.yaml`` when present < ``overrides`` (including CLI
+    ``--set`` values). Nested mappings are deep-merged, and later layers win
+    for fields set in multiple places.
 
     Automatically loads environment-specific spec file if it exists.
     Pattern: spec.base.yaml or spec.yaml + spec.{environment}.yaml
@@ -332,27 +369,4 @@ def load_spec_with_environment(
     except IOError as e:
         raise SpecLoadError(f"Failed to read file: {e}")
 
-    if not isinstance(data, dict):
-        raise SpecLoadError("Spec must be a YAML object (dict)")
-
-    metadata = data.get("metadata")
-    if not isinstance(metadata, dict):
-        raise SpecLoadError("Spec metadata must be a YAML object (dict)")
-    schema_version = metadata.get("schema_version")
-    if schema_version is not None and schema_version not in SUPPORTED_SPEC_SCHEMA_VERSIONS:
-        supported = ", ".join(sorted(SUPPORTED_SPEC_SCHEMA_VERSIONS))
-        raise SpecLoadError(
-            f"Unsupported spec metadata.schema_version {schema_version!r}; "
-            f"supported versions: {supported}. Export with the older NetEngine version "
-            "or migrate the spec before booting this release."
-        )
-
-    try:
-        spec = NetEngineSpec(**data)
-    except ValidationError as e:
-        raise SpecLoadError(f"Spec validation failed: {e}")
-
-    _cross_validate(spec)
-    if validate_feature_states:
-        _validate_feature_states(spec)
-    return spec
+    return _validate_spec_data(data, validate_feature_states=validate_feature_states)

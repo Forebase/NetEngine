@@ -17,6 +17,13 @@ __all__ = [
     "LoggerFactory",
     "LogConfig",
     "get_logger",
+    "getLogger",
+    "Logger",
+    "DEBUG",
+    "INFO",
+    "WARNING",
+    "ERROR",
+    "CRITICAL",
     "log_context",
     "timed_operation",
     # Tracing
@@ -39,6 +46,9 @@ __all__ = [
     "PerformanceMetricsSink",
 ]
 
+import logging as _stdlib_logging
+from loguru._logger import Logger
+
 from .core import LogConfig, LoggerFactory, get_logger, log_context, timed_operation
 from .middleware import LoggingMiddleware, StructuredLoggingMiddleware
 from .sinks import (
@@ -58,6 +68,14 @@ from .trace import (
     set_trace_context_from_headers,
     with_trace_context,
 )
+
+# Compatibility aliases for code/tests that previously used a logging-like module.
+getLogger = get_logger
+DEBUG = _stdlib_logging.DEBUG
+INFO = _stdlib_logging.INFO
+WARNING = _stdlib_logging.WARNING
+ERROR = _stdlib_logging.ERROR
+CRITICAL = _stdlib_logging.CRITICAL
 
 # Initialize logger on import
 logger = LoggerFactory.get_logger(__name__)

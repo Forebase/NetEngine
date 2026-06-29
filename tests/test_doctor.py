@@ -32,14 +32,20 @@ def test_doctor_json_uses_env_db_url_and_returns_nonzero_on_required_failure(
         captured["skip_db"] = skip_db
         return [
             DoctorCheckResult("Python runtime", DoctorStatus.OK, "ok", group="host"),
-            DoctorCheckResult("Docker daemon", DoctorStatus.FAIL, "not reachable", group="docker"),
+            DoctorCheckResult(
+                "Docker daemon", DoctorStatus.FAIL, "not reachable", group="docker"
+            ),
         ]
 
     state_file = tmp_path / "state.json"
-    monkeypatch.setenv("NETENGINE_DB_URL", "postgresql://netengine:dev@localhost:5432/netengine")
+    monkeypatch.setenv(
+        "NETENGINE_DB_URL", "postgresql://netengine:dev@localhost:5432/netengine"
+    )
     monkeypatch.setattr(doctor_mod, "run_checks", fake_run_checks)
 
-    result = CliRunner().invoke(cli_main.cli, ["doctor", "--json", "--state-file", str(state_file)])
+    result = CliRunner().invoke(
+        cli_main.cli, ["doctor", "--json", "--state-file", str(state_file)]
+    )
 
     assert result.exit_code == 1
     assert '"status": "fail"' in result.output
@@ -68,7 +74,8 @@ def test_doctor_skip_db_succeeds_when_only_db_checks_are_skipped(
     monkeypatch.setattr(doctor_mod, "run_checks", fake_run_checks)
 
     result = CliRunner().invoke(
-        cli_main.cli, ["doctor", "--skip-db", "--state-file", str(tmp_path / "state.json")]
+        cli_main.cli,
+        ["doctor", "--skip-db", "--state-file", str(tmp_path / "state.json")],
     )
 
     assert result.exit_code == 0, result.output
@@ -79,7 +86,9 @@ def test_run_checks_uses_asyncpg_for_connectivity_pgmq_and_queues(
     monkeypatch, tmp_path: Path
 ) -> None:
     calls = []
-    expected_queues = [q.value for q in PRIMARY_QUEUES] + [dlq_for(q).value for q in PRIMARY_QUEUES]
+    expected_queues = [q.value for q in PRIMARY_QUEUES] + [
+        dlq_for(q).value for q in PRIMARY_QUEUES
+    ]
 
     class FakeConnection:
         async def fetchval(self, sql: str):
@@ -118,15 +127,26 @@ def test_run_checks_uses_asyncpg_for_connectivity_pgmq_and_queues(
         skip_db=False,
     )
 
-    assert any(r.name == "Postgres connectivity" and r.status == DoctorStatus.OK for r in results)
-    assert any(r.name == "pgmq extension" and r.status == DoctorStatus.OK for r in results)
+    assert any(
+        r.name == "Postgres connectivity" and r.status == DoctorStatus.OK
+        for r in results
+    )
+    assert any(
+        r.name == "pgmq extension" and r.status == DoctorStatus.OK for r in results
+    )
     assert any(r.name == "pgmq queues" and r.status == DoctorStatus.OK for r in results)
-    assert ("connect", "postgresql://netengine:dev@localhost:5432/netengine", 3.0) in calls
+    assert (
+        "connect",
+        "postgresql://netengine:dev@localhost:5432/netengine",
+        3.0,
+    ) in calls
     assert ("fetchval", "SELECT 1 FROM pg_extension WHERE extname = 'pgmq';") in calls
     assert ("fetch", "SELECT queue_name FROM pgmq.list_queues();") in calls
 
 
-def test_doctor_missing_db_url_prints_actionable_remediation(monkeypatch, tmp_path: Path) -> None:
+def test_doctor_missing_db_url_prints_actionable_remediation(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.delenv("NETENGINE_DB_URL", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
@@ -238,6 +258,30 @@ def test_compose_inventory_includes_known_alpha_ports_and_resources() -> None:
     assert "postgres_data" in volumes
 
 
+def test_required_dns_ports_match_coredns_port_bindings() -> None:
+    from netengine.handlers.dns import COREDNS_PORT_BINDINGS
+
+    required_dns_ports = {
+        (port.port, port.proto)
+        for port in doctor_mod._preflight.KNOWN_LOCAL_PORTS
+        if port.label == "DNS"
+    }
+    coredns_host_bindings = {
+        (host_port, container_port.rsplit("/", 1)[1])
+        for container_port, (_host_ip, host_port) in COREDNS_PORT_BINDINGS.items()
+    }
+
+    assert required_dns_ports == coredns_host_bindings
+
+
+def test_port_53_hint_mentions_macos_docker_desktop_and_privileged_binding() -> None:
+    hint = doctor_mod._preflight._DNS_PORT_HINT
+
+    assert "macOS" in hint
+    assert "Docker Desktop" in hint
+    assert "privileged host port 53" in hint
+    assert "alternate DNS host port" in hint
+
 def test_dns_udp_bind_failure_has_local_resolver_hint(monkeypatch) -> None:
     def fake_can_bind(port: int, proto: str) -> bool:
         assert (port, proto) == (53, "udp")
@@ -255,14 +299,94 @@ def test_dns_udp_bind_failure_has_local_resolver_hint(monkeypatch) -> None:
     assert "dnsmasq" in result.hint
 
 
-def test_docker_resource_conflicts_use_short_format_commands(monkeypatch, tmp_path: Path) -> None:
+def test_port_check_accepts_expected_netengine_container_listener(monkeypatch) -> None:
+    def fake_can_bind(port: int, proto: str) -> bool:
+        raise OSError("address already in use")
+
+    def fake_run(command: list[str], *, timeout: float = 8.0):
+        if command == ["docker", "ps", "-q"]:
+            return SimpleNamespace(returncode=0, stdout="abc123\n", stderr="")
+        if command == ["docker", "inspect", "abc123"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    '[{"Id":"abc123","Name":"/netengine_postgres",'
+                    '"NetworkSettings":{"Ports":{"5432/tcp":[{"HostIp":"0.0.0.0",'
+                    '"HostPort":"5432"}]}}}]'
+                ),
+                stderr="",
+            )
+        raise AssertionError(command)
+
+    monkeypatch.setattr(doctor_mod._preflight, "_can_bind", fake_can_bind)
+    monkeypatch.setattr(doctor_mod._preflight, "_run", fake_run)
+
+    result = doctor_mod._preflight._check_port(5432, "tcp")
+
+    assert result.status == DoctorStatus.OK
+    assert "already bound by netengine_postgres" in result.detail
+
+
+def test_port_check_fails_for_unexpected_docker_container_listener(monkeypatch) -> None:
+    def fake_can_bind(port: int, proto: str) -> bool:
+        raise OSError("address already in use")
+
+    def fake_run(command: list[str], *, timeout: float = 8.0):
+        if command == ["docker", "ps", "-q"]:
+            return SimpleNamespace(returncode=0, stdout="def456\n", stderr="")
+        if command == ["docker", "inspect", "def456"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    '[{"Id":"def456","Name":"/unrelated_postgres",'
+                    '"NetworkSettings":{"Ports":{"5432/tcp":[{"HostIp":"127.0.0.1",'
+                    '"HostPort":"5432"}]}}}]'
+                ),
+                stderr="",
+            )
+        raise AssertionError(command)
+
+    monkeypatch.setattr(doctor_mod._preflight, "_can_bind", fake_can_bind)
+    monkeypatch.setattr(doctor_mod._preflight, "_run", fake_run)
+
+    result = doctor_mod._preflight._check_port(5432, "tcp")
+
+    assert result.status == DoctorStatus.FAIL
+    assert "unrelated_postgres" in result.detail
+    assert "Stop the container publishing 5432/tcp" in (result.hint or "")
+
+
+def test_port_check_fails_for_unavailable_port_with_no_docker_listener(monkeypatch) -> None:
+    def fake_can_bind(port: int, proto: str) -> bool:
+        raise OSError("address already in use")
+
+    def fake_run(command: list[str], *, timeout: float = 8.0):
+        if command == ["docker", "ps", "-q"]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        raise AssertionError(command)
+
+    monkeypatch.setattr(doctor_mod._preflight, "_can_bind", fake_can_bind)
+    monkeypatch.setattr(doctor_mod._preflight, "_run", fake_run)
+
+    result = doctor_mod._preflight._check_port(5432, "tcp")
+
+    assert result.status == DoctorStatus.FAIL
+    assert "unavailable on 127.0.0.1" in result.detail
+    assert "Stop the process using 5432/tcp" in (result.hint or "")
+
+
+def test_docker_resource_conflicts_use_short_format_commands(
+    monkeypatch, tmp_path: Path
+) -> None:
     commands = []
 
     def fake_run(command: list[str], *, timeout: float = 8.0):
         commands.append((command, timeout))
         joined = " ".join(command)
         if joined.startswith("docker ps"):
-            return SimpleNamespace(returncode=0, stdout="netengine_postgres\n", stderr="")
+            return SimpleNamespace(
+                returncode=0, stdout="netengine_postgres\n", stderr=""
+            )
         if joined.startswith("docker volume ls"):
             return SimpleNamespace(returncode=0, stdout="netengine_data\n", stderr="")
         if joined.startswith("docker network ls"):
@@ -291,3 +415,126 @@ def test_docker_resource_conflicts_use_short_format_commands(monkeypatch, tmp_pa
     assert (["docker", "ps", "--format", "{{.Names}}"], 2.0) in commands
     assert (["docker", "volume", "ls", "--format", "{{.Name}}"], 2.0) in commands
     assert (["docker", "network", "ls", "--format", "{{.Name}}"], 2.0) in commands
+
+
+def test_python_dependency_probe_passes_when_required_modules_import(
+    monkeypatch,
+) -> None:
+    imported = []
+
+    def fake_import_module(name: str):
+        imported.append(name)
+        return SimpleNamespace(__name__=name)
+
+    monkeypatch.setattr(
+        doctor_mod._preflight.importlib, "import_module", fake_import_module
+    )
+
+    result = doctor_mod._check_python_dependencies()
+
+    assert result.status == DoctorStatus.OK
+    assert result.name == "Python dependencies"
+    assert result.group == "host"
+    assert "required runtime modules importable" in result.detail
+    assert imported == [
+        module for _, module in doctor_mod._preflight.PYTHON_DEPENDENCY_MODULES
+    ]
+
+
+def test_python_dependency_probe_reports_missing_modules_with_poetry_install(
+    monkeypatch,
+) -> None:
+    missing_modules = {"yaml", "docker", "prometheus_client"}
+
+    def fake_import_module(name: str):
+        if name in missing_modules:
+            raise ImportError(f"No module named {name}")
+        return SimpleNamespace(__name__=name)
+
+    monkeypatch.setattr(
+        doctor_mod._preflight.importlib, "import_module", fake_import_module
+    )
+
+    result = doctor_mod._check_python_dependencies()
+
+    assert result.status == DoctorStatus.FAIL
+    assert result.required is True
+    assert "pyyaml (yaml)" in result.detail
+    assert "docker (docker)" in result.detail
+    assert "prometheus-client (prometheus_client)" in result.detail
+    assert "poetry install" in (result.hint or "")
+
+
+def test_doctor_accepts_spec_option_and_passes_subnets(
+    monkeypatch, tmp_path: Path
+) -> None:
+    captured = {}
+
+    def fake_run_checks(
+        db_url: str | None,
+        state_file: Path,
+        *,
+        skip_db: bool,
+        spec_subnets: tuple[str, ...] = (),
+    ):
+        captured["spec_subnets"] = spec_subnets
+        return [DoctorCheckResult("ok", DoctorStatus.OK, "ready")]
+
+    monkeypatch.setattr(doctor_mod, "run_checks", fake_run_checks)
+
+    result = CliRunner().invoke(
+        cli_main.cli,
+        [
+            "doctor",
+            "--skip-db",
+            "--state-file",
+            str(tmp_path / "state.json"),
+            "--spec",
+            "examples/minimal.yaml",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["spec_subnets"] == ("172.28.0.0/16", "10.0.0.0/24")
+
+
+def test_docker_subnet_conflicts_include_spec_subnets(
+    monkeypatch, tmp_path: Path
+) -> None:
+    commands = []
+
+    def fake_run(command: list[str], *, timeout: float = 8.0):
+        commands.append(command)
+        if command == ["docker", "network", "ls", "-q"]:
+            return SimpleNamespace(returncode=0, stdout="abc123\n", stderr="")
+        if command == ["docker", "network", "inspect", "abc123"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    '[{"Name":"old_world","IPAM":{"Config":'
+                    '[{"Subnet":"10.0.0.0/24"}]}}]'
+                ),
+                stderr="",
+            )
+        raise AssertionError(command)
+
+    monkeypatch.setattr(doctor_mod._preflight, "_run", fake_run)
+    ctx = DoctorContext(
+        db_url=None,
+        state_file=tmp_path / "state.json",
+        project_root=tmp_path,
+        required_ports=(),
+        required_commands=(),
+        optional_commands=(),
+        feature_flags={},
+        spec_subnets=("10.0.0.0/24",),
+    )
+
+    result = doctor_mod._preflight._check_docker_subnet_conflicts(ctx)
+
+    assert result.status == DoctorStatus.WARN
+    assert result.required is False
+    assert "Docker network old_world" in result.detail
+    assert "reuses requested subnet 10.0.0.0/24" in result.detail
+    assert "docker network rm <name>" in (result.hint or "")
+    assert ["docker", "network", "ls", "-q"] in commands
