@@ -2,6 +2,7 @@
 
 import ipaddress
 import logging
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Optional
 
@@ -20,65 +21,98 @@ class SpecLoadError(Exception):
     pass
 
 
+def _resolve_feature_state_paths(spec: NetEngineSpec) -> Iterator[tuple[Any, str, Any, Any]]:
+    """Yield feature-state entries with concrete paths, values, and defaults."""
+    from collections.abc import Mapping
+
+    from pydantic.fields import PydanticUndefined
+
+    from netengine.spec.feature_state import FEATURE_STATE_REGISTRY
+
+    def _field_default(model: Any, field_name: str) -> Any:
+        field = model.__class__.model_fields[field_name]
+        if field.default is not PydanticUndefined:
+            return field.default
+        if field.default_factory is not None:
+            return field.default_factory()
+        return PydanticUndefined
+
+    for entry in FEATURE_STATE_REGISTRY:
+        parts = entry.path.split(".")
+        nodes: list[tuple[str, Any, Any]] = [("", spec, PydanticUndefined)]
+        for part in parts:
+            next_nodes: list[tuple[str, Any, Any]] = []
+            for prefix, node, default_node in nodes:
+                if part == "*":
+                    if isinstance(node, Mapping):
+                        for key, value in node.items():
+                            path = f"{prefix}.{key}" if prefix else str(key)
+                            next_nodes.append((path, value, None))
+                    continue
+
+                if isinstance(node, Mapping):
+                    if part not in node:
+                        continue
+                    value = node[part]
+                    default_value = (
+                        default_node.get(part) if isinstance(default_node, Mapping) else None
+                    )
+                else:
+                    if not hasattr(node, part):
+                        continue
+                    value = getattr(node, part)
+                    default_value = _field_default(node, part)
+
+                path = f"{prefix}.{part}" if prefix else part
+                next_nodes.append((path, value, default_value))
+            nodes = next_nodes
+
+        for concrete_path, value, default_value in nodes:
+            yield entry, concrete_path, value, default_value
+
+
+def _is_active_feature_value(value: Any, default_value: Any) -> bool:
+    """Return True when a gated field is enabled or set to active non-default data."""
+    if hasattr(value, "value"):
+        comparable_value = value.value
+    else:
+        comparable_value = value
+
+    if hasattr(default_value, "value"):
+        comparable_default = default_value.value
+    else:
+        comparable_default = default_value
+
+    if isinstance(comparable_value, bool):
+        return comparable_value is True and comparable_value != comparable_default
+    if comparable_value in (None, "", [], {}, (), set()):
+        return False
+    return comparable_value != comparable_default
+
+
+def _validate_feature_states(spec: NetEngineSpec) -> None:
+    """Validate unsupported spec fields and warn on experimental fields."""
+    errors: list[str] = []
+
+    for entry, path, value, default_value in _resolve_feature_state_paths(spec):
+        if not _is_active_feature_value(value, default_value):
+            continue
+        message = f"{path} is {entry.state} in {entry.stage}: {entry.reason}"
+        if entry.state == "unsupported":
+            errors.append(message)
+        elif entry.state == "experimental":
+            logger.warning(message)
+
+    if errors:
+        raise SpecLoadError(
+            "Unsupported spec features enabled:\n" + "\n".join(f"  - {e}" for e in errors)
+        )
+
+
+# Backwards-compatible name for callers/tests that imported the old helper.
 def _warn_unsupported(spec: NetEngineSpec) -> None:
-    """Emit warnings for spec fields that are declared but not yet implemented."""
-    pki = spec.pki
-
-    if pki.dnssec_enabled:
-        logger.warning(
-            "pki.dnssec_enabled is set but DNSSEC is not yet implemented — field will be ignored"
-        )
-    if pki.crl_enabled:
-        logger.warning(
-            "pki.crl_enabled is set but CRL is not yet implemented — field will be ignored"
-        )
-    if pki.ocsp_enabled:
-        logger.warning(
-            "pki.ocsp_enabled is set but OCSP is not yet implemented — field will be ignored"
-        )
-    gw = spec.gateway_portal
-    if gw.real_internet.mode.value != "isolated":
-        logger.warning(
-            f"gateway.real_internet.mode={gw.real_internet.mode.value!r} but real internet"
-            " mode is not yet implemented — gateway will remain isolated"
-        )
-    if gw.real_internet.service_mirrors:
-        logger.warning(
-            "gateway.real_internet.service_mirrors is set but service mirrors are not yet"
-            " implemented — mirrors will be ignored"
-        )
-    if gw.real_internet.upstream_resolver_enabled:
-        logger.warning(
-            "gateway.real_internet.upstream_resolver_enabled is set but upstream resolver"
-            " is not yet implemented — field will be ignored"
-        )
-    if gw.cross_world.mode.value != "none":
-        logger.warning(
-            f"gateway.cross_world.mode={gw.cross_world.mode.value!r} but cross-world"
-            " federation is not yet implemented — gateway will remain isolated"
-        )
-    if gw.cross_world.peers:
-        logger.warning(
-            "gateway.cross_world.peers is set but cross-world federation is not yet"
-            " implemented — peers will be ignored"
-        )
-
-    for profile_name, profile in spec.ands.profiles.items():
-        if profile.dynamic_ip:
-            logger.warning(
-                f"ands.profiles.{profile_name}.dynamic_ip is set but dynamic IP allocation"
-                " is not yet implemented — field will be ignored"
-            )
-        if profile.reverse_dns:
-            logger.warning(
-                f"ands.profiles.{profile_name}.reverse_dns is set but reverse DNS is not"
-                " yet implemented — field will be ignored"
-            )
-        if profile.bgp is not None:
-            logger.warning(
-                f"ands.profiles.{profile_name}.bgp={profile.bgp!r} but BGP configuration"
-                " is not yet implemented — field will be ignored"
-            )
+    """Validate feature-state metadata and warn for experimental fields."""
+    _validate_feature_states(spec)
 
 
 def _cross_validate(spec: NetEngineSpec) -> None:
@@ -161,7 +195,7 @@ def load_spec(yaml_path: str | Path) -> NetEngineSpec:
         raise SpecLoadError(f"Spec validation failed: {e}")
 
     _cross_validate(spec)
-    _warn_unsupported(spec)
+    _validate_feature_states(spec)
     return spec
 
 
@@ -221,7 +255,7 @@ def load_spec_with_composition(
         raise SpecLoadError(f"Spec validation failed: {e}")
 
     _cross_validate(spec)
-    _warn_unsupported(spec)
+    _validate_feature_states(spec)
     return spec
 
 
@@ -279,5 +313,5 @@ def load_spec_with_environment(
         raise SpecLoadError(f"Spec validation failed: {e}")
 
     _cross_validate(spec)
-    _warn_unsupported(spec)
+    _validate_feature_states(spec)
     return spec

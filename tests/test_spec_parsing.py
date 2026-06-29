@@ -139,21 +139,18 @@ class TestSpecDefaults:
             assert tld.listen_ip is not None
 
 
-class TestUnsupportedFieldWarnings:
-    """_warn_unsupported emits the right warnings for enabled-but-unimplemented fields."""
+class TestFeatureStateValidation:
+    """Feature-state validation rejects unsupported fields and warns on experiments."""
 
-    def _make_spec(self, overrides: dict) -> NetEngineSpec:
+    def _write_spec(self, tmp_path, overrides: dict):
         from pathlib import Path
 
         import yaml
-
-        from netengine.spec.loader import _cross_validate
 
         base = yaml.safe_load(
             (Path(__file__).parent.parent / "examples" / "minimal.yaml").read_text()
         )
 
-        # deep-merge overrides
         def _merge(a, b):
             for k, v in b.items():
                 if isinstance(v, dict) and isinstance(a.get(k), dict):
@@ -162,66 +159,76 @@ class TestUnsupportedFieldWarnings:
                     a[k] = v
 
         _merge(base, overrides)
-        spec = NetEngineSpec(**base)
-        _cross_validate(spec)
-        return spec
+        spec_file = tmp_path / "spec.yaml"
+        spec_file.write_text(yaml.safe_dump(base))
+        return spec_file
 
-    def test_dnssec_warns(self, caplog) -> None:
+    def test_unsupported_enabled_field_raises_spec_load_error(self, tmp_path) -> None:
+        spec_file = self._write_spec(tmp_path, {"pki": {"dnssec_enabled": True}})
+
+        with pytest.raises(
+            SpecLoadError,
+            match=(
+                "pki\\.dnssec_enabled is unsupported in alpha: "
+                "DNSSEC key generation is not integrated with zone signing"
+            ),
+        ):
+            load_spec(spec_file)
+
+    def test_unsupported_non_default_active_field_raises_spec_load_error(self, tmp_path) -> None:
+        spec_file = self._write_spec(
+            tmp_path, {"gateway_portal": {"real_internet": {"mode": "mirrored"}}}
+        )
+
+        with pytest.raises(
+            SpecLoadError,
+            match="gateway_portal\\.real_internet\\.mode is unsupported in alpha",
+        ):
+            load_spec(spec_file)
+
+    def test_unsupported_profile_field_includes_dotted_path(self, tmp_path) -> None:
+        spec_file = self._write_spec(
+            tmp_path,
+            {
+                "ands": {
+                    "profiles": {
+                        "branch": {
+                            "dhcp": True,
+                            "nat": True,
+                            "dynamic_ip": False,
+                            "reverse_dns": True,
+                            "inbound": "blocked",
+                        }
+                    }
+                }
+            },
+        )
+
+        with pytest.raises(
+            SpecLoadError,
+            match="ands\\.profiles\\.branch\\.reverse_dns is unsupported in alpha",
+        ):
+            load_spec(spec_file)
+
+    def test_experimental_enabled_field_logs_warning(self, tmp_path, caplog) -> None:
         import logging
 
-        spec = self._make_spec({"pki": {"dnssec_enabled": True}})
+        spec_file = self._write_spec(tmp_path, {"pki": {"intermediate_ca_enabled": True}})
+
         with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
-            from netengine.spec.loader import _warn_unsupported
+            spec = load_spec(spec_file)
 
-            _warn_unsupported(spec)
-        assert any("dnssec_enabled" in r.message for r in caplog.records)
-
-    def test_crl_warns(self, caplog) -> None:
-        import logging
-
-        spec = self._make_spec({"pki": {"crl_enabled": True}})
-        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
-            from netengine.spec.loader import _warn_unsupported
-
-            _warn_unsupported(spec)
-        assert any("crl_enabled" in r.message for r in caplog.records)
-
-    def test_ocsp_warns(self, caplog) -> None:
-        import logging
-
-        spec = self._make_spec({"pki": {"ocsp_enabled": True}})
-        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
-            from netengine.spec.loader import _warn_unsupported
-
-            _warn_unsupported(spec)
-        assert any("ocsp_enabled" in r.message for r in caplog.records)
-
-    def test_real_internet_mode_warns(self, caplog) -> None:
-        import logging
-
-        spec = self._make_spec({"gateway_portal": {"real_internet": {"mode": "mirrored"}}})
-        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
-            from netengine.spec.loader import _warn_unsupported
-
-            _warn_unsupported(spec)
-        assert any("real_internet.mode" in r.message for r in caplog.records)
-
-    def test_cross_world_mode_warns(self, caplog) -> None:
-        import logging
-
-        spec = self._make_spec({"gateway_portal": {"cross_world": {"mode": "peered"}}})
-        with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
-            from netengine.spec.loader import _warn_unsupported
-
-            _warn_unsupported(spec)
-        assert any("cross_world.mode" in r.message for r in caplog.records)
+        assert spec.pki.intermediate_ca_enabled is True
+        assert any(
+            "pki.intermediate_ca_enabled is experimental in alpha" in r.message
+            for r in caplog.records
+        )
 
     def test_no_warnings_for_default_spec(self, caplog, minimal_spec) -> None:
         import logging
 
         with caplog.at_level(logging.WARNING, logger="netengine.spec.loader"):
-            from netengine.spec.loader import _warn_unsupported
+            from netengine.spec.loader import _validate_feature_states
 
-            _warn_unsupported(minimal_spec)
-        # dnssec_enabled defaults to True in the model, so one warning is expected for that
-        assert all("crl" not in r.message and "ocsp" not in r.message for r in caplog.records)
+            _validate_feature_states(minimal_spec)
+        assert not caplog.records

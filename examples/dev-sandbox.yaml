@@ -55,7 +55,7 @@ pki:
     enabled: true
     listen_ip: 10.0.0.6
     canonical_name: ca.platform.internal
-  dnssec_enabled: true
+  dnssec_enabled: false
 
 identity_platform:
   oidc_provider: keycloak
@@ -137,7 +137,7 @@ ands:
       dhcp: true
       nat: false
       inbound: allowed
-      reverse_dns: true
+      reverse_dns: false
     residential:
       dhcp: true
       nat: true
@@ -196,10 +196,7 @@ org_apps:
 gateway_portal:
   enabled: true
   real_internet:
-    mode: mirrored
-    service_mirrors:
-      - real_hostname: github.com
-        in_world_service: gitea.acme.internal
+    mode: isolated
   cross_world:
     mode: none
 
