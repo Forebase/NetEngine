@@ -10,7 +10,7 @@ import yaml
 from pydantic import ValidationError
 
 from netengine.config.loader import ConfigLoader
-from netengine.spec.models import NetEngineSpec
+from netengine.spec.models import NetEngineSpec, SUPPORTED_SPEC_SCHEMA_VERSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +189,18 @@ def load_spec(yaml_path: str | Path) -> NetEngineSpec:
     if not isinstance(data, dict):
         raise SpecLoadError("Spec must be a YAML object (dict)")
 
+    metadata = data.get("metadata")
+    if not isinstance(metadata, dict):
+        raise SpecLoadError("Spec metadata must be a YAML object (dict)")
+    schema_version = metadata.get("schema_version")
+    if schema_version is not None and schema_version not in SUPPORTED_SPEC_SCHEMA_VERSIONS:
+        supported = ", ".join(sorted(SUPPORTED_SPEC_SCHEMA_VERSIONS))
+        raise SpecLoadError(
+            f"Unsupported spec metadata.schema_version {schema_version!r}; "
+            f"supported versions: {supported}. Export with the older NetEngine version "
+            "or migrate the spec before booting this release."
+        )
+
     try:
         spec = NetEngineSpec(**data)
     except ValidationError as e:
@@ -249,6 +261,18 @@ def load_spec_with_composition(
     if not isinstance(data, dict):
         raise SpecLoadError("Spec must be a YAML object (dict)")
 
+    metadata = data.get("metadata")
+    if not isinstance(metadata, dict):
+        raise SpecLoadError("Spec metadata must be a YAML object (dict)")
+    schema_version = metadata.get("schema_version")
+    if schema_version is not None and schema_version not in SUPPORTED_SPEC_SCHEMA_VERSIONS:
+        supported = ", ".join(sorted(SUPPORTED_SPEC_SCHEMA_VERSIONS))
+        raise SpecLoadError(
+            f"Unsupported spec metadata.schema_version {schema_version!r}; "
+            f"supported versions: {supported}. Export with the older NetEngine version "
+            "or migrate the spec before booting this release."
+        )
+
     try:
         spec = NetEngineSpec(**data)
     except ValidationError as e:
@@ -306,6 +330,18 @@ def load_spec_with_environment(
 
     if not isinstance(data, dict):
         raise SpecLoadError("Spec must be a YAML object (dict)")
+
+    metadata = data.get("metadata")
+    if not isinstance(metadata, dict):
+        raise SpecLoadError("Spec metadata must be a YAML object (dict)")
+    schema_version = metadata.get("schema_version")
+    if schema_version is not None and schema_version not in SUPPORTED_SPEC_SCHEMA_VERSIONS:
+        supported = ", ".join(sorted(SUPPORTED_SPEC_SCHEMA_VERSIONS))
+        raise SpecLoadError(
+            f"Unsupported spec metadata.schema_version {schema_version!r}; "
+            f"supported versions: {supported}. Export with the older NetEngine version "
+            "or migrate the spec before booting this release."
+        )
 
     try:
         spec = NetEngineSpec(**data)

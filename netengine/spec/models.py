@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from netengine.spec.types import (
     ANDProfile,
@@ -38,6 +38,8 @@ class FeatureState(str, Enum):
 
 
 FEATURE_STATE_JSON_SCHEMA_KEY = "feature_state"
+SPEC_SCHEMA_VERSION = "netengine.spec.v1"
+SUPPORTED_SPEC_SCHEMA_VERSIONS = {SPEC_SCHEMA_VERSION}
 
 
 def feature_state_extra(feature_state: FeatureState) -> dict[str, str]:
@@ -79,6 +81,22 @@ PKI_FEATURE_STATES: dict[str, FeatureState] = {
 
 class SpecMetadata(SpecModel):
     """Top-level spec metadata."""
+
+    schema_version: str = Field(
+        default=SPEC_SCHEMA_VERSION,
+        description="NetEngine spec schema/version identifier used for compatibility checks",
+    )
+
+    @field_validator("schema_version")
+    @classmethod
+    def validate_schema_version(cls, value: str) -> str:
+        """Reject unsupported spec schemas before boot/import."""
+        if value not in SUPPORTED_SPEC_SCHEMA_VERSIONS:
+            supported = ", ".join(sorted(SUPPORTED_SPEC_SCHEMA_VERSIONS))
+            raise ValueError(
+                f"unsupported spec schema_version {value!r}; supported versions: {supported}"
+            )
+        return value
 
     name: str = Field(..., description="World name")
     version: str = Field(default="1.0", description="Spec version")
