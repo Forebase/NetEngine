@@ -10,6 +10,7 @@ from netengine.spec import (
     AuthoritySource,
     BoundaryPolicy,
     ResolverPolicy,
+    TrustBundle,
     resolver_policy_from_boundary,
 )
 from netengine.spec.models import CrossWorldPeer, ServiceMirror
@@ -55,6 +56,66 @@ def test_authority_model_is_frozen() -> None:
 
     with pytest.raises(ValidationError):
         authority.operator = "other-operator"
+
+
+def test_trust_bundle_accepts_peered_dns_suffixes_without_trust_metadata() -> None:
+    bundle = TrustBundle(
+        peer_id="world-b",
+        peer_name="World B",
+        mode=GatewayCrossWorldMode.PEERED,
+        dns_suffixes=["world-b.test"],
+    )
+
+    assert bundle.peer_id == "world-b"
+    assert bundle.peer_name == "World B"
+    assert bundle.mode == GatewayCrossWorldMode.PEERED
+    assert bundle.dns_suffixes == ["world-b.test"]
+    assert bundle.accepted_audiences == []
+    assert bundle.mail_domains == []
+
+
+def test_trust_bundle_rejects_none_mode() -> None:
+    with pytest.raises(ValidationError, match="must be peered or federated"):
+        TrustBundle(
+            peer_id="world-b",
+            mode=GatewayCrossWorldMode.NONE,
+            dns_suffixes=["world-b.test"],
+        )
+
+
+def test_trust_bundle_requires_dns_suffixes() -> None:
+    with pytest.raises(ValidationError, match="dns_suffixes must not be empty"):
+        TrustBundle(peer_id="world-b", mode=GatewayCrossWorldMode.PEERED, dns_suffixes=[])
+
+
+def test_trust_bundle_federated_requires_trust_bearing_metadata() -> None:
+    with pytest.raises(ValidationError, match="trust-bearing field"):
+        TrustBundle(
+            peer_id="world-b",
+            mode=GatewayCrossWorldMode.FEDERATED,
+            dns_suffixes=["world-b.test"],
+        )
+
+
+def test_trust_bundle_federated_accepts_peer_root_ca_or_oidc_issuer() -> None:
+    ca_bundle = TrustBundle(
+        peer_id="world-b",
+        mode=GatewayCrossWorldMode.FEDERATED,
+        dns_suffixes=["world-b.test"],
+        peer_root_ca="-----BEGIN CERTIFICATE-----...",
+    )
+    oidc_bundle = TrustBundle(
+        peer_id="world-c",
+        mode="federated",
+        dns_suffixes=["world-c.test"],
+        oidc_issuer="https://issuer.world-c.test",
+        accepted_audiences=["netengine"],
+    )
+
+    assert ca_bundle.peer_root_ca == "-----BEGIN CERTIFICATE-----..."
+    assert oidc_bundle.mode == GatewayCrossWorldMode.FEDERATED
+    assert oidc_bundle.oidc_issuer == "https://issuer.world-c.test"
+    assert oidc_bundle.accepted_audiences == ["netengine"]
 
 
 def test_boundary_policy_defaults_to_isolated_no_cross_world() -> None:

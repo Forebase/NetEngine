@@ -72,6 +72,39 @@ class ResolverPolicy(SpecModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class TrustBundle(SpecModel):
+    """Trust metadata imported for a peered or federated world boundary."""
+
+    peer_id: str = Field(...)
+    peer_name: str | None = Field(default=None)
+    mode: GatewayCrossWorldMode = Field(...)
+    dns_suffixes: list[str] = Field(default_factory=list)
+    peer_root_ca: str | None = Field(default=None)
+    oidc_issuer: str | None = Field(default=None)
+    accepted_audiences: list[str] = Field(default_factory=list)
+    mail_domains: list[str] = Field(default_factory=list)
+    dkim_policy: str | None = Field(default=None)
+
+    @model_validator(mode="after")
+    def validate_trust_bundle(self) -> "TrustBundle":
+        """Validate cross-world trust metadata requirements."""
+        if self.mode == GatewayCrossWorldMode.NONE:
+            raise ValueError("trust bundle mode must be peered or federated, not none")
+
+        if not self.dns_suffixes:
+            raise ValueError("trust bundle dns_suffixes must not be empty")
+
+        if self.mode == GatewayCrossWorldMode.FEDERATED and not (
+            self.peer_root_ca or self.oidc_issuer
+        ):
+            raise ValueError(
+                "federated trust bundle requires at least one trust-bearing field "
+                "such as peer_root_ca or oidc_issuer"
+            )
+
+        return self
+
+
 class BoundaryPolicy(SpecModel):
     """Authority-layer policy for traffic and trust at the world boundary."""
 
