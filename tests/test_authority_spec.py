@@ -11,6 +11,7 @@ from netengine.spec import (
     BoundaryPolicy,
     ResolverPolicy,
     TrustBundle,
+    default_authorities_for_spec,
     resolver_policy_from_boundary,
 )
 from netengine.spec.models import CrossWorldPeer, ServiceMirror
@@ -307,3 +308,67 @@ def test_default_authorities_for_spec_maps_spec_sections(minimal_spec) -> None:
     ]
     assert by_id["mail-authority"].controls == ["world_services.mail"]
     assert by_id["service-catalog"].controls == ["org_apps.catalog"]
+
+
+def test_world_manifest_from_spec_uses_metadata_name_and_default_authorities(minimal_spec) -> None:
+    from netengine.spec import WorldManifest, world_manifest_from_spec
+
+    manifest = world_manifest_from_spec(minimal_spec)
+
+    assert isinstance(manifest, WorldManifest)
+    assert manifest.world_id == minimal_spec.metadata.name
+    assert manifest.world_name == minimal_spec.metadata.name
+    assert manifest.lifecycle == minimal_spec.metadata.lifecycle
+    assert manifest.authority_model == "default"
+    assert [authority.id for authority in manifest.authorities] == [
+        authority.id for authority in default_authorities_for_spec(minimal_spec)
+    ]
+    assert manifest.dns_root_authority == "root-naming"
+    assert manifest.ca_trust_authority == "trust-root"
+    assert manifest.platform_identity_issuer == "platform-identity"
+    assert manifest.inworld_identity_issuer == "inworld-identity"
+    assert manifest.world_registry_authority == "world-root"
+    assert manifest.domain_registry_authority == "domain-registry"
+    assert manifest.numbering_authority == "numbering"
+    assert manifest.transit_boundary_authority == "transit-boundary"
+    assert manifest.real_internet_posture == minimal_spec.gateway_portal.real_internet.mode
+    assert manifest.cross_world_posture == minimal_spec.gateway_portal.cross_world.mode
+    assert manifest.exported_authority_metadata == {}
+    assert manifest.importable_authority_metadata == {}
+    assert manifest.trust_bundles == []
+
+
+def test_world_manifest_from_spec_derives_cross_world_trust_bundles(minimal_spec) -> None:
+    from netengine.spec import world_manifest_from_spec
+
+    spec = minimal_spec.model_copy(
+        update={
+            "gateway_portal": minimal_spec.gateway_portal.model_copy(
+                update={
+                    "cross_world": minimal_spec.gateway_portal.cross_world.model_copy(
+                        update={
+                            "mode": GatewayCrossWorldMode.FEDERATED,
+                            "peers": [
+                                CrossWorldPeer(
+                                    name="world-b.internal",
+                                    endpoint="10.99.0.1:8443",
+                                    mode=GatewayCrossWorldMode.FEDERATED,
+                                    trust_anchor_cert="-----BEGIN CERTIFICATE-----...",
+                                )
+                            ],
+                        }
+                    )
+                }
+            )
+        }
+    )
+
+    manifest = world_manifest_from_spec(spec)
+
+    assert manifest.cross_world_posture == GatewayCrossWorldMode.FEDERATED
+    assert len(manifest.trust_bundles) == 1
+    assert manifest.trust_bundles[0].peer_id == "world-b.internal"
+    assert manifest.trust_bundles[0].peer_name == "world-b.internal"
+    assert manifest.trust_bundles[0].mode == GatewayCrossWorldMode.FEDERATED
+    assert manifest.trust_bundles[0].dns_suffixes == ["world-b.internal"]
+    assert manifest.trust_bundles[0].peer_root_ca == "-----BEGIN CERTIFICATE-----..."

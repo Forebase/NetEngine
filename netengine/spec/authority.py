@@ -2,11 +2,11 @@
 
 from enum import Enum
 from pydantic import Field, model_validator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 
 from netengine.spec.models import CrossWorldPeer, ServiceMirror, SpecModel
-from netengine.spec.types import GatewayCrossWorldMode, GatewayRealInternetMode
+from netengine.spec.types import GatewayCrossWorldMode, GatewayRealInternetMode, Lifecycle
 
 if TYPE_CHECKING:
     from netengine.spec.models import NetEngineSpec
@@ -103,6 +103,34 @@ class TrustBundle(SpecModel):
             )
 
         return self
+
+
+class WorldManifest(SpecModel):
+    """Authority-layer manifest for a NetEngine world.
+
+    The manifest provides a compact authority/spec-domain view of the
+    governance, naming, identity, trust, registry, numbering, and boundary
+    surfaces that define a world.
+    """
+
+    world_id: str = Field(...)
+    world_name: str = Field(...)
+    lifecycle: Lifecycle = Field(...)
+    authority_model: str = Field(...)
+    authorities: list[Authority] = Field(default_factory=list)
+    dns_root_authority: str = Field(...)
+    ca_trust_authority: str = Field(...)
+    platform_identity_issuer: str = Field(...)
+    inworld_identity_issuer: str = Field(...)
+    world_registry_authority: str = Field(...)
+    domain_registry_authority: str = Field(...)
+    numbering_authority: str = Field(...)
+    transit_boundary_authority: str = Field(...)
+    real_internet_posture: GatewayRealInternetMode = Field(...)
+    cross_world_posture: GatewayCrossWorldMode = Field(...)
+    exported_authority_metadata: dict[str, Any] = Field(default_factory=dict)
+    importable_authority_metadata: dict[str, Any] = Field(default_factory=dict)
+    trust_bundles: list[TrustBundle] = Field(default_factory=list)
 
 
 class BoundaryPolicy(SpecModel):
@@ -307,3 +335,61 @@ def default_authorities_for_spec(spec: "NetEngineSpec") -> list[Authority]:
             description="Authority over the application service catalog.",
         ),
     ]
+
+
+def _trust_bundles_from_spec(spec: "NetEngineSpec") -> list[TrustBundle]:
+    """Derive importable trust bundles from configured cross-world peers."""
+
+    bundles: list[TrustBundle] = []
+    for peer in spec.gateway_portal.cross_world.peers:
+        mode = peer.mode
+        if mode == GatewayCrossWorldMode.NONE:
+            continue
+
+        if mode == GatewayCrossWorldMode.FEDERATED and not (
+            peer.trust_anchor_cert or peer.trust_bundle
+        ):
+            continue
+
+        bundles.append(
+            TrustBundle(
+                peer_id=peer.name,
+                peer_name=peer.name,
+                mode=mode,
+                dns_suffixes=[peer.name],
+                peer_root_ca=peer.trust_anchor_cert,
+                oidc_issuer=peer.trust_bundle,
+            )
+        )
+
+    return bundles
+
+
+def world_manifest_from_spec(spec: "NetEngineSpec") -> WorldManifest:
+    """Build an authority-layer world manifest from a parsed NetEngine spec.
+
+    NetEngine specs do not currently expose a dedicated stronger world-id field,
+    so the manifest intentionally seeds both identity fields from
+    ``spec.metadata.name``.
+    """
+
+    authorities = default_authorities_for_spec(spec)
+
+    return WorldManifest(
+        world_id=spec.metadata.name,
+        world_name=spec.metadata.name,
+        lifecycle=spec.metadata.lifecycle,
+        authority_model="default",
+        authorities=authorities,
+        dns_root_authority="root-naming",
+        ca_trust_authority="trust-root",
+        platform_identity_issuer="platform-identity",
+        inworld_identity_issuer="inworld-identity",
+        world_registry_authority="world-root",
+        domain_registry_authority="domain-registry",
+        numbering_authority="numbering",
+        transit_boundary_authority="transit-boundary",
+        real_internet_posture=spec.gateway_portal.real_internet.mode,
+        cross_world_posture=spec.gateway_portal.cross_world.mode,
+        trust_bundles=_trust_bundles_from_spec(spec),
+    )
