@@ -615,6 +615,7 @@ class CrossWorldPeer(SpecModel):
     name: str = Field(...)
     endpoint: str = Field(...)
     mode: GatewayCrossWorldMode = Field(default=GatewayCrossWorldMode.PEERED)
+    trust_bundle: Optional[str] = None
     trust_anchor_cert: Optional[str] = None
 
 

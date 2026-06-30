@@ -5,6 +5,7 @@ from netengine.spec.authority import (
     AuthorityKind,
     AuthorityScope,
     AuthoritySource,
+    BoundaryPolicy,
     default_authorities_for_spec,
 )
 
@@ -13,5 +14,6 @@ __all__ = [
     "AuthorityKind",
     "AuthorityScope",
     "AuthoritySource",
+    "BoundaryPolicy",
     "default_authorities_for_spec",
 ]
