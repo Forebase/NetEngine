@@ -2,6 +2,11 @@
 
 This document captures three critical architecture decisions that must be locked before implementation proceeds. Changing these later requires refactoring across M1-M8 handlers.
 
+
+## Related design notes
+
+- [ADR: NetEngines as an authority-autonomous internet runtime](adr-authority-autonomous-internet-runtime.md) explains why NetEngine models naming, numbering, identity, trust, transit, mail, service discovery, federation, and peering in authority terms.
+
 ---
 
 ## Decision 1: Supabase Deployment Model — Cloud
