@@ -61,6 +61,17 @@ class Authority(SpecModel):
     source: AuthoritySource = Field(default=AuthoritySource.LOCAL)
 
 
+class ResolverPolicy(SpecModel):
+    """Derived resolver capabilities for a boundary authority posture."""
+
+    local_root: bool = Field(default=True)
+    upstream: bool = Field(default=False)
+    mirror_table: bool = Field(default=False)
+    peer_suffix_delegation: bool = Field(default=False)
+    imported_trust_bundle: bool = Field(default=False)
+    notes: list[str] = Field(default_factory=list)
+
+
 class BoundaryPolicy(SpecModel):
     """Authority-layer policy for traffic and trust at the world boundary."""
 
@@ -105,6 +116,55 @@ class BoundaryPolicy(SpecModel):
             raise ValueError("isolated mode should not enable upstream resolution")
 
         return self
+
+
+def resolver_policy_from_boundary(policy: BoundaryPolicy) -> ResolverPolicy:
+    """Derive resolver behavior from a boundary policy.
+
+    The result intentionally models resolver capabilities rather than concrete
+    DNS server ordering. Notes capture the intended precedence for modes where
+    ordering matters.
+    """
+
+    notes: list[str] = []
+    upstream = False
+    mirror_table = False
+
+    if policy.real_internet == GatewayRealInternetMode.ISOLATED:
+        notes.append("isolated: local root only")
+    elif policy.real_internet == GatewayRealInternetMode.SHADOWED:
+        upstream = True
+        notes.append("shadowed: local root first, upstream second")
+    elif policy.real_internet == GatewayRealInternetMode.MIRRORED:
+        mirror_table = True
+        notes.append("mirrored: mirror table first, local root second; upstream disabled")
+    else:
+        upstream = policy.upstream_resolver_enabled
+        notes.append(
+            f"{policy.real_internet.value}: no minimum resolver semantics beyond configured upstream"
+        )
+
+    peer_suffix_delegation = policy.cross_world in {
+        GatewayCrossWorldMode.PEERED,
+        GatewayCrossWorldMode.FEDERATED,
+    }
+    imported_trust_bundle = policy.cross_world == GatewayCrossWorldMode.FEDERATED
+
+    if policy.cross_world == GatewayCrossWorldMode.PEERED:
+        notes.append("peered: peer suffix delegation without shared trust")
+    elif policy.cross_world == GatewayCrossWorldMode.FEDERATED:
+        notes.append("federated: peer suffix delegation with imported trust bundle")
+
+    return ResolverPolicy(
+        local_root=True,
+        upstream=upstream,
+        mirror_table=mirror_table,
+        peer_suffix_delegation=peer_suffix_delegation,
+        imported_trust_bundle=imported_trust_bundle,
+        notes=notes,
+    )
+
+
 def default_authorities_for_spec(spec: "NetEngineSpec") -> list[Authority]:
     """Return stable default authorities for the control surfaces in ``spec``.
 
