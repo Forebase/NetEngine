@@ -1,5 +1,7 @@
 """Spec parsing and models for NetEngine declarative specifications."""
 
+from netengine.spec.models import AuthorityPosture
+
 from netengine.spec.authority import (
     Authority,
     AuthorityKind,
@@ -15,6 +17,7 @@ from netengine.spec.authority import (
 )
 
 __all__ = [
+    "AuthorityPosture",
     "Authority",
     "AuthorityKind",
     "AuthorityScope",
