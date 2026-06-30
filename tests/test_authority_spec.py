@@ -3,7 +3,15 @@
 import pytest
 from pydantic import ValidationError
 
-from netengine.spec import Authority, AuthorityKind, AuthorityScope, AuthoritySource, BoundaryPolicy
+from netengine.spec import (
+    Authority,
+    AuthorityKind,
+    AuthorityScope,
+    AuthoritySource,
+    BoundaryPolicy,
+    ResolverPolicy,
+    resolver_policy_from_boundary,
+)
 from netengine.spec.models import CrossWorldPeer, ServiceMirror
 from netengine.spec.types import GatewayCrossWorldMode, GatewayRealInternetMode
 
@@ -105,6 +113,100 @@ def test_boundary_policy_federated_accepts_peer_trust_bundle() -> None:
 def test_boundary_policy_isolated_disallows_upstream_resolution() -> None:
     with pytest.raises(ValidationError, match="isolated mode should not enable upstream"):
         BoundaryPolicy(upstream_resolver_enabled=True, upstream_resolver_ip="8.8.8.8")
+
+
+def test_resolver_policy_defaults_to_local_root_only() -> None:
+    policy = ResolverPolicy()
+
+    assert policy.local_root is True
+    assert policy.upstream is False
+    assert policy.mirror_table is False
+    assert policy.peer_suffix_delegation is False
+    assert policy.imported_trust_bundle is False
+    assert policy.notes == []
+
+
+def test_resolver_policy_from_isolated_boundary_uses_local_root_only() -> None:
+    resolver_policy = resolver_policy_from_boundary(BoundaryPolicy())
+
+    assert resolver_policy.local_root is True
+    assert resolver_policy.upstream is False
+    assert resolver_policy.mirror_table is False
+    assert resolver_policy.peer_suffix_delegation is False
+    assert resolver_policy.imported_trust_bundle is False
+    assert resolver_policy.notes == ["isolated: local root only"]
+
+
+def test_resolver_policy_from_shadowed_boundary_enables_upstream() -> None:
+    resolver_policy = resolver_policy_from_boundary(
+        BoundaryPolicy(real_internet=GatewayRealInternetMode.SHADOWED)
+    )
+
+    assert resolver_policy.local_root is True
+    assert resolver_policy.upstream is True
+    assert resolver_policy.mirror_table is False
+    assert resolver_policy.notes == ["shadowed: local root first, upstream second"]
+
+
+def test_resolver_policy_from_mirrored_boundary_uses_mirror_table_without_upstream() -> None:
+    resolver_policy = resolver_policy_from_boundary(
+        BoundaryPolicy(
+            real_internet=GatewayRealInternetMode.MIRRORED,
+            service_mirrors=[
+                ServiceMirror(real_hostname="api.example.com", in_world_service="10.1.2.3")
+            ],
+            upstream_resolver_enabled=True,
+        )
+    )
+
+    assert resolver_policy.local_root is True
+    assert resolver_policy.upstream is False
+    assert resolver_policy.mirror_table is True
+    assert resolver_policy.notes == [
+        "mirrored: mirror table first, local root second; upstream disabled"
+    ]
+
+
+def test_resolver_policy_from_peered_boundary_delegates_peer_suffixes_without_trust() -> None:
+    resolver_policy = resolver_policy_from_boundary(
+        BoundaryPolicy(
+            cross_world=GatewayCrossWorldMode.PEERED,
+            peers=[CrossWorldPeer(name="world-b", endpoint="10.99.0.1:8443")],
+        )
+    )
+
+    assert resolver_policy.local_root is True
+    assert resolver_policy.peer_suffix_delegation is True
+    assert resolver_policy.imported_trust_bundle is False
+    assert resolver_policy.notes == [
+        "isolated: local root only",
+        "peered: peer suffix delegation without shared trust",
+    ]
+
+
+def test_resolver_policy_from_federated_boundary_imports_trust_bundle() -> None:
+    resolver_policy = resolver_policy_from_boundary(
+        BoundaryPolicy(
+            cross_world=GatewayCrossWorldMode.FEDERATED,
+            peers=[
+                CrossWorldPeer(
+                    name="world-b",
+                    endpoint="10.99.0.1:8443",
+                    trust_bundle="spiffe://world-b.example/bundle",
+                )
+            ],
+        )
+    )
+
+    assert resolver_policy.local_root is True
+    assert resolver_policy.peer_suffix_delegation is True
+    assert resolver_policy.imported_trust_bundle is True
+    assert resolver_policy.notes == [
+        "isolated: local root only",
+        "federated: peer suffix delegation with imported trust bundle",
+    ]
+
+
 def test_default_authorities_for_spec_maps_spec_sections(minimal_spec) -> None:
     from netengine.spec import default_authorities_for_spec
 
