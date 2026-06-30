@@ -375,20 +375,32 @@ def world_manifest_from_spec(spec: "NetEngineSpec") -> WorldManifest:
 
     authorities = default_authorities_for_spec(spec)
 
+    posture = spec.authority
+
     return WorldManifest(
         world_id=spec.metadata.name,
         world_name=spec.metadata.name,
         lifecycle=spec.metadata.lifecycle,
-        authority_model="default",
+        authority_model=posture.authority_model if posture else "default",
         authorities=authorities,
-        dns_root_authority="root-naming",
-        ca_trust_authority="trust-root",
-        platform_identity_issuer="platform-identity",
-        inworld_identity_issuer="inworld-identity",
-        world_registry_authority="world-root",
-        domain_registry_authority="domain-registry",
-        numbering_authority="numbering",
-        transit_boundary_authority="transit-boundary",
+        dns_root_authority=(posture.dns_root_authority if posture else None) or "root-naming",
+        ca_trust_authority=(posture.ca_trust_authority if posture else None) or "trust-root",
+        platform_identity_issuer=(
+            (posture.platform_identity_issuer if posture else None) or "platform-identity"
+        ),
+        inworld_identity_issuer=(
+            (posture.inworld_identity_issuer if posture else None) or "inworld-identity"
+        ),
+        world_registry_authority=(
+            (posture.world_registry_authority if posture else None) or "world-root"
+        ),
+        domain_registry_authority=(
+            (posture.domain_registry_authority if posture else None) or "domain-registry"
+        ),
+        numbering_authority=(posture.numbering_authority if posture else None) or "numbering",
+        transit_boundary_authority=(
+            (posture.transit_boundary_authority if posture else None) or "transit-boundary"
+        ),
         real_internet_posture=spec.gateway_portal.real_internet.mode,
         cross_world_posture=spec.gateway_portal.cross_world.mode,
         trust_bundles=_trust_bundles_from_spec(spec),

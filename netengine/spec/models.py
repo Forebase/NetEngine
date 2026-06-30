@@ -663,6 +663,24 @@ class OperatorConfig(SpecModel):
     auth: OperatorAuthConfig = Field(default_factory=OperatorAuthConfig)
 
 
+class AuthorityPosture(SpecModel):
+    """Optional top-level authority posture overrides.
+
+    This is intentionally not required by MVP specs. Existing examples derive
+    their authority manifest from established top-level sections via
+    ``default_authorities_for_spec`` and ``world_manifest_from_spec``.
+    """
+
+    authority_model: str = Field(default="default", description="Authority posture profile")
+    dns_root_authority: str | None = Field(default=None)
+    ca_trust_authority: str | None = Field(default=None)
+    platform_identity_issuer: str | None = Field(default=None)
+    inworld_identity_issuer: str | None = Field(default=None)
+    world_registry_authority: str | None = Field(default=None)
+    domain_registry_authority: str | None = Field(default=None)
+    numbering_authority: str | None = Field(default=None)
+    transit_boundary_authority: str | None = Field(default=None)
+
 # ─────────────────────────────────────────────
 # ROOT: NETENGINESPEC
 # ─────────────────────────────────────────────
@@ -688,3 +706,7 @@ class NetEngineSpec(SpecModel):
     org_apps: OrgAppsPhase = Field(..., description="Phase 9 — org apps")
     gateway_portal: GatewayPortal = Field(..., description="Gateway boundary")
     operator: OperatorConfig = Field(..., description="Operator API")
+    authority: AuthorityPosture | None = Field(
+        default=None,
+        description="Optional authority posture overrides; omitted specs derive defaults",
+    )

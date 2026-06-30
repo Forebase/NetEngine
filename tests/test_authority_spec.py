@@ -372,3 +372,32 @@ def test_world_manifest_from_spec_derives_cross_world_trust_bundles(minimal_spec
     assert manifest.trust_bundles[0].mode == GatewayCrossWorldMode.FEDERATED
     assert manifest.trust_bundles[0].dns_suffixes == ["world-b.internal"]
     assert manifest.trust_bundles[0].peer_root_ca == "-----BEGIN CERTIFICATE-----..."
+
+
+def test_authority_posture_is_optional_for_existing_examples(minimal_spec) -> None:
+    from netengine.spec import AuthorityPosture
+
+    assert minimal_spec.authority is None
+    posture = AuthorityPosture(authority_model="custom")
+    assert posture.authority_model == "custom"
+
+
+def test_world_manifest_from_spec_applies_optional_authority_posture(minimal_spec) -> None:
+    from netengine.spec import AuthorityPosture, world_manifest_from_spec
+
+    spec = minimal_spec.model_copy(
+        update={
+            "authority": AuthorityPosture(
+                authority_model="custom",
+                dns_root_authority="custom-root",
+                ca_trust_authority="custom-trust",
+            )
+        }
+    )
+
+    manifest = world_manifest_from_spec(spec)
+
+    assert manifest.authority_model == "custom"
+    assert manifest.dns_root_authority == "custom-root"
+    assert manifest.ca_trust_authority == "custom-trust"
+    assert manifest.platform_identity_issuer == "platform-identity"
