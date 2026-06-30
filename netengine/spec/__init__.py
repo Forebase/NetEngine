@@ -7,6 +7,7 @@ from netengine.spec.authority import (
     AuthoritySource,
     BoundaryPolicy,
     ResolverPolicy,
+    TrustBundle,
     default_authorities_for_spec,
     resolver_policy_from_boundary,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "AuthoritySource",
     "BoundaryPolicy",
     "ResolverPolicy",
+    "TrustBundle",
     "default_authorities_for_spec",
     "resolver_policy_from_boundary",
 ]
